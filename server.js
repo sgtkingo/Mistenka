@@ -47,7 +47,27 @@ const makeCode = () => {
   do { code = crypto.randomBytes(3).toString("hex").toUpperCase(); } while (db.prepare("SELECT 1 FROM tickets WHERE code = ?").get(code));
   return code;
 };
-const publicTicket = (ticket) => ({ code: ticket.code, license: ticket.license, firstName: ticket.first_name, lastName: ticket.last_name, birthDate: ticket.birth_date, email: ticket.email, date: ticket.date, status: ticket.status });
+const monthNumbers = { ledna: 1, února: 2, března: 3, dubna: 4, května: 5, června: 6, července: 7, srpna: 8, září: 9, října: 10, listopadu: 11, prosince: 12 };
+const ticketDate = (value) => {
+  const match = String(value).match(/(\d{1,2})\.\s*(ledna|února|března|dubna|května|června|července|srpna|září|října|listopadu|prosince)/i);
+  if (!match) return null;
+  const year = new Date().getFullYear();
+  return new Date(year, monthNumbers[match[2].toLowerCase()] - 1, Number(match[1]), 23, 59, 59, 999);
+};
+const ticketState = (ticket, now = new Date()) => {
+  const endOfHunt = ticketDate(ticket.date);
+  if (!endOfHunt) return { status: ticket.status, late: false };
+  const startOfHunt = new Date(endOfHunt);
+  startOfHunt.setHours(0, 0, 0, 0);
+  if (ticket.status === "returned") return { status: "expired_returned", late: Boolean(ticket.returned_at && new Date(ticket.returned_at).getTime() > endOfHunt.getTime()) };
+  if (now.getTime() < startOfHunt.getTime()) return { status: "future", late: false };
+  if (now.getTime() <= endOfHunt.getTime()) return { status: "active", late: false };
+  return { status: "expired_unreturned", late: true };
+};
+const publicTicket = (ticket) => {
+  const state = ticketState(ticket);
+  return { code: ticket.code, license: ticket.license, firstName: ticket.first_name, lastName: ticket.last_name, birthDate: ticket.birth_date, email: ticket.email, date: ticket.date, status: state.status, late: state.late };
+};
 
 const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") { res.writeHead(204, { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type" }); return res.end(); }
@@ -69,7 +89,7 @@ const server = http.createServer(async (req, res) => {
     if (ticketMatch && req.method === "PATCH") {
       const ticket = db.prepare("SELECT * FROM tickets WHERE code = ?").get(ticketMatch[1]);
       if (!ticket) return json(res, 404, { error: "Místenka nebyla nalezena." });
-      if (ticket.status !== "active") return json(res, 409, { error: "Místenka už není aktivní." });
+      if (ticket.status === "returned") return json(res, 409, { error: "Místenka už byla odevzdána." });
       const body = await readBody(req);
       if (!Array.isArray(body.catches) || body.catches.length === 0) return json(res, 400, { error: "Vyplňte alespoň jeden úlovek." });
       if (body.catches.some((item) => !String(item.species || "").trim() || !Number(item.length) || Number(item.length) <= 0)) return json(res, 400, { error: "Každý úlovek musí mít druh a délku." });

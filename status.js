@@ -14,9 +14,13 @@ async function loadStatus() {
     const ticket = await response.json();
     if (!response.ok) throw new Error(ticket.error);
     const active = ticket.status === "active";
-    qs("#statusBanner").className = `status-banner ${active ? "status-active" : "status-returned"}`;
-    qs("#statusBanner").innerHTML = `<span>${active ? "✓" : "!"}</span><div><strong>${active ? "Místenka je platná" : "Místenka je odevzdaná"}</strong><small>${active ? "Místenka je připravena pro kontrolu u revíru." : "Tato místenka už není aktivní."}</small></div>`;
-    qs("#ticketStatusCard").innerHTML = `<span class="section-kicker">Místenka ${ticket.code}</span><h2>Petrůvka 1 A</h2><dl class="summary-list"><div><dt>Rybář</dt><dd>${ticket.firstName} ${ticket.lastName}</dd></div><div><dt>Datum lovu</dt><dd>${ticket.date}</dd></div><div><dt>Číslo lístku</dt><dd>${ticket.license}</dd></div><div><dt>Stav</dt><dd>${active ? "Aktivní" : "Odevzdaná"}</dd></div></dl>`;
+    const future = ticket.status === "future";
+    const returned = ticket.status === "expired_returned";
+    const label = future ? "Budoucí" : active ? "Aktivní" : returned ? "Odevzdaná" : "Propadlá, neodevzdaná";
+    const message = future ? "Místenka začne platit v den uvedený na místance." : active ? "Místenka je platná pouze pro datum lovu." : returned ? (ticket.late ? "Místenka byla odevzdána po skončení dne lovu." : "Místenka byla odevzdána.") : "Místenka už není platná pro lov. Odevzdání je stále možné, ale bude označeno jako opožděné.";
+    qs("#statusBanner").className = `status-banner ${future ? "status-future" : active ? "status-active" : returned ? "status-returned" : "status-expired"}`;
+    qs("#statusBanner").innerHTML = `<span>${future ? "→" : active ? "✓" : returned ? "↩" : "!"}</span><div><strong>${label}</strong><small>${message}</small></div>`;
+    qs("#ticketStatusCard").innerHTML = `<span class="section-kicker">Místenka ${ticket.code}</span><h2>Petrůvka 1 A</h2><dl class="summary-list"><div><dt>Rybář</dt><dd>${ticket.firstName} ${ticket.lastName}</dd></div><div><dt>Datum lovu</dt><dd>${ticket.date}</dd></div><div><dt>Číslo lístku</dt><dd>${ticket.license}</dd></div><div><dt>Stav</dt><dd>${label}</dd></div></dl>`;
     qs("#statusLoading").classList.add("hidden");
     qs("#statusContent").classList.remove("hidden");
   } catch (error) {

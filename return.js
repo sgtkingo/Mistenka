@@ -119,8 +119,9 @@ async function loadTicket() {
   const response = await fetch(`/api/tickets/${code}`);
   const ticket = await response.json();
   if (!response.ok) throw new Error(ticket.error);
-  if (ticket.status !== "active") throw new Error("Tato místenka už není aktivní.");
-  qs("#ticketSummary").innerHTML = `<div><span class="section-kicker">Místenka ${ticket.code}</span><strong>${ticket.firstName} ${ticket.lastName}</strong><span>${ticket.date} · Petrůvka 1 A</span></div><span class="ticket-status">● Aktivní</span>`;
+  if (ticket.status === "future") throw new Error("Tuto místenku není možné odevzdat před datem lovu.");
+  if (ticket.status === "expired_returned") throw new Error("Tato místenka už byla odevzdána.");
+  qs("#ticketSummary").innerHTML = `<div><span class="section-kicker">Místenka ${ticket.code}</span><strong>${ticket.firstName} ${ticket.lastName}</strong><span>${ticket.date} · Petrůvka 1 A</span></div><span class="ticket-status">${ticket.status === "expired_unreturned" ? "● Opožděné odevzdání" : "● Aktivní"}</span>`;
   qs("#ticketSummary").classList.remove("hidden");
   qs("#catchPageForm").classList.remove("hidden");
   addRow();
