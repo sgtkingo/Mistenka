@@ -5,7 +5,7 @@ let issuedTicket = null;
 const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
 if (!purchase) {
-  window.location.href = "/";
+  window.location.href = "./";
 } else {
   qs("#paymentDate").textContent = purchase.date;
   qs("#paymentPerson").textContent = `${purchase.firstName} ${purchase.lastName}`;
@@ -96,17 +96,7 @@ qs("#payNow").addEventListener("click", async () => {
   await wait(2550);
   window.clearInterval(timer);
   try {
-    const response = await fetch("/api/tickets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(purchase) });
-    const ticket = await response.json();
-    if (!response.ok) throw new Error(ticket.error || "Platbu se nepodařilo ověřit.");
-    renderTicket(ticket);
-    qs("#checkingState").classList.add("hidden");
-    qs("#successState").classList.remove("hidden");
-    qs("#paymentHeading").classList.add("hidden");
-    qs("#paymentKicker").textContent = "Nákup dokončen";
-    qs("#paymentTitle").textContent = "Vaše místenka je připravená";
-    qs("#paymentStep").textContent = "4 / 4";
-    localStorage.removeItem("mistenkaPurchase");
+    await issueTicket();
   } catch (error) {
     window.alert(error.message);
     qs("#checkingState").classList.add("hidden");
@@ -124,3 +114,27 @@ qs("#cancelPayment").addEventListener("click", () => {
 });
 qs("#downloadTicket").addEventListener("click", downloadTicketPdf);
 qs("#printTicket").addEventListener("click", () => window.print());
+
+async function issueTicket() {
+  const response = await fetch("/api/tickets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(purchase) });
+  const ticket = await response.json();
+  if (!response.ok) throw new Error(ticket.error || "Místenku se nepodařilo vystavit.");
+  renderTicket(ticket);
+  qs("#checkingState").classList.add("hidden");
+  qs("#successState").classList.remove("hidden");
+  qs("#paymentHeading").classList.add("hidden");
+  qs("#paymentKicker").textContent = "Nákup dokončen";
+  qs("#paymentTitle").textContent = "Vaše místenka je připravená";
+  qs("#paymentStep").textContent = "4 / 4";
+  localStorage.removeItem("mistenkaPurchase");
+}
+if (purchase?.total === 0) {
+  qs("#paymentForm").classList.add("hidden");
+  qs("#checkingState").classList.remove("hidden");
+  qs("#checkingMessage").textContent = "Poukaz ověřený, vystavujeme místenku zdarma…";
+  issueTicket().catch((error) => {
+    qs("#checkingState").classList.add("hidden");
+    qs("#paymentForm").classList.remove("hidden");
+    window.alert(error.message);
+  });
+}

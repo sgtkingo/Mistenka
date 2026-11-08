@@ -30,6 +30,10 @@ db.exec(`
     weight_kg REAL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS vouchers (
+    code TEXT PRIMARY KEY,
+    used_at TEXT
+  );
 `);
 
 const json = (res, status, body) => {
@@ -47,6 +51,8 @@ const makeCode = () => {
   do { code = crypto.randomBytes(3).toString("hex").toUpperCase(); } while (db.prepare("SELECT 1 FROM tickets WHERE code = ?").get(code));
   return code;
 };
+const voucherCode = (value) => String(value || "").trim().toUpperCase();
+const publicVoucher = (voucher) => ({ code: voucher.code, valid: Boolean(voucher && !voucher.used_at), usedAt: voucher?.used_at || null });
 const monthNumbers = { ledna: 1, února: 2, března: 3, dubna: 4, května: 5, června: 6, července: 7, srpna: 8, září: 9, října: 10, listopadu: 11, prosince: 12 };
 const ticketDate = (value) => {
   const match = String(value).match(/(\d{1,2})\.\s*(ledna|února|března|dubna|května|června|července|srpna|září|října|listopadu|prosince)/i);
@@ -78,8 +84,30 @@ const server = http.createServer(async (req, res) => {
       const required = ["license", "firstName", "lastName", "birthDate", "email", "date"];
       if (required.some((key) => !String(body[key] || "").trim())) return json(res, 400, { error: "Vyplňte všechna povinná pole." });
       const code = makeCode();
-      db.prepare("INSERT INTO tickets (code, license, first_name, last_name, birth_date, email, date) VALUES (?, ?, ?, ?, ?, ?, ?)").run(code, body.license.trim().toUpperCase(), body.firstName.trim(), body.lastName.trim(), body.birthDate, body.email.trim(), body.date);
+      const voucher = voucherCode(body.voucherCode);
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        if (voucher) {
+          if (!/^[A-Z0-9]{16}$/.test(voucher)) { const error = new Error("Kód poukazu musí mít 16 znaků."); error.statusCode = 400; throw error; }
+          const storedVoucher = db.prepare("SELECT * FROM vouchers WHERE code = ?").get(voucher);
+          if (!storedVoucher) { const error = new Error("Poukaz není platný."); error.statusCode = 400; throw error; }
+          if (storedVoucher.used_at) { const error = new Error("Poukaz už byl použit."); error.statusCode = 409; throw error; }
+          const redemption = db.prepare("UPDATE vouchers SET used_at = CURRENT_TIMESTAMP WHERE code = ? AND used_at IS NULL").run(voucher);
+          if (!redemption.changes) { const error = new Error("Poukaz už byl použit."); error.statusCode = 409; throw error; }
+        }
+        db.prepare("INSERT INTO tickets (code, license, first_name, last_name, birth_date, email, date) VALUES (?, ?, ?, ?, ?, ?, ?)").run(code, body.license.trim().toUpperCase(), body.firstName.trim(), body.lastName.trim(), body.birthDate, body.email.trim(), body.date);
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        if (error.statusCode) return json(res, error.statusCode, { error: error.message });
+        throw error;
+      }
       return json(res, 201, publicTicket(db.prepare("SELECT * FROM tickets WHERE code = ?").get(code)));
+    }
+    const voucherMatch = pathname.match(/^\/api\/vouchers\/([A-Z0-9]{16})$/);
+    if (voucherMatch && req.method === "GET") {
+      const voucher = db.prepare("SELECT * FROM vouchers WHERE code = ?").get(voucherMatch[1]);
+      return voucher ? json(res, 200, publicVoucher(voucher)) : json(res, 200, { code: voucherMatch[1], valid: false, usedAt: null });
     }
     const ticketMatch = pathname.match(/^\/api\/tickets\/([A-Z0-9]{6})$/);
     if (ticketMatch && req.method === "GET") {

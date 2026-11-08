@@ -63,10 +63,50 @@ qs("#continuePerson").addEventListener("click", () => {
   showPanel("payment");
 });
 qs("#backButton").addEventListener("click", () => showPanel("person"));
+let voucherState = { code: "", valid: false };
+let voucherTimer;
+qs("#voucherCode").addEventListener("input", () => {
+  const input = qs("#voucherCode");
+  const status = qs("#voucherStatus");
+  const code = input.value.trim().toUpperCase();
+  input.value = code;
+  voucherState = { code, valid: false };
+  window.clearTimeout(voucherTimer);
+  input.classList.remove("voucher-invalid", "voucher-valid");
+  status.textContent = "";
+  if (!code) return updateSummaryTotal(false);
+  if (code.length !== 16) {
+    input.classList.add("voucher-invalid");
+    status.textContent = "Kód musí mít 16 znaků.";
+    return updateSummaryTotal(false);
+  }
+  status.textContent = "Ověřuji…";
+  voucherTimer = window.setTimeout(async () => {
+    try {
+      const response = await fetch(`/api/vouchers/${code}`);
+      const result = await response.json();
+      if (!result.valid) throw new Error(result.usedAt ? "Poukaz už byl použit." : "Poukaz není platný.");
+      voucherState = { code, valid: true };
+      input.classList.add("voucher-valid");
+      status.textContent = "OK · místenka zdarma";
+      updateSummaryTotal(true);
+    } catch (error) {
+      input.classList.add("voucher-invalid");
+      status.textContent = error.message;
+      updateSummaryTotal(false);
+    }
+  }, 250);
+});
+function updateSummaryTotal(isFree) {
+  qs("#summaryTotal").textContent = isFree ? "ZDARMA" : "200 Kč";
+}
 qs("#startPayment").addEventListener("click", () => {
   const email = qs("#email").value.trim();
   if (!email || !email.includes("@")) return showToast("Zadejte platný e-mail pro potvrzení.");
   purchase.email = email;
+  if (qs("#voucherCode").value.trim() && (!voucherState.valid || voucherState.code !== qs("#voucherCode").value.trim().toUpperCase())) return showToast("Ověřte platnost dárkového poukazu.");
+  purchase.voucherCode = voucherState.valid ? voucherState.code : "";
+  purchase.total = voucherState.valid ? 0 : 200;
   localStorage.setItem("mistenkaPurchase", JSON.stringify(purchase));
   window.location.href = "payment.html";
 });

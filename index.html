@@ -120,10 +120,13 @@
           </div>
           <div id="paymentPanel" class="panel-content hidden">
             <button class="back-button" id="backButton" type="button">← Zpět k výběru</button>
-            <div class="payment-layout"><div><span class="section-kicker">Rekapitulace</span><h2>Vaše místenka</h2><dl class="summary-list"><div><dt>Revír</dt><dd>Petrůvka 1 A</dd></div><div><dt>Datum</dt><dd id="summaryDate">Dnes · 8. listopadu</dd></div><div><dt>Rybář</dt><dd id="summaryPerson">—</dd></div><div><dt>Celkem</dt><dd class="total">200 Kč</dd></div></dl></div><div class="qr-box"><div class="fake-qr"><span></span></div><small>QR platba (demo)</small></div></div>
+            <div class="payment-layout"><div><span class="section-kicker">Rekapitulace</span><h2>Vaše místenka</h2><dl class="summary-list"><div><dt>Revír</dt><dd>Petrůvka 1 A</dd></div><div><dt>Datum</dt><dd id="summaryDate">Dnes · 8. listopadu</dd></div><div><dt>Rybář</dt><dd id="summaryPerson">—</dd></div><div><dt>Celkem</dt><dd class="total" id="summaryTotal">200 Kč</dd></div></dl></div><div class="qr-box"><div class="fake-qr"><span></span></div><small>QR platba (demo)</small></div></div>
             <div class="weather-card"><span class="weather-main">☁</span><div><span class="section-kicker">Předpověď pro Petrůvku</span><strong>Oblačno · 6 °C / 1 °C</strong><small>Vítr 12 km/h · pravděpodobnost srážek 20 %</small></div></div>
             <label class="field-label payment-email-label" for="email">E-mail pro potvrzení <span class="required">*</span></label>
             <input id="email" type="email" placeholder="jan.novak@example.cz">
+            <label class="field-label voucher-label" for="voucherCode">Dárkový poukaz <span class="optional">(volitelné)</span></label>
+            <div class="voucher-input-row"><input id="voucherCode" type="text" maxlength="16" placeholder="16znakový kód" autocomplete="off" spellcheck="false"><span id="voucherStatus" class="voucher-status" aria-live="polite"></span></div>
+            <p class="field-help">Poukaz se odečte až po kliknutí na Zaplatit.</p>
             <p class="field-help">Na platební stránce zobrazíte platební údaje a dokončíte demo platbu.</p>
             <button class="primary-button full-width" id="startPayment" type="button">Zaplatit <span>→</span></button>
           </div>
