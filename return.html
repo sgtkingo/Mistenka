@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Místenka · Ukončení lovu</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Místenka, domů"><span class="brand-mark" aria-hidden="true">⌁</span><span>Místenka</span></a>
+    <a class="login-button" href="/">← Zpět na revír</a>
+  </header>
+  <main>
+    <section class="workspace-section return-page">
+      <div class="return-shell">
+        <div class="panel-card flow-panel">
+          <div class="panel-heading">
+            <div><span class="section-kicker">Ukončení lovu</span><h1>Odevzdejte místenku</h1></div>
+            <span class="step-badge">2 / 2</span>
+          </div>
+          <div id="ticketSummary" class="ticket-summary hidden"></div>
+          <div id="catchPageForm" class="hidden">
+            <div class="legal-warning"><strong>Než místenku odevzdáte</strong><p>Zkontrolujte, že jsou v sumáři uvedeny všechny úlovky. Každý úlovek musí být ihned zapsán také do povolenky.</p></div>
+            <div class="catch-table-wrap">
+              <div class="table-head catch-grid"><span>Druh ryby <em class="required-marker">*</em></span><span>Délka (cm) <em class="required-marker">*</em></span><span>Váha (kg)</span><span></span></div>
+              <div id="catchRows"></div>
+            </div>
+            <button class="text-button add-catch" id="addCatch" type="button">+ Přidat další rybu</button>
+            <label class="checkbox-label return-confirm"><input type="checkbox" id="returnDeclaration"> <span>Potvrzuji, že jsem uvedl/a všechny úlovky a údaje jsou úplné.</span></label>
+            <button class="primary-button full-width" id="submitReturn" type="button">Odevzdat místenku</button>
+          </div>
+          <div id="returnedState" class="hidden returned-state"><span class="success-big">✓</span><h2>Místenka byla odevzdána</h2><p>Děkujeme za vyplnění sumáře úlovků. Místenka je nyní označena jako odevzdaná.</p><a class="primary-button" href="/">Zpět na revír</a></div>
+          <div id="returnError" class="hidden"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="return.js"></script>
+</body>
+</html>

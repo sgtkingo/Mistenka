@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Místenka · Platba</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Místenka, domů"><span class="brand-mark" aria-hidden="true">⌁</span><span>Místenka</span></a>
+    <a class="login-button" href="/">← Zpět na revír</a>
+  </header>
+  <main>
+    <section class="workspace-section payment-page">
+      <div class="return-shell">
+        <div class="panel-card flow-panel">
+          <div class="panel-heading"><div><span class="section-kicker">Platba místenky</span><h1 id="paymentTitle">Dokončete platbu</h1></div><span class="step-badge">3 / 4</span></div>
+          <div id="paymentForm">
+            <div class="payment-layout"><div><span class="section-kicker">Rekapitulace</span><h2>Vaše místenka</h2><dl class="summary-list"><div><dt>Revír</dt><dd>Petrůvka 1 A</dd></div><div><dt>Datum</dt><dd id="paymentDate">—</dd></div><div><dt>Rybář</dt><dd id="paymentPerson">—</dd></div><div><dt>Celkem</dt><dd class="total">200 Kč</dd></div></dl></div><div class="qr-box"><div class="fake-qr"><span></span></div><small>QR platba (demo)</small></div></div>
+            <div class="bank-details"><span>Číslo účtu</span><strong>2401876543 / 2010</strong><span>Variabilní symbol</span><strong>20261108</strong></div>
+            <div class="payment-actions"><button class="primary-button" id="payNow" type="button">Ověřit platbu</button><button class="cancel-button" id="cancelPayment" type="button">Storno</button></div>
+            </div>
+          <div id="checkingState" class="hidden checking-state"><div class="spinner"></div><h2>Ověřujeme platbu</h2><p id="checkingMessage">Čekáme na potvrzení banky…</p><div class="check-progress"><span id="checkProgress"></span></div></div>
+          <div id="successState" class="hidden"><div class="success-heading"><span class="success-big">✓</span><div><span class="section-kicker">Nákup dokončen</span><h2>Vaše místenka je připravená</h2></div></div><div id="ticketCard" class="ticket-card"></div><div class="rules-card"><strong>Pravidla pro tento lov</strong><ul><li>Doba lovu: <b>05:00–22:00</b> (listopad až březen).</li><li>Mějte u sebe platný rybářský lístek a povolenku Územního svazu pro Severní Moravu a Slezsko nebo celosvazovou.</li><li>Povinná výbava: podběrák, míra, peán / vyprošťovač a prostředek k šetrnému zacházení s úlovkem.</li><li>Každý úlovek je nutné ihned zapsat do povolenky.</li></ul></div></div>
+          <div id="cancelledState" class="hidden cancelled-state"><span class="cancel-icon">×</span><span class="section-kicker">Objednávka zrušena</span><h2>Platba nebyla dokončena</h2><p>Objednávka byla bezpečně zrušena. Můžete se vrátit na revír a vytvořit novou.</p><a class="primary-button" href="/">Zpět na revír</a></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="payment.js"></script>
+</body>
+</html>

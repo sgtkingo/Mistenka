@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Místenka — jednoduchá online rezervace rybolovu na revíru Petrůvka 1 A.">
+  <title>Místenka · Petrůvka 1 A</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="#" aria-label="Místenka, domů">
+      <span class="brand-mark" aria-hidden="true">⌁</span>
+      <span>Místenka</span>
+    </a>
+    <nav class="main-nav" aria-label="Hlavní navigace">
+      <a href="#revir">Revír</a>
+      <a href="#jak-to-funguje">Jak to funguje</a>
+      <a href="#kontakt">Kontakt</a>
+    </nav>
+    <button class="login-button" id="loginButton" type="button">Přihlásit se <span aria-hidden="true">↗</span></button>
+  </header>
+
+  <main>
+    <section class="hero" id="revir">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="live-dot"></span> Sezóna 2026 právě probíhá</div>
+        <h1>Chyťte svůj<br><em>klid u vody.</em></h1>
+        <p class="hero-lead">Jednoduchá místenka pro revír Petrůvka 1 A. Vyberte si den, zaplaťte převodem a vyrazte.</p>
+        <div class="hero-meta">
+          <span><strong>4 ha</strong> vodní plochy</span>
+          <span class="meta-divider"></span>
+          <span><strong>4</strong> podrevíry</span>
+          <span class="meta-divider"></span>
+          <span><strong>200 Kč / den</strong></span>
+        </div>
+      </div>
+      <div class="hero-art" aria-label="Ilustrace revíru Petrůvka 1 A">
+        <div class="sun"></div>
+        <div class="hill hill-back"></div>
+        <div class="hill hill-front"></div>
+        <div class="river"></div>
+        <div class="reed reed-one"></div>
+        <div class="reed reed-two"></div>
+        <div class="fish">⌁</div>
+        <div class="art-label">Petrůvka<br><span>1 A</span></div>
+      </div>
+    </section>
+
+    <section class="action-section" aria-labelledby="action-heading">
+      <div class="section-intro">
+        <span class="section-kicker">Co potřebujete vyřídit?</span>
+        <h2 id="action-heading">Vyberte si akci</h2>
+      </div>
+      <div class="action-grid">
+        <button class="action-card active" data-panel="buy" type="button">
+          <span class="action-icon">↗</span>
+          <span class="action-content"><strong>Zakoupit místenku</strong><small>Rezervujte si místo až 7 dní dopředu</small></span>
+          <span class="card-arrow">→</span>
+        </button>
+        <button class="action-card" data-panel="return" type="button">
+          <span class="action-icon return-icon">↩</span>
+          <span class="action-content"><strong>Vrátit místenku</strong><small>Odevzdejte místenku a zapište úlovky</small></span>
+          <span class="card-arrow">→</span>
+        </button>
+        <button class="action-card" data-panel="check" type="button">
+          <span class="action-icon check-icon">✓</span>
+          <span class="action-content"><strong>Zkontrolovat</strong><small>Rychlé ověření platnosti místenky</small></span>
+          <span class="card-arrow">→</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="workspace-section">
+      <div class="workspace-grid">
+        <div class="panel-card flow-panel" id="flowPanel">
+          <div class="panel-heading">
+            <div>
+              <span class="section-kicker" id="panelKicker">Nákup místenky</span>
+              <h2 id="panelTitle">Vyberte si den u vody</h2>
+            </div>
+            <span class="step-badge" id="stepBadge">1 / 2</span>
+          </div>
+          <div id="buyPanel" class="panel-content">
+            <label class="field-label" for="license">Číslo rybářského lístku <span class="required">*</span></label>
+            <div class="input-with-status">
+              <input id="license" type="text" placeholder="např. CZ-2026-18472" autocomplete="off">
+              <span class="input-status" id="licenseStatus" aria-live="polite">Čeká na ověření</span>
+            </div>
+            <div class="legal-warning"><span class="permit-icon" aria-hidden="true">!</span><div><strong>Než budete pokračovat</strong><p>Pro lov musíte mít platný rybářský lístek a platnou povolenku <b>Územního svazu pro Moravu a Slezsko</b> nebo celosvazovou povolenku. Místenka povolenku nenahrazuje.</p></div></div>
+            <div class="date-heading"><span class="field-label">Datum lovu</span><span class="availability">● Dostupná místa</span></div>
+            <div class="date-grid">
+              <button class="date-option selected" type="button" data-date="Dnes · 8. listopadu"><span class="date-weather">☁ <b>6° / 1°</b></span><b>Dnes</b><span>ne 8. 11.</span><i>18 míst</i></button>
+              <button class="date-option" type="button" data-date="Zítra · 9. listopadu"><span class="date-weather">🌤 <b>7° / 2°</b></span><b>Zítra</b><span>po 9. 11.</span><i>24 míst</i></button>
+              <button class="date-option" type="button" data-date="Úterý · 10. listopadu"><span class="date-weather">☀ <b>8° / 2°</b></span><b>Úterý</b><span>út 10. 11.</span><i>31 míst</i></button>
+              <button class="date-option" type="button" data-date="Středa · 11. listopadu"><span class="date-weather">🌧 <b>6° / 1°</b></span><b>Středa</b><span>st 11. 11.</span><i>45 míst</i></button>
+            </div>
+            <div class="form-footer">
+              <label class="checkbox-label declaration-label"><input type="checkbox" id="declaration"> <span>Čestně prohlašuji, že mám platný rybářský lístek i povolenku (Územního svazu pro Severní Moravu a Slezsko nebo celosvazovou) a souhlasím s podmínkami rezervace.</span></label>
+              <button class="primary-button" id="continueButton" type="button">Pokračovat <span>→</span></button>
+            </div>
+          </div>
+          <div id="personPanel" class="panel-content hidden">
+            <button class="back-button" id="backToLicense" type="button">← Zpět</button>
+            <p class="panel-intro">Údaje použijeme na místenku a pro její ověření. Vyplňte je prosím přesně podle dokladu.</p>
+            <div class="form-two-col"><div><label class="field-label" for="firstName">Jméno <span class="required">*</span></label><input id="firstName" type="text" placeholder="Jan"></div><div><label class="field-label" for="lastName">Příjmení <span class="required">*</span></label><input id="lastName" type="text" placeholder="Novák"></div></div>
+            <label class="field-label" for="birthDate">Datum narození <span class="required">*</span></label><input id="birthDate" type="date">
+            <button class="primary-button full-width" id="continuePerson" type="button">Přejít k platbě <span>→</span></button>
+          </div>
+          <div id="returnPanel" class="panel-content hidden">
+            <p class="panel-intro">Zadejte šestimístný kód z vaší místenky. Po ověření se otevře samostatná stránka pro ukončení lovu.</p>
+            <label class="field-label" for="returnCode">Kód místenky</label>
+            <div class="code-row"><input id="returnCode" class="code-input" maxlength="6" placeholder="S7K4P2" autocomplete="off"><button class="primary-button" id="returnFind" type="button">Najít místenku</button></div>
+          </div>
+          <div id="checkPanel" class="panel-content hidden">
+            <p class="panel-intro">Ověřte místenku načtením QR kódu nebo ručním zadáním jejího kódu.</p>
+            <label class="field-label" for="checkCode">Kód místenky</label>
+            <div class="code-row"><input id="checkCode" class="code-input" maxlength="6" placeholder="S7K4P2" autocomplete="off"><button class="primary-button" id="checkButton" type="button">Ověřit kód</button></div>
+            <div id="checkResult" class="status-result hidden"><span class="status-check">✓</span><div><span class="valid-label">Místenka je platná</span><strong>S7K4P2 · Aktivní</strong><span>8. listopadu 2026 · Jan Novák</span></div></div>
+          </div>
+          <div id="paymentPanel" class="panel-content hidden">
+            <button class="back-button" id="backButton" type="button">← Zpět k výběru</button>
+            <div class="payment-layout"><div><span class="section-kicker">Rekapitulace</span><h2>Vaše místenka</h2><dl class="summary-list"><div><dt>Revír</dt><dd>Petrůvka 1 A</dd></div><div><dt>Datum</dt><dd id="summaryDate">Dnes · 8. listopadu</dd></div><div><dt>Rybář</dt><dd id="summaryPerson">—</dd></div><div><dt>Celkem</dt><dd class="total">200 Kč</dd></div></dl></div><div class="qr-box"><div class="fake-qr"><span></span></div><small>QR platba (demo)</small></div></div>
+            <div class="weather-card"><span class="weather-main">☁</span><div><span class="section-kicker">Předpověď pro Petrůvku</span><strong>Oblačno · 6 °C / 1 °C</strong><small>Vítr 12 km/h · pravděpodobnost srážek 20 %</small></div></div>
+            <label class="field-label payment-email-label" for="email">E-mail pro potvrzení <span class="required">*</span></label>
+            <input id="email" type="email" placeholder="jan.novak@example.cz">
+            <p class="field-help">Na platební stránce zobrazíte platební údaje a dokončíte demo platbu.</p>
+            <button class="primary-button full-width" id="startPayment" type="button">Zaplatit <span>→</span></button>
+          </div>
+          <div id="successPanel" class="panel-content hidden">
+            <div class="success-heading"><span class="success-big">✓</span><div><span class="section-kicker">Nákup dokončen</span><h2>Vaše místenka je připravená</h2></div></div>
+            <div id="ticketCard" class="ticket-card"></div>
+            <div class="rules-card"><strong>Pravidla pro tento lov</strong><ul><li>Doba lovu: <b id="ticketHours">04:00–24:00</b> (duben až září), v ostatních měsících 05:00–22:00.</li><li>Mějte u sebe platný rybářský lístek a povolenku Územního svazu pro Severní Moravu a Slezsko nebo celosvazovou.</li><li>Povinná výbava: podběrák, míra, peán / vyprošťovač a prostředek k šetrnému zacházení s úlovkem.</li><li>Každý úlovek je nutné ihned zapsat do povolenky.</li></ul></div>
+            <button class="primary-button full-width" id="newPurchase" type="button">Nová místenka</button>
+          </div>
+        </div>
+        <aside class="info-column">
+          <div class="notice-card"><span class="notice-icon">✦</span><div><span class="section-kicker">Důležité</span><h3>Pozor na dělící hráz</h3><p>Lov ryb z cesty mezi nádržemi Petr 2 a Petr 3 je zakázán. Vozidla nechávejte jen na vyhrazených místech.</p><a href="#kontakt">Pravidla revíru →</a></div></div>
+          <div class="details-card" id="jak-to-funguje"><div class="details-top"><span class="section-kicker">O revíru</span><span class="open-badge">● Otevřeno dnes</span></div><h3>Petrůvka 1 A</h3><p class="muted">471 115 · Moravskoslezský ÚS · mimopstruhový</p><div class="detail-list"><div><span class="detail-icon">⌖</span><span><b>Podrevíry</b><br>Petr 1–4 v k. ú. Petrovice-Prstná · celkem 4 ha</span></div><div><span class="detail-icon">◷</span><span><b>GPS</b><br><a href="https://mapy.cz/zakladni?x=18.5586933&y=49.9137911&z=16" target="_blank" rel="noreferrer">49°54'49.648"N, 18°33'31.296"E ↗</a></span></div><div><span class="detail-icon">!</span><span><b>Omezení</b><br>Lov pod ledem jen se zvláštní povolenkou a dle podmínek ČRS</span></div></div><a class="map-link" href="https://www.rybsvaz.cz/karta-reviru/-/471115-petruvka-1-a?datum=2026-11-08" target="_blank" rel="noreferrer">Otevřít kartu revíru <span>↗</span></a></div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="trust-section" id="kontakt"><span class="section-kicker">Kontakt na hospodáře</span><h2>Jsme tu pro vás.</h2><p>Moravskoslezský ÚS · <a href="mailto:administrativa@rybsvaz-ms.cz">administrativa@rybsvaz-ms.cz</a> · <a href="tel:+420723471816">+420 723 471 816</a></p></section>
+  </main>
+  <footer><span>© 2026 Místenka</span><span>Rezervace, která dává smysl.</span><a href="#">Podmínky a ochrana údajů</a></footer>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
