@@ -30,6 +30,9 @@ qs("#payNow").addEventListener("click", async () => {
     renderTicket(ticket);
     qs("#checkingState").classList.add("hidden");
     qs("#successState").classList.remove("hidden");
+    qs("#paymentKicker").textContent = "Nákup dokončen";
+    qs("#paymentTitle").textContent = "Vaše místenka je připravená";
+    qs("#paymentStep").textContent = "4 / 4";
     localStorage.removeItem("mistenkaPurchase");
   } catch (error) {
     window.alert(error.message);
@@ -41,4 +44,7 @@ qs("#cancelPayment").addEventListener("click", () => {
   localStorage.removeItem("mistenkaPurchase");
   qs("#paymentForm").classList.add("hidden");
   qs("#cancelledState").classList.remove("hidden");
+  qs("#paymentKicker").textContent = "Objednávka zrušena";
+  qs("#paymentTitle").textContent = "Platba nebyla dokončena";
+  qs("#paymentStep").textContent = "Zrušeno";
 });
