@@ -1,18 +1,18 @@
 const qs = (selector) => document.querySelector(selector);
 const params = new URLSearchParams(window.location.search);
 const code = (params.get("code") || "").trim().toUpperCase();
-const fishWeights = {
-  kapr: 0.012,
-  štika: 0.009,
-  candát: 0.008,
-  amur: 0.014,
-  sumec: 0.02,
-  lín: 0.006,
-  bolen: 0.009,
-  "pstruh duhový": 0.01,
-  "pstruh potočný (obecný)": 0.01,
-  "siven americký": 0.011,
-  okoun: 0.008
+const fishWeightFactors = {
+  kapr: 1.5,
+  štika: 1.0,
+  candát: 1.2,
+  amur: 1.4,
+  sumec: 1.2,
+  lín: 1.6,
+  bolen: 1.1,
+  "pstruh duhový": 1.6,
+  "pstruh potočný (obecný)": 1.6,
+  "siven americký": 1.6,
+  okoun: 1.3
 };
 const minimumLengths = {
   kapr: 40,
@@ -27,7 +27,7 @@ const minimumLengths = {
   "siven americký": 25,
   okoun: 15
 };
-const fishNames = Object.keys(fishWeights);
+const fishNames = Object.keys(fishWeightFactors);
 const toast = (message) => { qs("#toast").textContent = message; qs("#toast").classList.add("show"); window.setTimeout(() => qs("#toast").classList.remove("show"), 2800); };
 
 function addRow() {
@@ -109,8 +109,8 @@ function updateWeight(row) {
   const fish = row.querySelector(".fish-name").value.trim().toLowerCase();
   const length = Number(row.querySelector(".fish-length").value);
   const weight = row.querySelector(".fish-weight");
-  if (fishWeights[fish] && length > 0) {
-    weight.value = (fishWeights[fish] * Math.pow(length, 2.8) / 1000).toFixed(2);
+  if (fishWeightFactors[fish] && length > 0) {
+    weight.value = (fishWeightFactors[fish] * Math.pow(length, 3) / 100000).toFixed(2);
     row.querySelector(".weight-note").classList.remove("hidden");
   }
 }
