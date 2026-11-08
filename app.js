@@ -68,7 +68,7 @@ qs("#startPayment").addEventListener("click", () => {
   if (!email || !email.includes("@")) return showToast("Zadejte platný e-mail pro potvrzení.");
   purchase.email = email;
   localStorage.setItem("mistenkaPurchase", JSON.stringify(purchase));
-  window.location.href = "/payment.html";
+  window.location.href = "payment.html";
 });
 function renderTicket(ticket) {
   qs("#ticketCard").innerHTML = `<div class="ticket-top"><span class="section-kicker">Petrůvka 1 A · 471 115</span><span class="ticket-status">● Aktivní</span></div><div class="ticket-code">${ticket.code}</div><div class="ticket-details"><span><small>Rybář</small><b>${ticket.firstName} ${ticket.lastName}</b></span><span><small>Datum lovu</small><b>${ticket.date}</b></span><span><small>Číslo lístku</small><b>${ticket.license}</b></span></div><div class="ticket-qr"><div class="fake-qr"><span></span></div><small>Kód pro kontrolu místenky</small></div>`;
@@ -84,12 +84,12 @@ qs("#returnFind").addEventListener("click", async () => {
     const ticket = await response.json();
     if (!response.ok) throw new Error(ticket.error);
     if (ticket.status !== "active") throw new Error("Tato místenka už není aktivní.");
-    window.location.href = `/return.html?code=${encodeURIComponent(ticket.code)}`;
+    window.location.href = `return.html?code=${encodeURIComponent(ticket.code)}`;
   } catch (error) { showToast(error.message); }
 });
 qs("#checkButton").addEventListener("click", async () => {
   const code = qs("#checkCode").value.trim().toUpperCase();
   if (!/^[A-Z0-9]{6}$/.test(code)) return showToast("Zadejte platný šestimístný kód místenky.");
-  window.location.href = `/status.html?code=${encodeURIComponent(code)}`;
+  window.location.href = `status.html?code=${encodeURIComponent(code)}`;
 });
 qs("#loginButton").addEventListener("click", () => showToast("Přihlášení bude dostupné v další verzi pilotu."));

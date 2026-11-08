@@ -27,7 +27,7 @@ async function loadStatus() {
 qs("#nextCheck").addEventListener("click", () => {
   const nextCode = qs("#nextCode").value.trim().toUpperCase();
   if (!/^[A-Z0-9]{6}$/.test(nextCode)) return qs("#nextCode").focus();
-  window.location.href = `/status.html?code=${encodeURIComponent(nextCode)}`;
+  window.location.href = `status.html?code=${encodeURIComponent(nextCode)}`;
 });
 qs("#nextCode").addEventListener("keydown", (event) => {
   if (event.key === "Enter") qs("#nextCheck").click();
