@@ -114,6 +114,19 @@ function updateWeight(row) {
     row.querySelector(".weight-note").classList.remove("hidden");
   }
 }
+function parseTicketDate(value) {
+  const match = String(value).match(/(\d{1,2})\.\s*([a-zá-ž]+)\s*(\d{4})/i);
+  if (!match) return new Date();
+  const months = { ledna: 0, února: 1, března: 2, dubna: 3, května: 4, června: 5, července: 6, srpna: 7, září: 8, října: 9, listopadu: 10, prosince: 11 };
+  return new Date(Number(match[3]), months[match[2].toLowerCase()] ?? 0, Number(match[1]));
+}
+function daysLate(value) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const fishingDate = parseTicketDate(value);
+  fishingDate.setHours(0, 0, 0, 0);
+  return Math.max(1, Math.floor((today - fishingDate) / 86400000));
+}
 async function loadTicket() {
   if (!/^[A-Z0-9]{6}$/.test(code)) throw new Error("Chybí platný kód místenky.");
   const response = await fetch(`/api/tickets/${code}`);
@@ -121,7 +134,13 @@ async function loadTicket() {
   if (!response.ok) throw new Error(ticket.error);
   if (ticket.status === "future") throw new Error("Tuto místenku není možné odevzdat před datem lovu.");
   if (ticket.status === "expired_returned") throw new Error("Tato místenka už byla odevzdána.");
-  qs("#ticketSummary").innerHTML = `<div><span class="section-kicker">Místenka ${ticket.code}</span><strong>${ticket.firstName} ${ticket.lastName}</strong><span>${ticket.date} · Petrůvka 1 A</span></div><span class="ticket-status">${ticket.status === "expired_unreturned" ? "● Opožděné odevzdání" : "● Aktivní"}</span>`;
+  const late = ticket.status === "expired_unreturned";
+  const lateDays = daysLate(ticket.date);
+  const lateUnit = lateDays === 1 ? "den" : lateDays >= 2 && lateDays <= 4 ? "dny" : "dnů";
+  const status = late
+    ? `<span class="ticket-status late-return"><span>! Opožděné odevzdání</span><small>o ${lateDays} ${lateUnit}</small></span>`
+    : `<span class="ticket-status timely-return">● Včasné odevzdání</span>`;
+  qs("#ticketSummary").innerHTML = `<div><span class="section-kicker">Místenka ${ticket.code}</span><strong>${ticket.firstName} ${ticket.lastName}</strong><span>${ticket.date} · Petrůvka 1 A</span></div>${status}`;
   qs("#ticketSummary").classList.remove("hidden");
   qs("#catchPageForm").classList.remove("hidden");
   addRow();

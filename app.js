@@ -5,6 +5,31 @@ const panelTitle = qs("#panelTitle");
 const stepBadge = qs("#stepBadge");
 const panelKicker = qs("#panelKicker");
 let purchase = {};
+const czechMonths = ["ledna", "února", "března", "dubna", "května", "června", "července", "srpna", "září", "října", "listopadu", "prosince"];
+const czechWeekdays = ["ne", "po", "út", "st", "čt", "pá", "so"];
+const weather = [["🌤", "7° / 2°"], ["☀", "8° / 2°"], ["🌧", "6° / 1°"], ["☁", "5° / 0°"]];
+function formatDate(date, offset) {
+  const label = offset === 0 ? "Dnes" : offset === 1 ? "Zítra" : `${["Neděle", "Pondělí", "Úterý", "Středa", "Čtvrtek", "Pátek", "Sobota"][date.getDay()]}`;
+  return { label, full: `${label} · ${date.getDate()}. ${czechMonths[date.getMonth()]}`, short: `${czechWeekdays[date.getDay()]} ${date.getDate()}. ${date.getMonth() + 1}.` };
+}
+function renderDates() {
+  const today = new Date();
+  const grid = qs("#dateGrid");
+  grid.innerHTML = Array.from({ length: 4 }, (_, offset) => {
+    const date = new Date(today);
+    date.setHours(12, 0, 0, 0);
+    date.setDate(today.getDate() + offset);
+    const formatted = formatDate(date, offset);
+    const [icon, temperature] = weather[offset];
+    return `<button class="date-option${offset === 0 ? " selected" : ""}" type="button" data-date="${formatted.full}"><span class="date-weather">${icon} <b>${temperature}</b></span><b>${formatted.label}</b><span>${formatted.short}</span><i>${18 + offset * 9} míst</i></button>`;
+  }).join("");
+  qsa(".date-option").forEach((option) => option.addEventListener("click", () => {
+    qsa(".date-option").forEach((item) => item.classList.remove("selected"));
+    option.classList.add("selected");
+  }));
+  qs("#summaryDate").textContent = qs(".date-option.selected").dataset.date;
+}
+renderDates();
 
 function showToast(message) {
   const toast = qs("#toast");
@@ -34,10 +59,6 @@ qsa(".action-card").forEach((card) => card.addEventListener("click", () => {
   qsa(".action-card").forEach((item) => item.classList.remove("active"));
   card.classList.add("active");
   showPanel(card.dataset.panel);
-}));
-qsa(".date-option").forEach((option) => option.addEventListener("click", () => {
-  qsa(".date-option").forEach((item) => item.classList.remove("selected"));
-  option.classList.add("selected");
 }));
 qs("#license").addEventListener("input", (event) => {
   const status = qs("#licenseStatus");

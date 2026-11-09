@@ -16,9 +16,10 @@ async function loadStatus() {
     const active = ticket.status === "active";
     const future = ticket.status === "future";
     const returned = ticket.status === "expired_returned";
-    const label = future ? "Budoucí" : active ? "Aktivní" : returned ? "Odevzdaná" : "Propadlá, neodevzdaná";
+    const lateReturned = returned && ticket.late;
+    const label = future ? "Budoucí" : active ? "Aktivní" : lateReturned ? "Opožděné odevzdání" : returned ? "Odevzdaná" : "Propadlá, neodevzdaná";
     const message = future ? "Místenka začne platit v den uvedený na místance." : active ? "Místenka je platná pouze pro datum lovu." : returned ? (ticket.late ? "Místenka byla odevzdána po skončení dne lovu." : "Místenka byla odevzdána.") : "Místenka už není platná pro lov. Odevzdání je stále možné, ale bude označeno jako opožděné.";
-    qs("#statusBanner").className = `status-banner ${future ? "status-future" : active ? "status-active" : returned ? "status-returned" : "status-expired"}`;
+    qs("#statusBanner").className = `status-banner ${future ? "status-future" : active ? "status-active" : lateReturned ? "status-expired" : returned ? "status-returned" : "status-expired"}`;
     qs("#statusBanner").innerHTML = `<span>${future ? "→" : active ? "✓" : returned ? "↩" : "!"}</span><div><strong>${label}</strong><small>${message}</small></div>`;
     qs("#ticketStatusCard").innerHTML = `<span class="section-kicker">Místenka ${ticket.code}</span><h2>Petrůvka 1 A</h2><dl class="summary-list"><div><dt>Rybář</dt><dd>${ticket.firstName} ${ticket.lastName}</dd></div><div><dt>Datum lovu</dt><dd>${ticket.date}</dd></div><div><dt>Číslo lístku</dt><dd>${ticket.license}</dd></div><div><dt>Stav</dt><dd>${label}</dd></div></dl>`;
     qs("#statusLoading").classList.add("hidden");

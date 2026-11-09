@@ -55,7 +55,7 @@
       <div class="action-grid">
         <button class="action-card active" data-panel="buy" type="button">
           <span class="action-icon">↗</span>
-          <span class="action-content"><strong>Zakoupit místenku</strong><small>Rezervujte si místo až 7 dní dopředu</small></span>
+          <span class="action-content"><strong>Zakoupit místenku</strong><small>Rezervujte si místo až 3 dny dopředu</small></span>
           <span class="card-arrow">→</span>
         </button>
         <button class="action-card" data-panel="return" type="button">
@@ -89,12 +89,7 @@
             </div>
             <div class="legal-warning"><span class="permit-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 2 1 21h22L12 2Zm1 15h-2v2h2v-2Zm0-2h-2v-5h2v5Z"/></svg></span><div><strong>Než budete pokračovat</strong><p>Pro lov musíte mít platný rybářský lístek a platnou povolenku <b>Územního svazu pro Moravu a Slezsko</b> nebo celosvazovou povolenku. Místenka povolenku nenahrazuje.</p></div></div>
             <div class="date-heading"><span class="field-label">Datum lovu</span><span class="availability">● Dostupná místa</span></div>
-            <div class="date-grid">
-              <button class="date-option selected" type="button" data-date="Dnes · 8. listopadu"><span class="date-weather">☁ <b>6° / 1°</b></span><b>Dnes</b><span>ne 8. 11.</span><i>18 míst</i></button>
-              <button class="date-option" type="button" data-date="Zítra · 9. listopadu"><span class="date-weather">🌤 <b>7° / 2°</b></span><b>Zítra</b><span>po 9. 11.</span><i>24 míst</i></button>
-              <button class="date-option" type="button" data-date="Úterý · 10. listopadu"><span class="date-weather">☀ <b>8° / 2°</b></span><b>Úterý</b><span>út 10. 11.</span><i>31 míst</i></button>
-              <button class="date-option" type="button" data-date="Středa · 11. listopadu"><span class="date-weather">🌧 <b>6° / 1°</b></span><b>Středa</b><span>st 11. 11.</span><i>45 míst</i></button>
-            </div>
+            <div class="date-grid" id="dateGrid"></div>
             <div class="form-footer">
               <label class="checkbox-label declaration-label" id="declarationLabel"><input type="checkbox" id="declaration"> <span>Čestně prohlašuji, že mám platný rybářský lístek i povolenku (Územního svazu pro Severní Moravu a Slezsko nebo celosvazovou) a souhlasím s podmínkami rezervace.</span></label>
               <button class="primary-button" id="continueButton" type="button">Pokračovat <span>→</span></button>
@@ -120,7 +115,7 @@
           </div>
           <div id="paymentPanel" class="panel-content hidden">
             <button class="back-button" id="backButton" type="button">← Zpět k výběru</button>
-            <div class="payment-layout"><div><span class="section-kicker">Rekapitulace</span><h2>Vaše místenka</h2><dl class="summary-list"><div><dt>Revír</dt><dd>Petrůvka 1 A</dd></div><div><dt>Datum</dt><dd id="summaryDate">Dnes · 8. listopadu</dd></div><div><dt>Rybář</dt><dd id="summaryPerson">—</dd></div><div><dt>Celkem</dt><dd class="total" id="summaryTotal">200 Kč</dd></div></dl></div><div class="qr-box"><div class="fake-qr"><span></span></div><small>QR platba (demo)</small></div></div>
+            <div class="payment-layout"><div><span class="section-kicker">Rekapitulace</span><h2>Vaše místenka</h2><dl class="summary-list"><div><dt>Revír</dt><dd>Petrůvka 1 A</dd></div><div><dt>Datum</dt><dd id="summaryDate">—</dd></div><div><dt>Rybář</dt><dd id="summaryPerson">—</dd></div><div><dt>Celkem</dt><dd class="total" id="summaryTotal">200 Kč</dd></div></dl></div><div class="qr-box"><div class="fake-qr"><span></span></div><small>QR platba (demo)</small></div></div>
             <div class="weather-card"><span class="weather-main">☁</span><div><span class="section-kicker">Předpověď pro Petrůvku</span><strong>Oblačno · 6 °C / 1 °C</strong><small>Vítr 12 km/h · pravděpodobnost srážek 20 %</small></div></div>
             <label class="field-label payment-email-label" for="email">E-mail pro potvrzení <span class="required">*</span></label>
             <input id="email" type="email" placeholder="jan.novak@example.cz">

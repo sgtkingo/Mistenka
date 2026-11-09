@@ -41,9 +41,14 @@ const json = (res, status, body) => {
   res.end(JSON.stringify(body));
 };
 const readBody = (req) => new Promise((resolve, reject) => {
-  let value = "";
-  req.on("data", (chunk) => { value += chunk; });
-  req.on("end", () => { try { resolve(JSON.parse(value || "{}")); } catch (error) { reject(error); } });
+  const chunks = [];
+  req.on("data", (chunk) => { chunks.push(chunk); });
+  req.on("end", () => {
+    try {
+      const value = Buffer.concat(chunks).toString("utf8");
+      resolve(JSON.parse(value || "{}"));
+    } catch (error) { reject(error); }
+  });
   req.on("error", reject);
 });
 const makeCode = () => {
