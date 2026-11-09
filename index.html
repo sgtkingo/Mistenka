@@ -22,7 +22,7 @@
   </header>
 
   <main>
-    <section class="hero" id="revir">
+    <section class="hero">
       <div class="hero-copy">
         <div class="eyebrow"><span class="live-dot"></span> Sezóna 2026 právě probíhá</div>
         <h1>Chyťte svůj<br><em>klid u vody.</em></h1>
@@ -47,7 +47,7 @@
       </div>
     </section>
 
-    <section class="action-section" aria-labelledby="action-heading">
+    <section class="action-section" id="jak-to-funguje" aria-labelledby="action-heading">
       <div class="section-intro">
         <span class="section-kicker">Co potřebujete vyřídit?</span>
         <h2 id="action-heading">Vyberte si akci</h2>
@@ -87,7 +87,7 @@
               <input id="license" type="text" placeholder="např. CZ-2026-18472" autocomplete="off">
               <span class="input-status" id="licenseStatus" aria-live="polite">Čeká na ověření</span>
             </div>
-            <div class="legal-warning"><span class="permit-icon" aria-hidden="true">!</span><div><strong>Než budete pokračovat</strong><p>Pro lov musíte mít platný rybářský lístek a platnou povolenku <b>Územního svazu pro Moravu a Slezsko</b> nebo celosvazovou povolenku. Místenka povolenku nenahrazuje.</p></div></div>
+            <div class="legal-warning"><span class="permit-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 2 1 21h22L12 2Zm1 15h-2v2h2v-2Zm0-2h-2v-5h2v5Z"/></svg></span><div><strong>Než budete pokračovat</strong><p>Pro lov musíte mít platný rybářský lístek a platnou povolenku <b>Územního svazu pro Moravu a Slezsko</b> nebo celosvazovou povolenku. Místenka povolenku nenahrazuje.</p></div></div>
             <div class="date-heading"><span class="field-label">Datum lovu</span><span class="availability">● Dostupná místa</span></div>
             <div class="date-grid">
               <button class="date-option selected" type="button" data-date="Dnes · 8. listopadu"><span class="date-weather">☁ <b>6° / 1°</b></span><b>Dnes</b><span>ne 8. 11.</span><i>18 míst</i></button>
@@ -96,7 +96,7 @@
               <button class="date-option" type="button" data-date="Středa · 11. listopadu"><span class="date-weather">🌧 <b>6° / 1°</b></span><b>Středa</b><span>st 11. 11.</span><i>45 míst</i></button>
             </div>
             <div class="form-footer">
-              <label class="checkbox-label declaration-label"><input type="checkbox" id="declaration"> <span>Čestně prohlašuji, že mám platný rybářský lístek i povolenku (Územního svazu pro Severní Moravu a Slezsko nebo celosvazovou) a souhlasím s podmínkami rezervace.</span></label>
+              <label class="checkbox-label declaration-label" id="declarationLabel"><input type="checkbox" id="declaration"> <span>Čestně prohlašuji, že mám platný rybářský lístek i povolenku (Územního svazu pro Severní Moravu a Slezsko nebo celosvazovou) a souhlasím s podmínkami rezervace.</span></label>
               <button class="primary-button" id="continueButton" type="button">Pokračovat <span>→</span></button>
             </div>
           </div>
@@ -125,9 +125,9 @@
             <label class="field-label payment-email-label" for="email">E-mail pro potvrzení <span class="required">*</span></label>
             <input id="email" type="email" placeholder="jan.novak@example.cz">
             <label class="field-label voucher-label" for="voucherCode">Dárkový poukaz <span class="optional">(volitelné)</span></label>
-            <div class="voucher-input-row"><input id="voucherCode" type="text" maxlength="16" placeholder="16znakový kód" autocomplete="off" spellcheck="false"><span id="voucherStatus" class="voucher-status" aria-live="polite"></span></div>
+            <div class="voucher-input-row"><input id="voucherCode" type="text" maxlength="16" placeholder="16znakový kód" autocomplete="off" spellcheck="false"><button class="voucher-verify-button" id="verifyVoucher" type="button">Ověřit</button></div>
             <p class="field-help">Poukaz se odečte až po kliknutí na Zaplatit.</p>
-            <p class="field-help">Na platební stránce zobrazíte platební údaje a dokončíte demo platbu.</p>
+            <p class="field-help" id="paymentHelp">Na platební stránce zobrazíte platební údaje a dokončíte demo platbu.</p>
             <button class="primary-button full-width" id="startPayment" type="button">Zaplatit <span>→</span></button>
           </div>
           <div id="successPanel" class="panel-content hidden">
@@ -139,7 +139,7 @@
         </div>
         <aside class="info-column">
           <div class="notice-card"><span class="notice-icon">✦</span><div><span class="section-kicker">Důležité</span><h3>Pozor na dělící hráz</h3><p>Lov ryb z cesty mezi nádržemi Petr 2 a Petr 3 je zakázán. Vozidla nechávejte jen na vyhrazených místech.</p><a href="rules.html">Pravidla revíru →</a></div></div>
-          <div class="details-card" id="jak-to-funguje"><div class="details-top"><span class="section-kicker">O revíru</span><span class="open-badge">● Otevřeno dnes</span></div><h3>Petrůvka 1 A</h3><p class="muted">471 115 · Moravskoslezský ÚS · mimopstruhový</p><div class="detail-list"><div><span class="detail-icon">⌖</span><span><b>Podrevíry</b><br>Petr 1–4 v k. ú. Petrovice-Prstná · celkem 4 ha</span></div><div><span class="detail-icon">◷</span><span><b>GPS</b><br><a href="https://mapy.cz/zakladni?x=18.5586933&y=49.9137911&z=16" target="_blank" rel="noreferrer">49°54'49.648"N, 18°33'31.296"E ↗</a></span></div><div><span class="detail-icon">!</span><span><b>Omezení</b><br>Lov pod ledem jen se zvláštní povolenkou a dle podmínek ČRS</span></div></div><div class="details-links"><a class="map-link" href="https://www.rybsvaz.cz/karta-reviru/-/471115-petruvka-1-a?datum=2026-11-08" target="_blank" rel="noreferrer">Otevřít kartu revíru <span>↗</span></a><a class="map-link" href="rules.html">Pravidla revíru <span>→</span></a></div></div>
+          <div class="details-card" id="revir"><div class="details-top"><span class="section-kicker">O revíru</span><span class="open-badge">● Otevřeno dnes</span></div><h3>Petrůvka 1 A</h3><p class="muted">471 115 · Moravskoslezský ÚS · mimopstruhový</p><div class="detail-list"><div><span class="detail-icon">⌖</span><span><b>Podrevíry</b><br>Petr 1–4 v k. ú. Petrovice-Prstná · celkem 4 ha</span></div><div><span class="detail-icon">◷</span><span><b>GPS</b><br><a href="https://mapy.cz/zakladni?x=18.5586933&y=49.9137911&z=16" target="_blank" rel="noreferrer">49°54'49.648"N, 18°33'31.296"E ↗</a></span></div><div><span class="detail-icon">!</span><span><b>Omezení</b><br>Lov pod ledem jen se zvláštní povolenkou a dle podmínek ČRS</span></div></div><div class="details-links"><a class="map-link" href="https://www.rybsvaz.cz/karta-reviru/-/471115-petruvka-1-a?datum=2026-11-08" target="_blank" rel="noreferrer">Otevřít kartu revíru <span>↗</span></a><a class="map-link" href="rules.html">Pravidla revíru <span>→</span></a></div></div>
         </aside>
       </div>
     </section>
