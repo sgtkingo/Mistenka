@@ -223,6 +223,20 @@
     const [label, tone] = TICKET_STATES[ticket.status] || [ticket.status, "off"];
     return { label: ticket.status === "expired_returned" && ticket.late ? "Odevzdaná opožděně" : label, tone };
   }
+  // Limity úlovků (B3): přehled pro rybáře, porybného i správce.
+  // mode "notable" = jen dosažené nebo překročené limity (upozornění), "all" = všechny s počtem.
+  const PERIOD_NAMES = { day: "Den", week: "Týden", month: "Měsíc" };
+  function limitPeriod(limit) {
+    if (limit.period === "day") return "Tento den";
+    const short = (iso) => `${Number(iso.slice(8))}. ${Number(iso.slice(5, 7))}.`;
+    return `${PERIOD_NAMES[limit.period]} ${short(limit.from)}–${short(limit.to)}`;
+  }
+  function limitsHtml(limits, { mode = "notable", title = "Limity úlovků" } = {}) {
+    const list = (limits || []).filter((l) => mode === "all" || l.count >= l.maxCount);
+    if (!list.length) return "";
+    const exceeded = list.some((l) => l.exceeded);
+    return `<div class="limits-box${exceeded ? " limits-exceeded" : ""}"><strong>${esc(title)}</strong><ul>${list.map((l) => `<li class="${l.exceeded ? "over" : l.count >= l.maxCount ? "full" : ""}"><span>${esc(limitPeriod(l))}: ${esc(l.label)}</span><b>${esc(l.count)} / ${esc(l.maxCount)} ks${l.exceeded ? " · překročeno" : l.count >= l.maxCount ? " · vyčerpáno" : ""}</b></li>`).join("")}</ul><small>Podle místenek v Místence. Limity platí na všech revírech svazu dohromady – úlovky z jiných revírů zde nevidíme.</small></div>`;
+  }
   const ROLE_LABELS = { member: "Uživatel", warden: "Porybný", manager: "Správce", admin: "Admin" };
 
   // Odkaz na účet v hlavičce ([data-account-link]) a do správy ([data-manage-link]).
@@ -248,5 +262,5 @@
     qsa("[data-privacy]").forEach((el) => { if (org.privacyUrl) el.href = org.privacyUrl; else el.hidden = true; });
   }
 
-  window.Mistenka = { qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem };
+  window.Mistenka = { qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml };
 })();

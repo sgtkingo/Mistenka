@@ -247,7 +247,7 @@ test("poukaz vystaví místenku zdarma a jde použít jen jednou", async () => {
 });
 
 // ---------- odevzdání ----------
-test("odevzdání: validace úlovků, míry, hájení, povinné vrácení, denní limit, úspěch, opakování", async () => {
+test("odevzdání: validace úlovků, míry, hájení, povinné vrácení, úspěch, opakování", async () => {
   await setClock("2026-06-10T08:00:00Z");
   const { token, code } = await paidTicket({ revirId: "revir-b" });
   const ret = (body) => call("POST", `/tickets/${code}/return`, { body, token });
@@ -259,8 +259,6 @@ test("odevzdání: validace úlovků, míry, hájení, povinné vrácení, denn�
   assert.equal((await ret({ catches: [{ species: "kapr", length: 72 }] })).data.code, "must_release", "kapr od 70 cm se vrací");
   assert.equal((await ret({ catches: [{ species: "štika obecná", length: 80 }] })).data.code, "closed_season", "štika hájena do 15. 6.");
   assert.equal((await ret({ catches: [{ species: "lipan", length: 40 }] })).data.code, "closed_season", "lipan celoročně hájen");
-  const three = [{ species: "kapr", length: 50 }, { species: "lín", length: 35 }, { species: "amur", length: 65 }];
-  assert.equal((await ret({ catches: three })).data.code, "daily_limit", "max. 2 ks významných druhů");
   assert.equal((await ret({ catches: [{ species: "", length: 40 }] })).data.code, "invalid_catches");
   const ok = await ret({ catches: [{ species: "Kapr", length: 52, weight: 2.1, weightEstimated: true }, { species: "plotice", length: 20 }] });
   assert.equal(ok.status, 200, JSON.stringify(ok.data));
@@ -634,6 +632,102 @@ test("zadržená neodevzdaná místenka dostane připomínku a po lhůtě se uza
   assert.equal(closed.status, "closed_unreturned");
   assert.equal(closed.seized, true);
   await setClock("2026-06-10T08:00:00Z");
+});
+
+// ---------- limity úlovků (B3) ----------
+const limitOf = (ticket, id) => ticket.limits.find((l) => l.id === id);
+
+test("limity: denní limit jen upozorní, odevzdání projde a správce dostane e-mail", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const { token, code } = await paidTicket({ revirId: "revir-b", memberId: "72000001" });
+  const three = [{ species: "kapr", length: 50 }, { species: "lín", length: 35 }, { species: "amur", length: 65 }];
+  const res = await call("POST", `/tickets/${code}/return`, { body: { catches: three }, token });
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  const daily = limitOf(res.data, "vyznamne");
+  assert.equal(daily.period, "day");
+  assert.equal(daily.count, 3);
+  assert.equal(daily.exceeded, true, "překročený denní limit je jen upozornění");
+  assert.equal(limitOf(res.data, "vyznamne-tyden").count, 3);
+  assert.equal(limitOf(res.data, "vyznamne-tyden").exceeded, false);
+  const mail = await lastEmail("spravce-mo@example.cz", "limit_exceeded");
+  assert.ok(mail && mail.text.includes(code), "správce dostane upozornění");
+});
+
+test("limity: týdenní limit se počítá ze všech místenek člena (i bez účtu), kapr 2 ks týdně do 5 ha", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const memberId = "72000002";
+  const ret = async (catches, overrides = {}) => {
+    const t = await paidTicket({ memberId, ...overrides });
+    const res = await call("POST", `/tickets/${t.code}/return`, { body: { catches }, token: t.token });
+    assert.equal(res.status, 200, JSON.stringify(res.data));
+    return res.data;
+  };
+  await ret([{ species: "lín", length: 35 }, { species: "lín", length: 36 }]);
+  const second = await ret([{ species: "amur", length: 65 }, { species: "amur", length: 66 }]);
+  assert.equal(limitOf(second, "vyznamne-tyden").count, 4, "součet ze dvou místenek");
+  assert.equal(limitOf(second, "vyznamne-tyden").exceeded, false, "4 ks je ještě v limitu");
+  const third = await ret([{ species: "kapr", length: 50 }]);
+  const week = limitOf(third, "vyznamne-tyden");
+  assert.equal(week.count, 5);
+  assert.equal(week.exceeded, true);
+  assert.deepEqual([week.from, week.to], ["2026-06-08", "2026-06-14"]);
+  assert.equal(limitOf(third, "vyznamne-mesic").exceeded, false, "měsíční limit 10 ks");
+  assert.ok(limitOf(third, "kapr-maly-revir"), "revír do 5 ha → limit kapra platí");
+
+  // Nová místenka ukáže stav limitů už při objednávce.
+  const next = await order({ memberId, date: "2026-06-11" });
+  assert.equal(limitOf(next.ticket, "vyznamne-tyden").count, 5, "upozornění už při nákupu");
+});
+
+test("limity: po 2 porušeních automatická blokace nákupu; správce ji vidí a zruší, může blokovat ručně", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const memberId = "72000003";
+  const over = [{ species: "lín", length: 35 }, { species: "lín", length: 36 }, { species: "lín", length: 37 }];
+  for (let i = 0; i < 2; i++) {
+    const t = await paidTicket({ memberId, email: "blokovany@example.cz" });
+    assert.equal((await call("POST", `/tickets/${t.code}/return`, { body: { catches: over }, token: t.token })).status, 200);
+  }
+  const blocked = await call("POST", "/orders", { body: orderBody({ memberId }) });
+  assert.equal(blocked.status, 403);
+  assert.equal(blocked.data.code, "member_blocked");
+  assert.ok(await lastEmail("blokovany@example.cz", "member_blocked"), "držitel se o blokaci dozví");
+
+  const member = await verifiedAccount();
+  assert.equal((await call("GET", "/manage/blocks", { session: member.session })).data.code, "forbidden_role");
+  const manager = await verifiedAccount();
+  await call("POST", "/dev/users/roles", { body: { email: manager.email, roles: ["manager"] } });
+  const violations = (await call("GET", "/manage/violations", { session: manager.session })).data.violations.filter((v) => v.memberId === memberId);
+  assert.ok(violations.length >= 2 && violations.every((v) => v.blocked));
+  const block = (await call("GET", "/manage/blocks", { session: manager.session })).data.blocks.find((b) => b.memberId === memberId);
+  assert.equal(block.source, "auto");
+  assert.equal(block.until, "2026-07-09", "30 dní včetně dneška");
+  const lifted = await call("POST", `/manage/blocks/${block.id}/lift`, { session: manager.session });
+  assert.equal(lifted.data.block.active, false);
+  assert.equal((await call("POST", "/orders", { body: orderBody({ memberId }) })).status, 201, "po zrušení blokace lze nakoupit");
+
+  // Ruční blokace.
+  assert.equal((await call("POST", "/manage/blocks", { body: { memberId: "123", reason: "Test" }, session: manager.session })).data.code, "invalid_member_id");
+  const manual = await call("POST", "/manage/blocks", { body: { memberId: "72000004", reason: "Neodevzdané místenky" }, session: manager.session });
+  assert.equal(manual.status, 201, JSON.stringify(manual.data));
+  assert.equal(manual.data.block.until, null, "bez data = do zrušení");
+  assert.equal((await call("POST", "/manage/blocks", { body: { memberId: "72000004", reason: "Znovu" }, session: manager.session })).data.code, "already_blocked");
+  assert.equal((await call("POST", "/orders", { body: orderBody({ memberId: "72000004" }) })).data.code, "member_blocked");
+});
+
+test("limity: porybný je vidí při kontrole, přihlášený člen v účtu", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const account = await verifiedAccount();
+  const t = await call("POST", "/orders", { body: orderBody({ memberId: account.memberId, email: account.email }), session: account.session });
+  await pay({ code: t.data.ticket.code });
+  await call("POST", `/tickets/${t.data.ticket.code}/return`, { body: { catches: [{ species: "lín", length: 35 }] }, session: account.session });
+  const mine = (await call("GET", "/me/limits", { session: account.session })).data;
+  assert.equal(mine.limits.find((l) => l.id === "vyznamne-tyden").count, 1);
+  assert.ok(!mine.limits.some((l) => l.period === "day"), "v účtu jen týden a měsíc");
+  assert.equal(mine.blocked, null);
+  const warden = await wardenAccount();
+  const view = (await call("GET", `/warden/tickets/${t.data.ticket.code}`, { session: warden.session })).data;
+  assert.equal(view.limits.find((l) => l.id === "vyznamne-tyden").count, 1);
+  assert.equal(view.blocked, null);
 });
 
 // ---------- průvodce prvním spuštěním a pozvání správce ----------

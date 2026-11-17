@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 // Sloupce tabulky users (sdílí vytvoření i migrace).
 const USERS_COLUMNS = `
@@ -133,6 +133,34 @@ function openDatabase(dataDir) {
       status TEXT NOT NULL                     -- stav místenky v okamžiku kontroly
     );
     CREATE INDEX IF NOT EXISTS ticket_checks_ticket ON ticket_checks (ticket_id, at);
+    -- Překročené limity úlovků (B3), zapsané při odevzdání.
+    CREATE TABLE IF NOT EXISTS limit_violations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticket_id INTEGER NOT NULL REFERENCES tickets(id),
+      member_id TEXT NOT NULL,
+      limit_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      period TEXT NOT NULL,                    -- day | week | month
+      period_from TEXT NOT NULL,
+      period_to TEXT NOT NULL,
+      count INTEGER NOT NULL,
+      max_count INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS limit_violations_member ON limit_violations (member_id, created_at);
+    -- Blokace nákupu místenek pro číslo legitimace (ručně správcem nebo automaticky po porušení limitů).
+    CREATE TABLE IF NOT EXISTS member_blocks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      until TEXT,                              -- YYYY-MM-DD včetně; NULL = do zrušení
+      source TEXT NOT NULL,                    -- manual | auto
+      created_by INTEGER,
+      created_at TEXT NOT NULL,
+      lifted_at TEXT,
+      lifted_by INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS member_blocks_member ON member_blocks (member_id);
     CREATE INDEX IF NOT EXISTS tickets_capacity ON tickets (revir_id, fishing_date, status);
     CREATE INDEX IF NOT EXISTS tickets_member ON tickets (member_id, fishing_date);
     -- Přístupové tokeny držitele (prohlížeč, odkazy v e-mailech). Ukládá se jen SHA-256 hash.

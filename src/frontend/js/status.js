@@ -1,4 +1,4 @@
-const { qs, qsa, esc, api, czDate, czDateTime, initUserMenu, hasRole, ticketState, showToast } = window.Mistenka;
+const { qs, qsa, esc, api, czDate, czDateTime, initUserMenu, hasRole, ticketState, showToast, limitsHtml } = window.Mistenka;
 const code = (new URLSearchParams(location.search).get("code") || "").trim().toUpperCase();
 
 // Stav -> [popisek, vysvětlení, CSS třída, ikona]
@@ -71,6 +71,8 @@ function renderWarden(view) {
       ${view.returnedAt ? `<div><dt>Úlovky na této místence</dt><dd>${esc(catchText(view))}</dd></div>` : ""}
     </dl>
     ${seizure}
+    ${view.blocked ? `<div class="status-error">Člen má pozastavený nákup místenek ${view.blocked.until ? `do ${esc(czDate(view.blocked.until))}` : "do odvolání"}: ${esc(view.blocked.reason)}</div>` : ""}
+    ${limitsHtml(view.limits, { mode: "all", title: "Limity úlovků člena" })}
     <h3>Místenky člena</h3>
     <p class="field-help">Týden ${esc(czDate(view.memberHistory.week.from, { year: false }))}–${esc(czDate(view.memberHistory.week.to))}: ${weekCount} · měsíc: ${monthCount}. Jen místenky v Místence – limity platí na všech revírech svazu dohromady.</p>
     <table class="data-table"><thead><tr><th>Den</th><th>Revír</th><th>Stav</th><th>Úlovky</th></tr></thead><tbody>${history.map((t) => {

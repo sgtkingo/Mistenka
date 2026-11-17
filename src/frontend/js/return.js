@@ -1,4 +1,4 @@
-const { qs, qsa, esc, api, loadConfig, revirUrl, czDate, czDateTime, plural, findSpecies, catchProblem, credentialsFor, rememberMemberId, normalizeMemberId, isMemberId, showToast, applyBranding, loadSession } = window.Mistenka;
+const { qs, qsa, esc, api, loadConfig, revirUrl, czDate, czDateTime, plural, findSpecies, catchProblem, credentialsFor, rememberMemberId, normalizeMemberId, isMemberId, showToast, applyBranding, loadSession, limitsHtml } = window.Mistenka;
 
 const code = (new URLSearchParams(location.search).get("code") || "").trim().toUpperCase();
 let credentials = credentialsFor(code);
@@ -154,6 +154,8 @@ qs("#submitReturn").addEventListener("click", async () => {
     qs("#returnedText").textContent = ticket.late
       ? "Místenka je odevzdaná. Odevzdání proběhlo po skončení dne lovu, a je proto označeno jako opožděné."
       : "Děkujeme za vyplnění sumáře úlovků. Místenka je nyní označena jako odevzdaná.";
+    // Překročený limit odevzdání neblokuje – rybář dostane upozornění (správce e-mail).
+    qs("#returnedLimits").innerHTML = limitsHtml(ticket.limits, { title: "Upozornění na limity úlovků" });
     qs("#ticketSummary").classList.add("hidden");
     show("returnedState");
   } catch (error) {

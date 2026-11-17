@@ -103,7 +103,7 @@ Vše nejdřív v Node verzi. WordPress (WP uživatelé s vlastními rolemi, při
 - Každá kontrola porybného se zaznamená (kdo, kdy, která místenka), obdoba zápisu stráže do povolenky.
 - **Zadržení** = nový stav `seized` s důvodem a místem. Lov končí okamžitě, místenka neplatí. Držitel ji i tak musí odevzdat s úlovky. Držitel dostane e-mail, správce jen upozornění (zadržení nepotvrzuje).
 
-**B3. Týdenní a měsíční limity úlovků**
+**B3. Týdenní a měsíční limity úlovků** – *hotovo v Node verzi 17. 11. 2026 (28 sdílených testů API).* Pravidla v `periodLimits` souboru druhů, automatická blokace v `limitPolicy` (zatím v konfiguraci, do portálu v B5); „sezona“ pro počítání porušení = kalendářní rok, dokud nebudou sezony (B4).
 - Počítají se podle čísla legitimace, tedy i u nákupů bez účtu. Pravidla podle BPVRP ÚS SMaS: kapr, štika, candát, amur, bolen, sumec, lín a parma dohromady 4 ks týdně a 10 ks měsíčně (krátkodobé povolenky); ostroretka 15 ks týdně; kapr 2 ks týdně na revíru nebo podrevíru do 5 ha (Petr 1 má 1,7 ha → platí). Týden je kalendářní (po–ne). Podrevíry dostanou výměru, pravidla podmínku `maxAreaHa`.
 - Limity platí na všech revírech svazu dohromady, my vidíme jen místenky. V UI proto vždy „podle místenek v Místence“.
 - **Překročení nikdy neblokuje odevzdání ani nákup.** Rybář dostane upozornění, správce e-mail na kontaktní adresu správce (nová položka organizace, nastavitelná v portálu), porybný upozornění při kontrole. Stejně se bude chovat i denní limit (dnes `400 daily_limit` → upozornění). Lovné míry a hájení dál odevzdání blokují (taková ryba se nesmí přisvojit).

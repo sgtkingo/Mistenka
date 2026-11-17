@@ -35,6 +35,8 @@ function loadConfig(file = process.env.MISTENKA_CONFIG || DEFAULT_PATH) {
   config.payment.reservationMinutes ||= 60;
   config.payment.provider ||= "fake";
   config.publicCheck ||= { showFullName: true, memberIdVisibleChars: 4 };
+  // Automatická blokace po opakovaném porušení limitů (0 = vypnuto). Později nastavení v manažerském portálu (B5).
+  config.limitPolicy = { violationsBeforeBlock: 0, blockDays: null, ...(config.limitPolicy || {}) };
   const baseDir = path.dirname(file);
   const orgRules = loadSpeciesRules(baseDir, config.speciesRules, "organizace");
   for (const revir of config.reviry) {
@@ -65,7 +67,12 @@ function loadSpeciesRules(baseDir, ref, owner) {
   for (const limit of rules.dailyLimits || []) {
     for (const id of limit.species) if (!ids.has(id)) fail(`${file}: denní limit ${limit.id} odkazuje na neznámý druh ${id}`);
   }
-  return { id: rules.id, name: rules.name, validFrom: rules.validFrom, validTo: rules.validTo, sources: rules.sources || [], dailyLimits: rules.dailyLimits || [], species: rules.species };
+  for (const limit of rules.periodLimits || []) {
+    if (!["week", "month"].includes(limit.period)) fail(`${file}: limit ${limit.id} má neplatné období (week | month)`);
+    if (!(limit.maxCount > 0)) fail(`${file}: limit ${limit.id} musí mít maxCount > 0`);
+    for (const id of limit.species) if (!ids.has(id)) fail(`${file}: limit ${limit.id} odkazuje na neznámý druh ${id}`);
+  }
+  return { id: rules.id, name: rules.name, validFrom: rules.validFrom, validTo: rules.validTo, sources: rules.sources || [], dailyLimits: rules.dailyLimits || [], periodLimits: rules.periodLimits || [], species: rules.species };
 }
 
 // Úpravy pro konkrétní revír ("na vybraných revírech je zvýšena lovná míra …").

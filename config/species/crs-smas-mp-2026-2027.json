@@ -12,12 +12,19 @@
     "releaseFromLength = ryba o této délce a delší se musí vrátit (BPVRP bod 9: kapr od 70 cm).",
     "closedSeasons = doby hájení (MM-DD včetně, rozsah může přecházet přes konec roku); ryba ulovená v hájení se musí vrátit.",
     "weightFactor = orientační Fultonův koeficient pro odhad hmotnosti: kg = weightFactor × délka[cm]³ / 100 000. Není to předpis, rybář může zapsat skutečnou hmotnost.",
-    "Týdenní, měsíční a roční limity (BPVRP body 1, 3, 4) vyžadují historii úlovků člena a zatím se nekontrolují."
+    "periodLimits = týdenní a měsíční limity (BPVRP body 1–4) podle úlovků člena na místenkách v Místence. Limity platí na všech revírech svazu dohromady; Místenka vidí jen své místenky. Týden = kalendářní týden po–ne, měsíc = kalendářní měsíc. maxAreaHa = jen na revíru/podrevíru s výměrou do této hodnoty.",
+    "Překročení limitu neblokuje odevzdání ani nákup: rybář dostane upozornění, správce e-mail, porybný ho uvidí při kontrole."
   ],
   "dailyLimits": [
     { "id": "vyznamne", "label": "kapr, štika, candát, amur, bolen, sumec, lín, parma", "species": ["kapr-obecny", "stika-obecna", "candat-obecny", "amur-bily", "bolen-dravy", "sumec-velky", "lin-obecny", "parma-obecna"], "maxCount": 2, "source": "BPVRP bod 6 – přisvojením 2 ks končí denní lov" },
     { "id": "lososovite", "label": "lososovité ryby", "species": ["pstruh-obecny", "pstruh-duhovy", "siven-americky", "lipan-podhorni", "hlavatka-obecna", "losos-obecny"], "maxCount": 3, "source": "BPVRP bod 11" },
     { "id": "ostroretka", "label": "ostroretka stěhovavá", "species": ["ostroretka-stehovava"], "maxCount": 5, "source": "BPVRP bod 3" }
+  ],
+  "periodLimits": [
+    { "id": "vyznamne-tyden", "label": "kapr, štika, candát, amur, bolen, sumec, lín, parma dohromady", "species": ["kapr-obecny", "stika-obecna", "candat-obecny", "amur-bily", "bolen-dravy", "sumec-velky", "lin-obecny", "parma-obecna"], "period": "week", "maxCount": 4, "source": "BPVRP bod 1 – krátkodobé povolenky, týdenní limit" },
+    { "id": "vyznamne-mesic", "label": "kapr, štika, candát, amur, bolen, sumec, lín, parma dohromady", "species": ["kapr-obecny", "stika-obecna", "candat-obecny", "amur-bily", "bolen-dravy", "sumec-velky", "lin-obecny", "parma-obecna"], "period": "month", "maxCount": 10, "source": "BPVRP bod 1 – měsíční limit" },
+    { "id": "ostroretka-tyden", "label": "ostroretka stěhovavá", "species": ["ostroretka-stehovava"], "period": "week", "maxCount": 15, "source": "BPVRP bod 3" },
+    { "id": "kapr-maly-revir", "label": "kapr na revíru do 5 ha", "species": ["kapr-obecny"], "period": "week", "maxCount": 2, "maxAreaHa": 5, "source": "BPVRP bod 4" }
   ],
   "species": [
     { "id": "kapr-obecny", "name": "kapr obecný", "aliases": ["kapr"], "latin": "Cyprinus carpio", "minLength": 40, "releaseFromLength": 70, "weightFactor": 2.0 },

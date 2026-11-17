@@ -121,7 +121,7 @@ function createService({ db, config, provider, mailer, appUrl }) {
   }
   function enqueueEmail(ticket, kind, token, extra = {}) {
     const revir = revirOf(ticket);
-    const render = { payment_instructions: emails.paymentInstructions, ticket_issued: emails.ticketIssued, return_reminder: emails.returnReminder, ticket_closed: emails.ticketClosed, ticket_seized: emails.ticketSeized, seizure_notice: emails.seizureNotice }[kind];
+    const render = { payment_instructions: emails.paymentInstructions, ticket_issued: emails.ticketIssued, return_reminder: emails.returnReminder, ticket_closed: emails.ticketClosed, ticket_seized: emails.ticketSeized, seizure_notice: emails.seizureNotice, limit_exceeded: emails.limitExceeded, member_blocked: emails.memberBlocked }[kind];
     const mail = render(config, { ticket, revir, links: links(ticket, token), ...extra });
     db.prepare("INSERT INTO email_outbox (ticket_id, kind, to_email, subject, body_html, body_text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(ticket.id, kind, extra.to || ticket.email, mail.subject, mail.html, mail.text, iso(time.now()));
@@ -159,7 +159,7 @@ function createService({ db, config, provider, mailer, appUrl }) {
       validTo: iso(w.end)
     };
   }
-  function ownerTicket(ticket) {
+  function ownerTicket(ticket, { withLimits = true } = {}) {
     const base = publicTicket(ticket);
     const w = windowOf(ticket);
     const catches = db.prepare("SELECT species, length_cm, weight_kg, weight_estimated FROM catches WHERE ticket_id = ? ORDER BY id").all(ticket.id)
@@ -186,6 +186,7 @@ function createService({ db, config, provider, mailer, appUrl }) {
       catches,
       payment: base.status === "pending_payment" ? paymentInfo(ticket) : null
     };
+    if (withLimits && ticket.status !== "cancelled") out.limits = limitsFor(ticket);
     delete out.holder;
     return out;
   }
@@ -224,6 +225,8 @@ function createService({ db, config, provider, mailer, appUrl }) {
     const order = validateOrder(input);
     return transaction(db, () => {
       const { revir } = order;
+      const block = activeBlock(order.memberId);
+      if (block) throw new ApiError(403, "member_blocked", `Nákup místenek je pro toto číslo legitimace pozastaven ${block.until ? `do ${block.until.split("-").reverse().map(Number).join(". ")}` : "do odvolání"}. Důvod: ${block.reason}. Kontaktujte správce organizace.`);
       if (takenSeats(revir.id, order.date) >= revir.dailyCapacity) throw new ApiError(409, "sold_out", "Na vybraný den už nejsou volná místa.");
       if (order.voucherCode) {
         const voucher = db.prepare("SELECT * FROM vouchers WHERE code = ?").get(order.voucherCode);
@@ -264,7 +267,7 @@ function createService({ db, config, provider, mailer, appUrl }) {
   }
   // Místenky přihlášeného uživatele, nejnovější den lovu první.
   function ticketsForUser(user) {
-    return db.prepare("SELECT * FROM tickets WHERE user_id = ? ORDER BY fishing_date DESC, id DESC LIMIT 200").all(user.id).map(ownerTicket);
+    return db.prepare("SELECT * FROM tickets WHERE user_id = ? ORDER BY fishing_date DESC, id DESC LIMIT 200").all(user.id).map((t) => ownerTicket(t, { withLimits: false }));
   }
   function cancelOrder(code, credentials, user) {
     const ticket = findTicket(code);
@@ -299,10 +302,6 @@ function createService({ db, config, provider, mailer, appUrl }) {
       if (problem) throw new ApiError(400, problem.code, `${row}: ${problem.message}`);
       return { species: known ? known.name : name, speciesId: known?.id || null, length, weight, weightEstimated: weight !== null && item.weightEstimated === true };
     });
-    for (const limit of rules?.dailyLimits || []) {
-      const count = catches.filter((c) => c.speciesId && limit.species.includes(c.speciesId)).length;
-      if (count > limit.maxCount) throw new ApiError(400, "daily_limit", `Denní limit: nejvýše ${limit.maxCount} ks (${limit.label}). Přisvojením posledního povoleného kusu denní lov končí.`);
-    }
     return transaction(db, () => {
       const fresh = db.prepare("SELECT * FROM tickets WHERE id = ?").get(ticket.id);
       const now = time.now();
@@ -314,8 +313,128 @@ function createService({ db, config, provider, mailer, appUrl }) {
       const insert = db.prepare("INSERT INTO catches (ticket_id, species, length_cm, weight_kg, weight_estimated) VALUES (?, ?, ?, ?, ?)");
       for (const c of catches) insert.run(fresh.id, c.species, c.length, c.weight, c.weightEstimated ? 1 : 0);
       db.prepare("UPDATE tickets SET returned_at = ?, return_late = ?, no_catch = ? WHERE id = ?").run(iso(now), now >= windowOf(fresh).end ? 1 : 0, noCatch ? 1 : 0, fresh.id);
-      return ownerTicket(db.prepare("SELECT * FROM tickets WHERE id = ?").get(fresh.id));
+      const returned = db.prepare("SELECT * FROM tickets WHERE id = ?").get(fresh.id);
+      recordViolations(returned);
+      return ownerTicket(returned);
     });
+  }
+
+  // ---------- limity úlovků (B3) ----------
+  // Počítají se podle čísla legitimace z odevzdaných místenek v Místence (i bez účtu).
+  const parseHa = (text) => { const m = String(text || "").replace(",", ".").match(/(\d+(?:\.\d+)?)\s*ha/); return m ? Number(m[1]) : null; };
+  // Výměra vody, na kterou místenka platí: největší z jejích podrevírů, jinak výměra revíru.
+  function ticketAreaHa(revir) {
+    const numbers = Array.isArray(revir.ticketSubdistricts) ? revir.ticketSubdistricts : [];
+    const areas = numbers.map((n) => parseHa((revir.subdistrictList || []).find((s) => String(s.number) === String(n))?.area));
+    if (areas.length && areas.every((a) => a !== null)) return Math.max(...areas);
+    return parseHa(revir.area);
+  }
+  const limitApplies = (limit, revir) => limit.maxAreaHa === undefined || limit.maxAreaHa === null || (ticketAreaHa(revir) ?? Infinity) <= limit.maxAreaHa;
+  function periodRange(period, date) {
+    if (period === "week") { const from = time.weekStart(date); return { from, to: time.addDays(from, 6) }; }
+    if (period === "month") return { from: `${date.slice(0, 8)}01`, to: time.monthEnd(date) };
+    return { from: date, to: date };
+  }
+  // Přehled limitů pro místenku: denní (jen tato místenka) + týdenní a měsíční (všechny místenky člena v období).
+  function limitsFor(ticket) {
+    const revir = revirOf(ticket);
+    const rules = revirRules(revir);
+    if (!rules) return [];
+    const speciesIdOf = (name) => findSpecies(rules, name)?.id || null;
+    const own = db.prepare("SELECT species FROM catches WHERE ticket_id = ?").all(ticket.id).map((c) => speciesIdOf(c.species));
+    const out = [];
+    for (const limit of rules.dailyLimits || []) {
+      const count = own.filter((id) => id && limit.species.includes(id)).length;
+      out.push({ id: limit.id, label: limit.label, period: "day", from: ticket.fishing_date, to: ticket.fishing_date, maxCount: limit.maxCount, count, exceeded: count > limit.maxCount, source: limit.source || "" });
+    }
+    for (const limit of rules.periodLimits || []) {
+      if (!limitApplies(limit, revir)) continue;
+      const range = periodRange(limit.period, ticket.fishing_date);
+      const tickets = db.prepare("SELECT id, revir_id FROM tickets WHERE member_id = ? AND status = 'issued' AND fishing_date BETWEEN ? AND ?").all(ticket.member_id, range.from, range.to)
+        .filter((t) => limitApplies(limit, revirOf(t)));
+      let count = 0;
+      for (const t of tickets) {
+        count += db.prepare("SELECT species FROM catches WHERE ticket_id = ?").all(t.id).filter((c) => limit.species.includes(speciesIdOf(c.species))).length;
+      }
+      out.push({ id: limit.id, label: limit.label, period: limit.period, ...range, maxCount: limit.maxCount, count, exceeded: count > limit.maxCount, source: limit.source || "" });
+    }
+    return out;
+  }
+  function activeBlock(memberId) {
+    return db.prepare("SELECT * FROM member_blocks WHERE member_id = ? AND lifted_at IS NULL AND (until IS NULL OR until >= ?) ORDER BY id DESC").get(memberId, time.pragueToday()) || null;
+  }
+  // Při odevzdání: zapíše překročené limity, upozorní správce, případně automaticky zablokuje (limitPolicy).
+  function recordViolations(ticket) {
+    const exceeded = limitsFor(ticket).filter((l) => l.exceeded);
+    if (!exceeded.length) return [];
+    const now = iso(time.now());
+    const insert = db.prepare("INSERT INTO limit_violations (ticket_id, member_id, limit_id, label, period, period_from, period_to, count, max_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    for (const l of exceeded) insert.run(ticket.id, ticket.member_id, l.id, l.label, l.period, l.from, l.to, l.count, l.maxCount, now);
+    if (config.organization.managerEmail) enqueueEmail(ticket, "limit_exceeded", null, { to: config.organization.managerEmail, limits: exceeded });
+    const policy = config.limitPolicy || {};
+    if (policy.violationsBeforeBlock > 0 && !activeBlock(ticket.member_id)) {
+      const year = ticket.fishing_date.slice(0, 4);
+      const violating = db.prepare(`SELECT COUNT(DISTINCT v.ticket_id) AS n FROM limit_violations v JOIN tickets t ON t.id = v.ticket_id
+        WHERE v.member_id = ? AND substr(t.fishing_date, 1, 4) = ?`).get(ticket.member_id, year).n;
+      if (violating >= policy.violationsBeforeBlock) {
+        const until = policy.blockDays ? time.addDays(time.pragueToday(), policy.blockDays - 1) : `${year}-12-31`;
+        const reason = `Opakované překročení limitů úlovků (${violating}× v roce ${year})`;
+        const result = db.prepare("INSERT INTO member_blocks (member_id, reason, until, source, created_at) VALUES (?, ?, ?, 'auto', ?)").run(ticket.member_id, reason, until, now);
+        const block = db.prepare("SELECT * FROM member_blocks WHERE id = ?").get(Number(result.lastInsertRowid));
+        db.prepare("INSERT INTO audit_events (at, action, target_type, target_id, detail) VALUES (?, 'member_blocked_auto', 'member', ?, ?)").run(now, ticket.member_id, JSON.stringify({ until, violating }));
+        enqueueEmail(ticket, "member_blocked", null, { block, limits: exceeded });
+      }
+    }
+    return exceeded;
+  }
+
+  // ---------- správa limitů a blokací (manažerský portál) ----------
+  const blockShape = (b) => {
+    const holder = db.prepare("SELECT first_name, last_name FROM tickets WHERE member_id = ? ORDER BY id DESC").get(b.member_id);
+    return { id: b.id, memberId: b.member_id, holder: holder ? `${holder.first_name} ${holder.last_name}` : "", reason: b.reason, until: b.until, source: b.source,
+      createdAt: b.created_at, liftedAt: b.lifted_at, active: !b.lifted_at && (!b.until || b.until >= time.pragueToday()) };
+  };
+  function listViolations() {
+    const rows = db.prepare(`SELECT v.*, t.code, t.first_name, t.last_name, t.fishing_date FROM limit_violations v JOIN tickets t ON t.id = v.ticket_id ORDER BY v.id DESC LIMIT 200`).all();
+    return { violations: rows.map((v) => ({ id: v.id, code: v.code, date: v.fishing_date, memberId: v.member_id, holder: `${v.first_name} ${v.last_name}`, label: v.label, period: v.period, from: v.period_from, to: v.period_to, count: v.count, maxCount: v.max_count, createdAt: v.created_at, blocked: Boolean(activeBlock(v.member_id)) })) };
+  }
+  function listBlocks() {
+    return { blocks: db.prepare("SELECT * FROM member_blocks ORDER BY (lifted_at IS NULL) DESC, id DESC LIMIT 200").all().map(blockShape) };
+  }
+  function createBlock(actor, body = {}) {
+    const memberId = String(body.memberId || "").replace(/\s+/g, "");
+    if (!/^\d{8}$/.test(memberId)) throw new ApiError(400, "invalid_member_id", "Zadejte 8místné číslo členské legitimace.");
+    const reason = String(body.reason || "").trim();
+    if (reason.length < 3 || reason.length > 500) throw new ApiError(400, "invalid_reason", "Uveďte důvod blokace (3–500 znaků).");
+    const until = body.until ? String(body.until) : null;
+    if (until && (!time.isIsoDate(until) || until < time.pragueToday())) throw new ApiError(400, "invalid_date", "Datum konce blokace musí být dnes nebo později.");
+    return transaction(db, () => {
+      if (activeBlock(memberId)) throw new ApiError(409, "already_blocked", "Toto číslo legitimace už je zablokované.");
+      const now = iso(time.now());
+      const result = db.prepare("INSERT INTO member_blocks (member_id, reason, until, source, created_by, created_at) VALUES (?, ?, ?, 'manual', ?, ?)").run(memberId, reason, until, actor.id, now);
+      db.prepare("INSERT INTO audit_events (at, actor_user_id, action, target_type, target_id, detail) VALUES (?, ?, 'member_blocked', 'member', ?, ?)").run(now, actor.id, memberId, JSON.stringify({ reason, until }));
+      return { block: blockShape(db.prepare("SELECT * FROM member_blocks WHERE id = ?").get(Number(result.lastInsertRowid))) };
+    });
+  }
+  function liftBlock(actor, id) {
+    return transaction(db, () => {
+      const block = db.prepare("SELECT * FROM member_blocks WHERE id = ?").get(Number(id));
+      if (!block) throw new ApiError(404, "not_found", "Blokace neexistuje.");
+      if (block.lifted_at) throw new ApiError(409, "already_lifted", "Blokace už byla zrušena.");
+      const now = iso(time.now());
+      db.prepare("UPDATE member_blocks SET lifted_at = ?, lifted_by = ? WHERE id = ?").run(now, actor.id, block.id);
+      db.prepare("INSERT INTO audit_events (at, actor_user_id, action, target_type, target_id) VALUES (?, ?, 'member_unblocked', 'member', ?)").run(now, actor.id, block.member_id);
+      return { block: blockShape(db.prepare("SELECT * FROM member_blocks WHERE id = ?").get(block.id)) };
+    });
+  }
+  // Limity přihlášeného člena pro dnešek (týden/měsíc) na zvoleném revíru.
+  function limitsForMember(user, revirId) {
+    if (!user.member_id) return { date: time.pragueToday(), limits: [], blocked: null };
+    const revir = getRevir(config, revirId) || config.reviry[0];
+    const date = time.pragueToday();
+    const limits = limitsFor({ id: 0, member_id: user.member_id, fishing_date: date, revir_id: revir.id }).filter((l) => l.period !== "day");
+    const block = activeBlock(user.member_id);
+    return { date, revirId: revir.id, limits, blocked: block ? blockShape(block) : null };
   }
 
   // ---------- porybný (B2) ----------
@@ -347,7 +466,9 @@ function createService({ db, config, provider, mailer, appUrl }) {
       firstName: ticket.first_name, lastName: ticket.last_name, birthDate: ticket.birth_date, memberId: ticket.member_id,
       returnedAt: ticket.returned_at, noCatch: Boolean(ticket.no_catch), catches: catchesOf(ticket.id),
       seizable: stateOf(ticket) === "active",
-      seizure, checks, memberHistory: { week, month, tickets: history }
+      seizure, checks, memberHistory: { week, month, tickets: history },
+      limits: limitsFor(ticket),
+      blocked: activeBlock(ticket.member_id) ? blockShape(activeBlock(ticket.member_id)) : null
     };
   }
   const wardenName = (user) => `${user.first_name} ${user.last_name}`;
@@ -544,7 +665,7 @@ function createService({ db, config, provider, mailer, appUrl }) {
     return { result: report.payments?.results?.[0] || null };
   }
 
-  return { availability, createOrder, getPublicTicket, getOwnerTicket, ticketsForUser, wardenCheck, seizeTicket, cancelOrder, submitReturn, checkVoucher, createVoucher, runJobs, addJob, simulatePayment, processTransaction, stateOf };
+  return { availability, createOrder, getPublicTicket, getOwnerTicket, ticketsForUser, wardenCheck, seizeTicket, listViolations, listBlocks, createBlock, liftBlock, limitsForMember, cancelOrder, submitReturn, checkVoucher, createVoucher, runJobs, addJob, simulatePayment, processTransaction, stateOf };
 }
 
 module.exports = { createService, ApiError };

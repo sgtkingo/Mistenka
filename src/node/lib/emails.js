@@ -76,6 +76,26 @@ function seizureNotice(config, { ticket, revir, links, wardenName }) {
   };
 }
 
+// ---------- limity úlovků (B3) ----------
+const PERIOD_LABEL = { day: "den", week: "týden", month: "měsíc" };
+const limitLine = (l) => `${l.label}: ${l.count} ks za ${PERIOD_LABEL[l.period]} (limit ${l.maxCount} ks${l.period === "day" ? "" : `, ${czDate(l.from)} – ${czDate(l.to)}`})`;
+function limitExceeded(config, { ticket, revir, links, limits }) {
+  const rows = [["Kód místenky", ticket.code], ["Revír", revir.name], ["Datum lovu", czDate(ticket.fishing_date)], ["Držitel", `${ticket.first_name} ${ticket.last_name}`], ["Č. legitimace", ticket.member_id]];
+  return {
+    subject: `Překročený limit úlovků – ${ticket.first_name} ${ticket.last_name} (${ticket.code})`,
+    html: layout(config, "Překročený limit úlovků", `<p>Při odevzdání místenky byly podle místenek v Místence překročeny limity:</p><ul>${limits.map((l) => `<li>${esc(limitLine(l))}</li>`).join("")}</ul>${table(rows)}<p style="color:#5b6b64;font-size:13px">Místenka vidí jen úlovky ze svých místenek; limity platí na všech revírech svazu dohromady.</p>${button(links.status, "Stav místenky")}`),
+    text: textBlock(["Překročené limity úlovků (podle místenek v Místence):", ...limits.map((l) => `- ${limitLine(l)}`), ...rows.map(([k, v]) => `${k}: ${v}`), `Stav: ${links.status}`])
+  };
+}
+function memberBlocked(config, { ticket, block, limits }) {
+  const until = block.until ? `do ${czDate(block.until)}` : "do odvolání";
+  return {
+    subject: "Místenka – nákup místenek je pozastaven",
+    html: layout(config, "Nákup místenek je pozastaven", `<p>Nákup místenek na číslo legitimace <b>${esc(ticket.member_id)}</b> je pozastaven <b>${esc(until)}</b>.</p><p>Důvod: ${esc(block.reason)}</p>${limits?.length ? `<ul>${limits.map((l) => `<li>${esc(limitLine(l))}</li>`).join("")}</ul>` : ""}<p>Pokud jde o omyl, kontaktujte správce organizace${config.organization.contact?.email ? ` (${esc(config.organization.contact.email)})` : ""}.</p>`),
+    text: textBlock([`Nákup místenek na číslo legitimace ${ticket.member_id} je pozastaven ${until}.`, `Důvod: ${block.reason}`, "Pokud jde o omyl, kontaktujte správce organizace."])
+  };
+}
+
 // ---------- účty ----------
 const validFor = (minutes) => (minutes >= 120 ? `${Math.round(minutes / 60)} hodin` : `${minutes} minut`);
 function accountMail(config, { subject, title, intro, link, label, minutes, outro }) {
@@ -107,4 +127,4 @@ function createFileMailer(dir) {
   };
 }
 
-module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, createFileMailer, czDate };
+module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, createFileMailer, czDate };

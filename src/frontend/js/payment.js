@@ -1,4 +1,4 @@
-const { qs, esc, api, loadConfig, revirUrl, czDate, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, credentialsFor, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession } = window.Mistenka;
+const { qs, esc, api, loadConfig, revirUrl, czDate, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, credentialsFor, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, limitsHtml } = window.Mistenka;
 
 const code = (new URLSearchParams(location.search).get("code") || "").trim().toUpperCase();
 const credentials = credentialsFor(code);
@@ -59,6 +59,7 @@ function renderIssued() {
     <div class="ticket-code">${esc(ticket.code)}</div>
     <div class="ticket-details"><span><small>Rybář</small><b>${esc(`${ticket.firstName} ${ticket.lastName}`)}</b></span>${subdistrictLabel(revir) ? `<span><small>${esc(subdistrictTitle(revir))}</small><b>${esc(subdistrictLabel(revir))}</b></span>` : ""}<span><small>Datum lovu</small><b>${esc(czDate(ticket.date, { weekday: true }))}</b></span><span><small>Č. legitimace</small><b>${esc(ticket.memberId)}</b></span></div>
     <div class="ticket-qr">${qrSvg(ticketCheckUrl(ticket.code), "QR kód pro kontrolu místenky")}<small>Kód pro kontrolu místenky</small></div>`;
+  qs("#ticketLimits").innerHTML = limitsHtml((ticket.limits || []).filter((l) => l.period !== "day" || ticket.status === "expired_returned"), { title: "Vaše limity úlovků" });
   const rules = [];
   if (hours) rules.push(`Doba lovu v tento den: <b>${esc(hours)}</b>.`);
   (revir.fishingHours || []).forEach((rule) => rules.push(`${esc(rule.label || rule.months.join(", "))}: ${esc(rule.from)}–${esc(rule.to)}`));

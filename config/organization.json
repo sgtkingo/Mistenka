@@ -25,6 +25,7 @@
     "fromEmail": "mistenka@rybarikarvina.cz",
     "fromName": "Místenka – MO Karviná"
   },
+  "limitPolicy": { "violationsBeforeBlock": 0, "blockDays": null },
   "publicCheck": {
     "showFullName": true,
     "memberIdVisibleChars": 4

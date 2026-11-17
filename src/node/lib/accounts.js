@@ -482,7 +482,7 @@ function createAccounts({ db, config, appUrl }) {
   return {
     resolveSession, register, verifyEmail, login, requestMagicLink, magicLogin, requestPasswordReset, resetPassword, logout,
     me, updateProfile, confirmEmailChange, changePassword, deleteAccount, twoFactorSetup, twoFactorEnable, twoFactorDisable,
-    listUsers, setRoles, inviteStaff, requireWarden, forceRoles, cleanup, requireUser,
+    listUsers, setRoles, inviteStaff, requireWarden, requireManager, forceRoles, cleanup, requireUser,
     setupStatus, createSetupToken, setupTwoFactor, completeSetup
   };
 }

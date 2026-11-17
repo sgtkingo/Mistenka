@@ -58,6 +58,8 @@ Všechno, co se liší mezi organizacemi a revíry, je v konfiguraci (Node: `con
 | `speciesOverrides` | úpravy jednotlivých druhů pro revír, např. `[{ "id": "lin-obecny", "minLength": 30 }]` |
 | `fishingHours`, `rules`, `notice`, `permitNote`, … | texty a pravidla pro UI |
 
+Organizace: `organization.managerEmail` – kontaktní e-mail správce pro upozornění (zadržení, překročené limity); není veřejný. `limitPolicy` – automatická blokace (viz Limity).
+
 ### Pravidla druhů ryb
 
 Seznam druhů, lovné míry, doby hájení a denní limity jsou v samostatném souboru, na který odkazuje konfigurace MO (`speciesRules`, např. `config/species/crs-smas-mp-2026-2027.json`, sestaveno podle Soupisu mimopstruhových revírů ÚS SMaS 2026–2027 a vyhlášky 197/2004 Sb.). Revír může použít jiný soubor nebo přepsat jednotlivé druhy (`speciesOverrides`). Výsledná pravidla revíru jsou v `GET /config` jako `reviry[].fishRules`:
@@ -71,7 +73,26 @@ Seznam druhů, lovné míry, doby hájení a denní limity jsou v samostatném s
 | `weightFactor` | orientační koeficient odhadu hmotnosti: kg = k × délka³ / 100 000 |
 | `invasive`, `note` | informace pro rybáře |
 
-`dailyLimits`: `[{ id, label, species: [id…], maxCount }]` – nejvýše `maxCount` přisvojených kusů uvedených druhů na jednu místenku. Týdenní, měsíční a roční limity vyžadují historii člena a zatím se nekontrolují.
+`dailyLimits`: `[{ id, label, species: [id…], maxCount }]` – nejvýše `maxCount` přisvojených kusů uvedených druhů na jednu místenku.
+
+`periodLimits`: `[{ id, label, species: [id…], period: "week" | "month", maxCount, maxAreaHa?, source }]` – týdenní (kalendářní týden po–ne) a měsíční limity podle **všech vystavených místenek téhož čísla legitimace** v období dne lovu, i bez účtu. `maxAreaHa`: limit platí jen na místenkách, jejichž voda (největší z podrevírů místenky, jinak výměra revíru, údaj `area` „1,7 ha“) má nejvýš tuto výměru – např. kapr 2 ks týdně do 5 ha.
+
+**Překročení žádného limitu (denního, týdenního ani měsíčního) neblokuje odevzdání ani nákup.** Místenka vidí jen své místenky; limity svazu platí na všech revírech dohromady.
+
+### Limity v odpovědích
+
+`OwnerTicket.limits` (u všech kromě zrušených; v `GET /me/tickets` se kvůli výkonu nevrací) a `WardenTicket.limits`:
+
+```jsonc
+[{ "id": "vyznamne-tyden", "label": "kapr, štika, … dohromady", "period": "week", "from": "2026-06-08", "to": "2026-06-14",
+   "maxCount": 4, "count": 5, "exceeded": true, "source": "BPVRP bod 1 …" }]   // period "day" = jen tato místenka
+```
+
+Při odevzdání se překročené limity zapíšou (`limit_violations`) a správce dostane e-mail `limit_exceeded` (`organization.managerEmail`).
+
+### Blokace nákupu
+
+Aktivní blokace čísla legitimace → `POST /orders` vrátí `403 member_blocked` (zpráva s datem konce a důvodem). Blokaci zakládá správce ručně, nebo automaticky pravidlo `limitPolicy` v konfiguraci: `{ violationsBeforeBlock: 2, blockDays: 30 }` = po 2 místenkách s překročeným limitem v kalendářním roce blokace na 30 dní včetně dneška (`blockDays: null` = do konce roku; `violationsBeforeBlock: 0` = vypnuto). Automatická blokace pošle držiteli e-mail `member_blocked`. Později se pravidlo bude nastavovat v manažerském portálu (B5).
 
 ## Stavy místenky
 
@@ -113,6 +134,7 @@ Odpověď `201`: `{ token, ticket: <OwnerTicket> }`. U nezaplacené objednávky 
 | Chyba | `code` |
 | --- | --- |
 | 400 | `unknown_revir`, `invalid_date` (mimo dnešek…`bookingDaysAhead`), `invalid_member_id` (8 číslic), `invalid_name`, `invalid_birth_date`, `invalid_email`, `declaration_required`, `invalid_voucher` |
+| 403 | `member_blocked` |
 | 409 | `sold_out`, `voucher_used` |
 
 Kapacita, poukaz i vytvoření se provádějí v jedné transakci; poukaz se odepíše jen při úspěšném vytvoření.
@@ -131,12 +153,12 @@ Tělo: `{ noCatch: boolean, catches: [{ species, length, weight?, weightEstimate
 
 - `noCatch: true` ⇒ `catches` musí být prázdné; jinak alespoň jeden úlovek (`catches_required`).
 - `species` 1–60 znaků; známý druh (název nebo alias) se zapíše jako `name` z pravidel. Neznámý druh se přijme tak, jak je zadán. `length` 0–400 cm; `weight` volitelně 0–300 kg; `weightEstimated` = váha je odhad z délky.
-- Známý druh v době hájení (podle dne lovu) → `400 closed_season`; pod `minLength` → `400 undersized`; od `releaseFromLength` → `400 must_release`; překročený denní limit → `400 daily_limit`.
+- Známý druh v době hájení (podle dne lovu) → `400 closed_season`; pod `minLength` → `400 undersized`; od `releaseFromLength` → `400 must_release`. Překročený limit (denní, týdenní, měsíční) odevzdání **neblokuje**: odpověď nese `limits` s `exceeded: true`, správce dostane e-mail.
 - Odevzdat lze stav `active` a `expired_unreturned`, tj. do `returnDeadline` (= konec dne lovu + `lateReturnDays`). Odevzdání po konci dne lovu má `late: true`. Stav `closed_unreturned` → `409 return_closed`.
 
 | Chyba | `code` |
 | --- | --- |
-| 400 | `invalid_catches`, `catches_required`, `undersized`, `must_release`, `closed_season`, `daily_limit` |
+| 400 | `invalid_catches`, `catches_required`, `undersized`, `must_release`, `closed_season` |
 | 409 | `not_issued`, `too_early`, `already_returned`, `return_closed` |
 
 Odpověď `200`: `<OwnerTicket>` se stavem `expired_returned`.
@@ -212,11 +234,16 @@ Ve WordPressu průvodce není (admin = administrátor webu).
 | `PUT /me/password` 👤 | `{ currentPassword, newPassword }` (`currentPassword` jen pokud účet heslo má) | `{ user }`; `400 wrong_password`; odhlásí ostatní relace |
 | `POST /me/delete` 👤 | `{ confirm: true, password? }` | `{ deleted: true }` + smaže cookie; místenky zůstanou bez vazby na účet; `400 confirm_required`, `wrong_password`; `409 last_admin` |
 | `GET /me/tickets` 👤 | – | `{ tickets: [<OwnerTicket>] }`, nejnovější den lovu první |
+| `GET /me/limits?revirId=` 👤 | – | `{ date, revirId, limits: [...], blocked }` – týdenní a měsíční limity člena k dnešku (bez čísla legitimace prázdné) |
 | `POST /me/2fa/setup` 👤 | – | `{ secret, otpauthUrl }` (TOTP, SHA-1, 6 číslic, 30 s); `409 two_factor_enabled` |
 | `POST /me/2fa/enable` 👤 | `{ otp }` | `{ user }`; `400 invalid_otp`, `409 two_factor_not_setup` |
 | `POST /me/2fa/disable` 👤 | `{ otp }` | `{ user }`; admin → `409 two_factor_required` |
 | `GET /manage/users?q=` 🛠 | – | `{ users: [<StaffUser>] }` (max. 100, hledá v e-mailu, jménu a čísle legitimace) |
 | `POST /manage/users` 🛠 (jen admin) | `{ email, firstName, lastName, roles: ["manager"] \| ["admin"] }` | `201 { user: <StaffUser> }` – účet jen pro správu s ověřeným e-mailem; pozvaný dostane e-mail `staff_invite` s odkazem `account.html#invite=<token>` (72 h), heslo nastaví přes `POST /auth/password-reset/confirm`; `400 invalid_roles`, `403 forbidden_role`, `409 email_taken` |
+| `GET /manage/violations` 🛠 | – | `{ violations: [{ id, code, date, memberId, holder, label, period, from, to, count, maxCount, createdAt, blocked }] }` (posledních 200) |
+| `GET /manage/blocks` 🛠 | – | `{ blocks: [{ id, memberId, holder, reason, until, source: "manual" \| "auto", createdAt, liftedAt, active }] }` |
+| `POST /manage/blocks` 🛠 | `{ memberId, reason, until? }` (`until` YYYY-MM-DD včetně, bez = do zrušení) | `201 { block }`; `400 invalid_member_id`, `invalid_reason`, `invalid_date`; `409 already_blocked` |
+| `POST /manage/blocks/{id}/lift` 🛠 | – | `{ block }`; `404`, `409 already_lifted` |
 | `PUT /manage/users/{id}/roles` 🛠 | `{ roles: [...] }` | `{ user: <StaffUser> }`; `400 invalid_roles`, `403 forbidden_role` (správce mění jen `warden`), `404`, `409 last_admin`, `user_not_verified`; změna se zapíše do auditu |
 
 👤 = přihlášený uživatel (jinak `401 unauthorized`). 🛠 = `manager` nebo `admin` (jinak `403 forbidden_role`, admin bez 2FA `403 mfa_required`). TOTP kód lze použít jen jednou (ochrana proti opakování), tolerance ±30 s.
@@ -327,6 +354,8 @@ V tomto pořadí; Node je spouští v intervalu, WordPress cron hostingu přes `
 | `email_change` | změna e-mailu v profilu (jde na novou adresu) | `account.html#email=<token>` |
 | `ticket_seized` | porybný zadržel místenku | `return.html?code=…#t=<token>` |
 | `seizure_notice` | totéž, na `organization.managerEmail` (je-li vyplněn) | `status.html?code=…` |
+| `limit_exceeded` | odevzdání s překročeným limitem, na `organization.managerEmail` | `status.html?code=…` |
+| `member_blocked` | automatická blokace po opakovaném porušení limitů (držiteli) | – |
 | `staff_invite` | admin pozval správce/admina | `account.html#invite=<token>` |
 | `account_deleted` | smazání účtu | – |
 

@@ -1,5 +1,5 @@
 // Uživatelský portál: přihlášení, registrace a klientská zóna (B1).
-const { qs, qsa, esc, api, loadConfig, czDate, normalizeMemberId, isMemberId, showToast, applyBranding, loadSession, setSession, setSessionUser, isStaff, ticketState, ROLE_LABELS, qrSvg, parseCzDate, formatCzDate, passwordProblem } = window.Mistenka;
+const { qs, qsa, esc, api, loadConfig, czDate, normalizeMemberId, isMemberId, showToast, applyBranding, loadSession, setSession, setSessionUser, isStaff, ticketState, ROLE_LABELS, qrSvg, parseCzDate, formatCzDate, passwordProblem, limitsHtml } = window.Mistenka;
 
 let user = null;
 let pendingMagicToken = "";
@@ -187,6 +187,7 @@ function renderAccount() {
   qs("#passwordTitle").textContent = user.hasPassword ? "Heslo" : "Nastavit heslo";
   renderTwoFactor();
   loadTickets();
+  loadLimits();
   if (location.hash === "#2fa") openTwoFactorSetup();
 }
 
@@ -206,6 +207,17 @@ function ticketLink(ticket) {
   if (ticket.status === "active") return { href: `return.html?code=${code}`, label: "Odevzdat" };
   if (ticket.status === "pending_payment") return { href: `payment.html?code=${code}`, label: "Zaplatit" };
   return { href: `payment.html?code=${code}`, label: "Zobrazit" };
+}
+
+// Limity úlovků člena v tomto týdnu a měsíci (jen účty s číslem legitimace).
+async function loadLimits() {
+  const box = qs("#myLimits");
+  if (!user.memberId) { box.innerHTML = ""; return; }
+  try {
+    const data = await api("/me/limits");
+    const blocked = data.blocked ? `<div class="status-error">Nákup místenek je pozastaven ${data.blocked.until ? `do ${esc(czDate(data.blocked.until))}` : "do odvolání"}. Důvod: ${esc(data.blocked.reason)}</div>` : "";
+    box.innerHTML = blocked + limitsHtml(data.limits, { mode: "all", title: "Moje úlovky a limity" });
+  } catch { box.innerHTML = ""; }
 }
 
 async function loadTickets() {
