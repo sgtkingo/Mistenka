@@ -15,7 +15,7 @@ Cílová platforma se mění z Cloudflare Workers + D1 na **WordPress plugin** n
 | Test | `test.rybarikarvina.cz` – samostatná kopie webu a DB (`rybarikarv_test`), neindexovaná; každou změnu ověřit nejdřív zde |
 | REST API | WordPress nemá „hezké“ trvalé odkazy → volat `/?rest_route=/mistenka/v1/...`, ne `/wp-json/...` |
 | E-mail | WP Mail SMTP, odesílatel `mistenka@rybarikarvina.cz` (`smtp.websupport.cz:465`, SSL); SPF, DKIM a DMARC nastaveny; doručení do Gmailu ověřeno. Plugin volá jen `wp_mail()` |
-| Ověřovací plugin | `wordpress-plugin/mistenka-demo` (v0.2.0) – subdoména, REST, zápis do DB a e-mail ověřeny na ostrém webu |
+| Ověřovací plugin | `src/wordpress-plugin/mistenka-demo` (v0.2.0) – subdoména, REST, zápis do DB a e-mail ověřeny na ostrém webu |
 | Sestavení | `python scripts/build-plugin.py [plugin]` → `dist/<plugin>.zip` |
 
 ### Způsob vývoje: dvojí implementace
@@ -28,6 +28,16 @@ Cílová platforma se mění z Cloudflare Workers + D1 na **WordPress plugin** n
 ### Úkoly v Node verzi před převodem do WordPressu
 
 Pořadí odpovídá závislostem. Položky A jsou podmínkou převodu, B mohou následovat.
+
+> **Stav 17. 11. 2026: A1–A6 hotovo v Node verzi** (13 sdílených testů API prochází). Platby běží přes falešnou banku; adaptér Fio je napsaný, ale neověřený proti skutečnému účtu. Rozhodnutí při implementaci:
+> - Repozitář rozdělen na `src/frontend/` (jediná kopie UI), `src/node/`, `src/wordpress-plugin/` a `config/`. MO a revíry jsou plně v konfiguraci; více revírů = výběr na úvodní stránce (`?revir=<id>`), jiná MO = jiný konfigurační soubor.
+> - Držitel se identifikuje **číslem členské legitimace** (8 číslic pod čárovým kódem), ne číslem rybářského lístku. Odevzdání a detail: token z odkazu v e-mailu **nebo** číslo legitimace. Neúspěšné pokusy jsou omezené na IP.
+> - Kontrola: lehkou kontrolu stavu smí provést kdokoli (jméno a maskované číslo legitimace, `publicCheck`), nic nemění. Po zavedení uživatelských účtů bude rybářská stráž moci místenku **zadržet** (B2).
+> - Odevzdání: včas do konce dne lovu, opožděně do `lateReturnDays` (**7 dní**). Pak se místenka automaticky uzavře jako neodevzdaná, bez úlovku (`closed_unreturned`) a držitel dostane e-mail; připomínka po dni lovu na uzavření upozorňuje předem. **Další následky neodevzdání zatím nejsou definované.**
+> - Pozdní platba po vypršení rezervace se přijme automaticky, jen pokud den lovu neuplynul a místo je volné; jinak jde k ručnímu řešení.
+> - Předpověď počasí je skutečná: Open-Meteo podle GPS revíru, přímo z prohlížeče (bez API klíče; licence Open-Meteo je pro nekomerční užití – před ostrým provozem ověřit). Ukázkové počty míst nahradila skutečná dostupnost; e-mail se zadává už ve druhém kroku.
+> - GitHub Pages se už nepoužívají (workflow odstraněn).
+> - Druhy ryb a pravidla v samostatném souboru `config/species/crs-smas-mp-2026-2027.json` (44 druhů, míry podle BPVRP ÚS SMaS 2026–2027 a vyhlášky 197/2004 Sb., hájení, denní limity 2 ks významných / 3 ks lososovitých / 5 ks ostroretky). Kontroluje se při odevzdání na serveru i ve formuláři. Týdenní/měsíční/roční limity čekají na uživatelské účty (historie člena). Koeficienty pro odhad hmotnosti jsou orientační.
 
 **A1. Smlouva API a testy**
 - Sepsat `docs/API.md`: endpointy, vstupy, výstupy, stavy místenky, chybové kódy a texty.
@@ -76,7 +86,7 @@ Pořadí odpovídá závislostem. Položky A jsou podmínkou převodu, B mohou n
 
 ### Převod do WordPress pluginu
 
-1. Plugin `wordpress-plugin/mistenka` (demo plugin zůstává jako šablona a pak se odstraní): aktivace vytvoří tabulky přes `dbDelta()`, odinstalace je volitelně smaže.
+1. Plugin `src/wordpress-plugin/mistenka` (demo plugin zůstává jako šablona a pak se odstraní): aktivace vytvoří tabulky přes `dbDelta()`, odinstalace je volitelně smaže.
 2. REST `mistenka/v1` podle `docs/API.md`; `$wpdb->prepare()`, transakce pro kapacitu, poukazy a párování.
 3. Frontend převzatý z kořene repozitáře, vykreslený na `mistenka.rybarikarvina.cz` (detekce hostu jako v demo pluginu).
 4. Sdílené testy API proti `test.rybarikarvina.cz`, pak ruční průchod nákup → platba (malá skutečná částka) → místenka → kontrola → odevzdání.

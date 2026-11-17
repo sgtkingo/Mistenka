@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Místenka · Ukončení lovu</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="Místenka, domů"><span class="brand-mark" aria-hidden="true">⌁</span><span>Místenka</span></a>
+    <a class="login-button" id="homeLink" href="./">← Zpět na revír</a>
+  </header>
+  <main>
+    <section class="workspace-section return-page">
+      <div class="return-shell">
+        <div class="panel-card flow-panel">
+          <div class="panel-heading">
+            <div><span class="section-kicker">Ukončení lovu</span><h1>Odevzdejte místenku</h1></div>
+            <span class="step-badge">Odevzdání</span>
+          </div>
+          <div id="loadingState" class="status-loading">Načítám místenku…</div>
+          <div id="accessForm" class="hidden">
+            <p class="panel-intro">Pro odevzdání zadejte číslo členské legitimace (8 číslic pod čárovým kódem), na kterou byla místenka vystavena.</p>
+            <label class="field-label" for="accessMemberId">Číslo členské legitimace</label>
+            <div class="code-row"><input id="accessMemberId" type="text" inputmode="numeric" maxlength="10" placeholder="8 číslic" autocomplete="off"><button class="primary-button" id="accessButton" type="button">Pokračovat</button></div>
+          </div>
+          <div id="ticketSummary" class="ticket-summary hidden"></div>
+          <div id="catchPageForm" class="hidden">
+            <div class="legal-warning"><strong>Než místenku odevzdáte</strong><p>Zkontrolujte, že jsou v sumáři uvedeny všechny úlovky. Každý úlovek musí být ihned zapsán také do povolenky. Místenku je nutné odevzdat ihned po ukončení lovu v daný den; pozdější odevzdání bude označeno jako opožděné.</p></div>
+            <label class="checkbox-label no-catch-label"><input type="checkbox" id="noCatch"> <span><b>Bez úlovku</b> – dnes jsem nic neulovil/a</span></label>
+            <div id="catchSection">
+              <div class="catch-table-wrap">
+                <div class="table-head catch-grid"><span>Druh ryby <em class="required-marker">*</em></span><span>Délka (cm) <em class="required-marker">*</em></span><span>Váha (kg)</span><span></span></div>
+                <div id="catchRows"></div>
+              </div>
+              <button class="text-button add-catch" id="addCatch" type="button">+ Přidat další rybu</button>
+              <p class="field-help">Váha se odhadne podle délky; pokud ji znáte, přepište ji skutečnou hodnotou.</p>
+            </div>
+            <label class="checkbox-label return-confirm"><input type="checkbox" id="returnDeclaration"> <span>Potvrzuji, že jsem uvedl/a všechny úlovky a údaje jsou úplné.</span></label>
+            <button class="primary-button full-width" id="submitReturn" type="button">Odevzdat místenku</button>
+          </div>
+          <div id="returnedState" class="hidden returned-state"><span class="success-big">✓</span><h2>Místenka byla odevzdána</h2><p id="returnedText">Děkujeme za vyplnění sumáře úlovků. Místenka je nyní označena jako odevzdaná.</p><a class="primary-button" id="returnedHome" href="./">Zpět na revír</a></div>
+          <div id="returnError" class="hidden status-error"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="js/env.js"></script>
+  <script src="js/common.js"></script>
+  <script src="js/return.js"></script>
+</body>
+</html>

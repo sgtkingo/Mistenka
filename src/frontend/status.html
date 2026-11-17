@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Kontrola místenky · Petrůvka 1 A</title>
+  <meta name="robots" content="noindex">
+  <title>Kontrola místenky</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -14,7 +15,7 @@
   </header>
   <main class="status-page">
     <section class="panel-card status-shell">
-      <div class="panel-heading"><div><span class="section-kicker">Kontrola</span><h1>Stav místenky</h1></div><span class="step-badge">RS příprava</span></div>
+      <div class="panel-heading"><div><span class="section-kicker">Kontrola</span><h1>Stav místenky</h1></div><span class="step-badge">Kontrola</span></div>
       <div id="statusLoading" class="status-loading">Ověřuji místenku…</div>
       <div id="statusContent" class="hidden">
         <div id="statusBanner" class="status-banner"></div>
@@ -29,6 +30,8 @@
       <a class="back-button status-back" href="./">← Zpět na revír</a>
     </section>
   </main>
-  <script src="status.js"></script>
+  <script src="js/env.js"></script>
+  <script src="js/common.js"></script>
+  <script src="js/status.js"></script>
 </body>
 </html>

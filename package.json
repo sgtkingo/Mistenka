@@ -1,7 +1,14 @@
 {
-  "name": "mistenka-demo",
+  "name": "mistenka",
   "private": true,
+  "description": "Místenka – online rybářské místenky. Node.js pro lokální vývoj, PHP plugin pro WordPress.",
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
-    "start": "node server.js"
+    "start": "node src/node/server.js",
+    "seed": "node src/node/scripts/seed.js",
+    "test": "node test/api.test.js",
+    "build:plugin": "python scripts/build-plugin.py"
   }
 }

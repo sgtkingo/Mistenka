@@ -9,7 +9,7 @@ import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 name = sys.argv[1] if len(sys.argv) > 1 else "mistenka-demo"
-src_base = os.path.join(ROOT, "wordpress-plugin")
+src_base = os.path.join(ROOT, "src", "wordpress-plugin")
 src = os.path.join(src_base, name)
 out_dir = os.path.join(ROOT, "dist")
 out = os.path.join(out_dir, f"{name}.zip")

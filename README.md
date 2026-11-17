@@ -1,37 +1,48 @@
-# Místenka · Petrůvka 1 A
+# Místenka
 
-Demo webová aplikace pro rezervaci a kontrolu místenek pro rybářský revír **Petrůvka 1 A (471 115)**.
+Webová aplikace pro online prodej, kontrolu a odevzdání rybářských místenek. Jedna instalace slouží jedné místní organizaci (MO) s jedním nebo více revíry; vše, co se liší mezi organizacemi a revíry, je v konfiguraci.
 
-## Live demo
+## Struktura
 
-[Otevřít aplikaci na GitHub Pages](https://sgtkingo.github.io/Mistenka/)
+| Složka | Obsah |
+| --- | --- |
+| `src/frontend/` | uživatelské rozhraní (HTML, JS, CSS) – **jediná kopie**, sdílená oběma servery |
+| `src/node/` | Node.js server se SQLite pro lokální vývoj |
+| `src/wordpress-plugin/` | PHP plugin pro WordPress – produkční nasazení |
+| `config/organization.json` | konfigurace MO: kontakty, účet, revíry (cena, kapacita, pravidla) |
+| `config/species/` | pravidla druhů ryb organizace: seznam druhů, lovné míry, hájení, denní limity |
+| `test/` | sdílené testy API pro Node i PHP |
+| `docs/` | smlouva API (`API.md`), plán (`PLAN.md`), zadání a design |
 
-## Funkce
+Obě implementace musí dodržet [docs/API.md](docs/API.md) a projít stejnými testy. Frontend se liší jen prefixem API v `src/frontend/js/env.js`.
 
-- výběr data lovu a zobrazení dostupnosti,
-- nákupní workflow s čestným prohlášením a údaji rybáře,
-- simulace ověření platby,
-- vystavení místenky s pravidly rybolovu,
-- kontrola stavu místenky,
-- ukončení lovu a interaktivní zápis úlovků,
-- našeptávač druhů ryb s ovládáním klávesnicí,
-- kontrola minimální délky ryb,
-- odkaz na GPS revíru v Mapy.cz.
+## Lokální vývoj
 
-## Lokální spuštění
-
-Pro plný demo workflow se SQLite databází je potřeba Node.js 25 nebo novější:
+Potřeba Node.js 22.13 nebo novější (vestavěné `node:sqlite`), žádné závislosti se neinstalují.
 
 ```bash
-node server.js
+npm run seed    # ukázková data relativně k dnešku (místenky ve všech stavech, poukazy)
+npm start       # http://localhost:3000
+npm test        # sdílené testy API (spustí vlastní server s testovací konfigurací)
 ```
 
-Aplikace bude dostupná na [http://localhost:3000](http://localhost:3000).
+- Platby jsou v konfiguraci nastavené na falešnou banku (`"provider": "fake"`). Na platební stránce je tlačítko **Simulovat příchozí platbu**.
+- E-maily se neodesílají, ukládají se do `data/outbox/` (HTML a text).
+- Další proměnné prostředí jsou popsané v hlavičce [src/node/server.js](src/node/server.js).
 
-## GitHub Pages
+## Jiná MO nebo jiný revír
 
-GitHub Pages nasazuje statickou část aplikace pomocí workflow [`deploy-pages.yml`](.github/workflows/deploy-pages.yml). Na GitHub Pages není dostupný Node.js server ani SQLite databáze, takže stránky a UI lze prohlížet, ale serverové operace vyžadují lokální spuštění.
+1. Zkopírujte `config/organization.json` a upravte `organization`, `payment`, `email` a seznam `reviry`.
+   Pravidla druhů ryb: odkaz `speciesRules` na soubor v `config/species/` (míry a hájení podle BPVRP svazu); zpřísnění pro jednotlivý revír přes `speciesOverrides`.
+2. Spusťte s vlastním souborem: `MISTENKA_CONFIG=cesta/k/konfiguraci.json npm start`.
+3. Jeden revír → aplikace ho rovnou zobrazí; více revírů → úvodní stránka nabídne výběr (`?revir=<id>`).
+
+Identifikátor revíru (`id`) se ukládá k místenkám, po spuštění ho neměňte.
+
+## Platby
+
+Rybář platí převodem podle QR platby (SPAYD) s jedinečným variabilním symbolem. Místenka se vystaví po spárování platby. Napojení na skutečný účet: `"provider": "fio"` v konfiguraci a token Fio API (jen pro čtení) v proměnné `FIO_TOKEN`. Adaptér pro Fio je připravený, ale zatím neověřený proti skutečnému účtu.
 
 ## Stav projektu
 
-Projekt je demonstrační prototyp. Platba není skutečně prováděna a údaje v předpovědi počasí i výpočtu hmotnosti úlovku jsou pouze demo data.
+Pilotní vývoj. Node verze implementuje úkoly A1–A6 z [docs/PLAN.md](docs/PLAN.md); převod do WordPress pluginu je další krok.

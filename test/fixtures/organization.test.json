@@ -1,0 +1,215 @@
+{
+  "organization": {
+    "id": "mo-test",
+    "name": "Český rybářský svaz, z. s., místní organizace Karviná",
+    "shortName": "MO Test",
+    "web": "https://rybarikarvina.cz",
+    "appUrl": "https://mistenka.rybarikarvina.cz",
+    "privacyUrl": "",
+    "contact": {
+      "label": "Moravskoslezský ÚS",
+      "email": "administrativa@rybsvaz-ms.cz",
+      "phone": "+420 723 471 816"
+    }
+  },
+  "payment": {
+    "provider": "fake",
+    "accountNumber": "2401876543",
+    "bankCode": "2010",
+    "recipientName": "MO CRS Karvina",
+    "reservationMinutes": 60,
+    "messagePrefix": "Mistenka"
+  },
+  "email": {
+    "fromEmail": "mistenka@rybarikarvina.cz",
+    "fromName": "Místenka – MO Karviná"
+  },
+  "publicCheck": {
+    "showFullName": true,
+    "memberIdVisibleChars": 4
+  },
+  "speciesRules": "../../config/species/crs-smas-mp-2026-2027.json",
+  "reviry": [
+    {
+      "id": "revir-a",
+      "name": "Testovací revír A",
+      "number": "111 111",
+      "union": "Moravskoslezský ÚS",
+      "kind": "mimopstruhový",
+      "priceCzk": 200,
+      "dailyCapacity": 30,
+      "bookingDaysAhead": 3,
+      "lateReturnDays": 7,
+      "area": "4 ha",
+      "subdistrictCount": 4,
+      "subdistricts": "Petr 1–4 v k. ú. Petrovice-Prstná · celkem 4 ha",
+      "gps": {
+        "lat": 49.9137911,
+        "lon": 18.5586933,
+        "label": "49°54'49.648\"N, 18°33'31.296\"E"
+      },
+      "cardUrl": "https://www.rybsvaz.cz/karta-reviru/-/471115-petruvka-1-a",
+      "restrictions": "Lov pod ledem jen se zvláštní povolenkou a dle podmínek ČRS",
+      "permitNote": "Pro lov musíte mít platný rybářský lístek a platnou povolenku Územního svazu pro Moravu a Slezsko nebo celosvazovou povolenku. Místenka povolenku nenahrazuje.",
+      "notice": {
+        "title": "Pozor na dělící hráz",
+        "text": "Lov ryb z cesty mezi nádržemi Petr 2 a Petr 3 je zakázán. Vozidla nechávejte jen na vyhrazených místech."
+      },
+      "fishingHours": [
+        {
+          "months": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "from": "04:00",
+          "to": "24:00",
+          "label": "duben až září"
+        },
+        {
+          "months": [
+            10,
+            11,
+            12,
+            1,
+            2,
+            3
+          ],
+          "from": "05:00",
+          "to": "22:00",
+          "label": "říjen až březen"
+        }
+      ],
+      "rules": [
+        {
+          "title": "Základní podmínky",
+          "items": [
+            "Pro lov musíte mít platný rybářský lístek a platnou povolenku Územního svazu pro Moravu a Slezsko nebo celosvazovou povolenku.",
+            "Místenka platí pouze pro uvedené datum lovu a konkrétní revír.",
+            "Místenku je nutné odevzdat ihned po ukončení lovu v daný den. Pozdější odevzdání (nejpozději do 24 hodin) je možné, ale bude označeno jako opožděné."
+          ]
+        },
+        {
+          "title": "Povinná výbava a úlovky",
+          "items": [
+            "podběrák, míra, peán nebo vyprošťovač,",
+            "prostředek k šetrnému zacházení s úlovkem,",
+            "každý úlovek je nutné ihned zapsat do povolenky,",
+            "při vrácení místenky uveďte všechny úlovky včetně druhu a délky, případně že jste nic neulovili."
+          ]
+        },
+        {
+          "title": "Důležité upozornění",
+          "items": [
+            "Lov ryb z cesty mezi nádržemi Petr 2 a Petr 3 je zakázán. Vozidla nechávejte pouze na vyhrazených místech.",
+            "Lov pod ledem je možný pouze se zvláštní povolenkou a podle podmínek ČRS."
+          ]
+        }
+      ],
+      "subdistrictList": [
+        {
+          "number": 1,
+          "name": "Horní nádrž"
+        },
+        {
+          "number": 2,
+          "name": "Dolní nádrž"
+        }
+      ],
+      "ticketSubdistricts": [1, 2]
+    },
+    {
+      "id": "revir-b",
+      "name": "Malý revír B",
+      "number": "222 222",
+      "union": "Moravskoslezský ÚS",
+      "kind": "mimopstruhový",
+      "priceCzk": 150,
+      "dailyCapacity": 2,
+      "bookingDaysAhead": 7,
+      "lateReturnDays": 7,
+      "area": "4 ha",
+      "subdistrictCount": 4,
+      "subdistricts": "Petr 1–4 v k. ú. Petrovice-Prstná · celkem 4 ha",
+      "gps": {
+        "lat": 49.9137911,
+        "lon": 18.5586933,
+        "label": "49°54'49.648\"N, 18°33'31.296\"E"
+      },
+      "cardUrl": "https://www.rybsvaz.cz/karta-reviru/-/471115-petruvka-1-a",
+      "restrictions": "Lov pod ledem jen se zvláštní povolenkou a dle podmínek ČRS",
+      "permitNote": "Pro lov musíte mít platný rybářský lístek a platnou povolenku Územního svazu pro Moravu a Slezsko nebo celosvazovou povolenku. Místenka povolenku nenahrazuje.",
+      "notice": {
+        "title": "Pozor na dělící hráz",
+        "text": "Lov ryb z cesty mezi nádržemi Petr 2 a Petr 3 je zakázán. Vozidla nechávejte jen na vyhrazených místech."
+      },
+      "fishingHours": [
+        {
+          "months": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "from": "04:00",
+          "to": "24:00",
+          "label": "duben až září"
+        },
+        {
+          "months": [
+            10,
+            11,
+            12,
+            1,
+            2,
+            3
+          ],
+          "from": "05:00",
+          "to": "22:00",
+          "label": "říjen až březen"
+        }
+      ],
+      "rules": [
+        {
+          "title": "Základní podmínky",
+          "items": [
+            "Pro lov musíte mít platný rybářský lístek a platnou povolenku Územního svazu pro Moravu a Slezsko nebo celosvazovou povolenku.",
+            "Místenka platí pouze pro uvedené datum lovu a konkrétní revír.",
+            "Místenku je nutné odevzdat ihned po ukončení lovu v daný den. Pozdější odevzdání (nejpozději do 24 hodin) je možné, ale bude označeno jako opožděné."
+          ]
+        },
+        {
+          "title": "Povinná výbava a úlovky",
+          "items": [
+            "podběrák, míra, peán nebo vyprošťovač,",
+            "prostředek k šetrnému zacházení s úlovkem,",
+            "každý úlovek je nutné ihned zapsat do povolenky,",
+            "při vrácení místenky uveďte všechny úlovky včetně druhu a délky, případně že jste nic neulovili."
+          ]
+        },
+        {
+          "title": "Důležité upozornění",
+          "items": [
+            "Lov ryb z cesty mezi nádržemi Petr 2 a Petr 3 je zakázán. Vozidla nechávejte pouze na vyhrazených místech.",
+            "Lov pod ledem je možný pouze se zvláštní povolenkou a podle podmínek ČRS."
+          ]
+        }
+      ],
+      "speciesOverrides": [
+        {
+          "id": "lin-obecny",
+          "minLength": 30
+        },
+        {
+          "id": "amur-bily",
+          "minLength": 60
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Místenka — jednoduchá online rezervace rybolovu.">
+  <title>Místenka</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="Místenka, domů">
+      <span class="brand-mark" aria-hidden="true">⌁</span>
+      <span>Místenka</span>
+    </a>
+    <nav class="main-nav" aria-label="Hlavní navigace">
+      <a href="#revir">Revír</a>
+      <a href="#jak-to-funguje">Jak to funguje</a>
+      <a href="#kontakt">Kontakt</a>
+    </nav>
+    <button class="login-button" id="loginButton" type="button">Přihlásit se <span aria-hidden="true">↗</span></button>
+  </header>
+
+  <main>
+    <div id="appError" class="status-error page-error hidden" role="alert"></div>
+
+    <section class="action-section revir-picker hidden" id="revirPicker" aria-labelledby="picker-heading">
+      <div class="section-intro">
+        <span class="section-kicker" data-org-short></span>
+        <h2 id="picker-heading">Vyberte revír</h2>
+      </div>
+      <div class="action-grid" id="revirList"></div>
+    </section>
+
+    <div id="revirContent" class="hidden">
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="live-dot"></span> <span data-org-short></span></div>
+        <h1>Chyťte svůj<br><em>klid u vody.</em></h1>
+        <p class="hero-lead">Jednoduchá místenka pro revír <span data-revir-name></span>. Vyberte si den, zaplaťte převodem a vyrazte.</p>
+        <div class="hero-meta" id="heroMeta"></div>
+        <a class="change-revir hidden" id="changeRevir" href="./">← Jiný revír</a>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <div class="sun"></div>
+        <div class="hill hill-back"></div>
+        <div class="hill hill-front"></div>
+        <div class="river"></div>
+        <div class="reed reed-one"></div>
+        <div class="reed reed-two"></div>
+        <div class="fish">⌁</div>
+        <div class="art-label" id="artLabel"></div>
+      </div>
+    </section>
+
+    <section class="action-section" id="jak-to-funguje" aria-labelledby="action-heading">
+      <div class="section-intro">
+        <span class="section-kicker">Co potřebujete vyřídit?</span>
+        <h2 id="action-heading">Vyberte si akci</h2>
+      </div>
+      <div class="action-grid">
+        <button class="action-card active" data-panel="buy" type="button">
+          <span class="action-icon">↗</span>
+          <span class="action-content"><strong>Zakoupit místenku</strong><small id="buyHint">Rezervujte si místo dopředu</small></span>
+          <span class="card-arrow">→</span>
+        </button>
+        <button class="action-card" data-panel="return" type="button">
+          <span class="action-icon return-icon">↩</span>
+          <span class="action-content"><strong>Vrátit místenku</strong><small>Odevzdejte místenku a zapište úlovky</small></span>
+          <span class="card-arrow">→</span>
+        </button>
+        <button class="action-card" data-panel="check" type="button">
+          <span class="action-icon check-icon">✓</span>
+          <span class="action-content"><strong>Zkontrolovat</strong><small>Rychlé ověření platnosti místenky</small></span>
+          <span class="card-arrow">→</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="workspace-section">
+      <div class="workspace-grid">
+        <div class="panel-card flow-panel" id="flowPanel">
+          <div class="panel-heading">
+            <div>
+              <span class="section-kicker" id="panelKicker">Nákup místenky</span>
+              <h2 id="panelTitle">Vyberte si den u vody</h2>
+            </div>
+            <span class="step-badge" id="stepBadge">1 / 3</span>
+          </div>
+          <div id="buyPanel" class="panel-content">
+            <label class="field-label" for="memberId">Číslo členské legitimace <span class="required">*</span></label>
+            <div class="input-with-status">
+              <input id="memberId" type="text" inputmode="numeric" placeholder="8 číslic pod čárovým kódem" autocomplete="off" maxlength="10">
+              <span class="input-status" id="memberIdStatus" aria-live="polite">Čeká na ověření</span>
+            </div>
+            <div class="legal-warning"><span class="permit-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 2 1 21h22L12 2Zm1 15h-2v2h2v-2Zm0-2h-2v-5h2v5Z"/></svg></span><div><strong>Než budete pokračovat</strong><p id="permitNote"></p></div></div>
+            <div class="date-heading"><span class="field-label">Datum lovu</span><span class="availability" id="availabilityNote">● Dostupná místa</span></div>
+            <div class="date-grid" id="dateGrid"><p class="muted">Načítám volná místa…</p></div>
+            <div class="form-footer">
+              <label class="checkbox-label declaration-label" id="declarationLabel"><input type="checkbox" id="declaration"> <span>Čestně prohlašuji, že mám platný rybářský lístek i povolenku platnou pro tento revír a souhlasím s podmínkami rezervace.</span></label>
+              <button class="primary-button" id="continueButton" type="button">Pokračovat <span>→</span></button>
+            </div>
+          </div>
+          <div id="personPanel" class="panel-content hidden">
+            <button class="back-button" id="backToStart" type="button">← Zpět</button>
+            <p class="panel-intro">Údaje použijeme na místenku a pro její ověření. Vyplňte je prosím přesně podle dokladu.</p>
+            <div class="form-two-col"><div><label class="field-label" for="firstName">Jméno <span class="required">*</span></label><input id="firstName" type="text" placeholder="Jan" maxlength="100" autocomplete="given-name"></div><div><label class="field-label" for="lastName">Příjmení <span class="required">*</span></label><input id="lastName" type="text" placeholder="Novák" maxlength="100" autocomplete="family-name"></div></div>
+            <label class="field-label" for="birthDate">Datum narození <span class="required">*</span></label><input id="birthDate" type="date" autocomplete="bday">
+            <label class="field-label payment-email-label" for="email">E-mail pro místenku <span class="required">*</span></label>
+            <input id="email" type="email" placeholder="jan.novak@example.cz" maxlength="200" autocomplete="email">
+            <button class="primary-button full-width" id="continuePerson" type="button">Pokračovat k rekapitulaci <span>→</span></button>
+          </div>
+          <div id="returnPanel" class="panel-content hidden">
+            <p class="panel-intro">Zadejte kód z místenky a číslo členské legitimace, na kterou byla vystavena. Odkaz pro odevzdání najdete také v e-mailu s místenkou.</p>
+            <label class="field-label" for="returnCode">Kód místenky</label>
+            <input id="returnCode" class="code-input" maxlength="6" placeholder="S7K4P2" autocomplete="off">
+            <label class="field-label" for="returnMemberId">Číslo členské legitimace</label>
+            <div class="code-row"><input id="returnMemberId" type="text" inputmode="numeric" maxlength="10" placeholder="8 číslic" autocomplete="off"><button class="primary-button" id="returnFind" type="button">Najít místenku</button></div>
+          </div>
+          <div id="checkPanel" class="panel-content hidden">
+            <p class="panel-intro">Ověřte místenku načtením QR kódu nebo ručním zadáním jejího kódu.</p>
+            <label class="field-label" for="checkCode">Kód místenky</label>
+            <div class="code-row"><input id="checkCode" class="code-input" maxlength="6" placeholder="S7K4P2" autocomplete="off"><button class="primary-button" id="checkButton" type="button">Ověřit kód</button></div>
+          </div>
+          <div id="paymentPanel" class="panel-content hidden">
+            <button class="back-button" id="backButton" type="button">← Zpět</button>
+            <div class="payment-layout"><div><span class="section-kicker">Rekapitulace</span><h2>Vaše místenka</h2><dl class="summary-list"><div><dt>Revír</dt><dd data-revir-name></dd></div><div id="summaryNumberRow"><dt>Číslo revíru</dt><dd id="summaryNumber">—</dd></div><div id="summarySubdistrictRow"><dt id="summarySubdistrictTitle">Podrevír</dt><dd id="summarySubdistrict">—</dd></div><div><dt>Datum</dt><dd id="summaryDate">—</dd></div><div><dt>Rybář</dt><dd id="summaryPerson">—</dd></div><div><dt>E-mail</dt><dd id="summaryEmail">—</dd></div><div><dt>Celkem</dt><dd class="total" id="summaryTotal">—</dd></div></dl></div></div>
+            <div class="weather-card hidden" id="weatherCard"><span class="weather-main" id="weatherIcon"></span><div><span class="section-kicker" id="weatherTitle"></span><strong id="weatherMain"></strong><small id="weatherDetail"></small></div></div>
+            <label class="field-label voucher-label" for="voucherCode">Dárkový poukaz <span class="optional">(volitelné)</span></label>
+            <div class="voucher-input-row"><input id="voucherCode" type="text" maxlength="16" placeholder="16znakový kód" autocomplete="off" spellcheck="false"><button class="voucher-verify-button" id="verifyVoucher" type="button">Ověřit</button></div>
+            <p class="field-help">Poukaz se odečte až po odeslání objednávky.</p>
+            <p class="field-help" id="paymentHelp"></p>
+            <button class="primary-button full-width" id="startPayment" type="button">Objednat a zaplatit <span>→</span></button>
+          </div>
+        </div>
+        <aside class="info-column">
+          <div class="notice-card hidden" id="noticeCard"><span class="notice-icon">✦</span><div><span class="section-kicker">Důležité</span><h3 id="noticeTitle"></h3><p id="noticeText"></p><a class="rules-link" href="rules.html">Pravidla revíru →</a></div></div>
+          <div class="details-card" id="revir"><div class="details-top"><span class="section-kicker">O revíru</span></div><h3 data-revir-name></h3><p class="muted" id="revirSubtitle"></p><div class="detail-list" id="revirDetails"></div><div class="details-links" id="revirLinks"></div></div>
+        </aside>
+      </div>
+    </section>
+    </div>
+
+    <section class="trust-section" id="kontakt"><span class="section-kicker">Kontakt</span><h2>Jsme tu pro vás.</h2><p id="contactLine"></p></section>
+  </main>
+  <footer><span>© <span id="year"></span> <span data-org-short></span></span><span>Místenka</span><a href="#" data-privacy>Podmínky a ochrana údajů</a></footer>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="js/env.js"></script>
+  <script src="js/common.js"></script>
+  <script src="js/weather.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

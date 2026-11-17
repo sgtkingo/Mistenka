@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Pravidla rybolovu na revíru.">
+  <title>Pravidla revíru</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="Místenka, domů"><span class="brand-mark" aria-hidden="true">⌁</span><span>Místenka</span></a>
+    <nav class="main-nav" aria-label="Hlavní navigace"><a href="./">Revír</a><a href="./#jak-to-funguje">Jak to funguje</a><a href="./#kontakt">Kontakt</a></nav>
+    <a class="login-button" id="homeLink" href="./">Zpět na revír <span aria-hidden="true">↗</span></a>
+  </header>
+  <main class="rules-page">
+    <section class="panel-card rules-shell">
+      <div class="panel-heading">
+        <div><span class="section-kicker" id="rulesKicker"></span><h1>Pravidla revíru</h1></div>
+        <span class="step-badge">ČRS</span>
+      </div>
+      <div class="legal-warning"><span class="permit-icon" aria-hidden="true">!</span><div><strong>Než vyrazíte k vodě</strong><p id="rulesPermit">Místenka nenahrazuje platný rybářský lístek ani platnou povolenku.</p></div></div>
+      <div id="rulesBody"><p class="status-loading">Načítám pravidla…</p></div>
+      <a class="back-button rules-back" id="backLink" href="./">← Zpět na revír</a>
+    </section>
+  </main>
+  <script src="js/env.js"></script>
+  <script src="js/common.js"></script>
+  <script>
+    (async function () {
+      const { qs, esc, loadConfig, selectedRevir, revirUrl } = window.Mistenka;
+      try {
+        const config = await loadConfig();
+        const revir = selectedRevir(config);
+        if (!revir) { location.href = "./"; return; }
+        document.title = `Pravidla revíru · ${revir.name}`;
+        qs("#rulesKicker").textContent = [revir.name, revir.number].filter(Boolean).join(" · ");
+        if (revir.permitNote) qs("#rulesPermit").textContent = revir.permitNote;
+        const sections = [...(revir.rules || [])];
+        if (revir.fishingHours?.length) sections.splice(1, 0, { title: "Doba lovu", items: revir.fishingHours.map((h) => `${h.label || h.months.join(", ")}: ${h.from}–${h.to}`) });
+        let html = sections.map((section) => `<div class="rules-section"><h2>${esc(section.title)}</h2><ul>${section.items.map((item) => `<li>${esc(item)}</li>`).join("")}</ul></div>`).join("");
+        const fish = revir.fishRules;
+        if (fish) {
+          const { seasonText } = window.Mistenka;
+          const regulated = fish.species.filter((s) => s.minLength || s.releaseFromLength || s.closedSeasons?.length || s.note);
+          const rows = regulated.map((s) => `<tr><td><b>${esc(s.name)}</b>${s.latin ? `<br><small>${esc(s.latin)}</small>` : ""}</td><td>${s.minLength ? `${esc(s.minLength)} cm` : "–"}${s.releaseFromLength ? `<br><small>od ${esc(s.releaseFromLength)} cm vrátit</small>` : ""}</td><td>${(s.closedSeasons || []).map((season) => esc(seasonText(season))).join(", ") || "–"}</td><td><small>${esc(s.note || "")}</small></td></tr>`).join("");
+          const limits = (fish.dailyLimits || []).map((l) => `<li>Nejvýše ${esc(l.maxCount)} ks denně: ${esc(l.label)}.</li>`).join("");
+          html += `<div class="rules-section"><h2>Nejmenší lovné míry a doby hájení</h2><div class="rules-table-wrap"><table class="rules-table"><thead><tr><th>Druh</th><th>Lovná míra</th><th>Hájení</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>${limits ? `<ul>${limits}</ul>` : ""}<p class="muted"><small>Zdroj: ${esc((fish.sources || []).join("; "))}. Platnost ${esc(fish.validFrom || "")} – ${esc(fish.validTo || "")}.</small></p></div>`;
+        }
+        qs("#rulesBody").innerHTML = html;
+        const home = revirUrl("./", revir, config);
+        qs("#homeLink").href = home;
+        qs("#backLink").href = home;
+      } catch (error) {
+        qs("#rulesBody").innerHTML = `<p class="status-error">${esc(error.message)}</p>`;
+      }
+    })();
+  </script>
+</body>
+</html>
