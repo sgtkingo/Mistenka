@@ -1,4 +1,4 @@
-const { qs, esc, api, loadConfig, revirUrl, czDate, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, credentialsFor, qrSvg, ticketCheckUrl, showToast, applyBranding } = window.Mistenka;
+const { qs, esc, api, loadConfig, revirUrl, czDate, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, credentialsFor, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession } = window.Mistenka;
 
 const code = (new URLSearchParams(location.search).get("code") || "").trim().toUpperCase();
 const credentials = credentialsFor(code);
@@ -128,7 +128,7 @@ qs("#printTicket").addEventListener("click", () => window.print());
     config = await loadConfig();
     applyBranding(config);
     if (!/^[A-Z0-9]{6}$/.test(code)) throw new Error("Chybí platný kód objednávky.");
-    if (!credentials.token && !credentials.memberId) throw new Error("Objednávku otevřete odkazem z e-mailu, nebo ji zkontrolujte na stránce kontroly místenky.");
+    if (!credentials.token && !credentials.memberId && !(await loadSession())) throw new Error("Objednávku otevřete odkazem z e-mailu, nebo ji zkontrolujte na stránce kontroly místenky.");
     ticket = await api(`/orders/${code}`, credentials);
     render();
   } catch (error) {

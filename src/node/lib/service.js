@@ -6,23 +6,12 @@ const time = require("./time");
 const { getRevir, revirRules } = require("./config");
 const { spayd } = require("./payments");
 const emails = require("./emails");
-
-class ApiError extends Error {
-  constructor(status, code, message) {
-    super(message);
-    this.status = status;
-    this.code = code;
-  }
-}
+const { ApiError, normalizeMemberId, validEmail, validMemberId, validName, validBirthDate } = require("./validate");
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const CODE_RE = /^[A-Z0-9]{6}$/;
 const VOUCHER_RE = /^[A-Z0-9]{16}$/;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// Číslo členské legitimace: 8 číslic pod čárovým kódem; mezery se ignorují.
-const normalizeMemberId = (value) => String(value || "").replace(/\s+/g, "");
-const MEMBER_ID_RE = /^\d{8}$/;
 const normalizeCode = (value) => String(value || "").trim().toUpperCase();
 const sha256 = (value) => crypto.createHash("sha256").update(String(value)).digest("hex");
 const iso = (date) => date.toISOString();
@@ -103,8 +92,10 @@ function createService({ db, config, provider, mailer, appUrl }) {
     if (!ticket) throw new ApiError(404, "not_found", "Místenka nebyla nalezena.");
     return ticket;
   }
-  // Držitel se prokáže tokenem (prohlížeč / odkaz z e-mailu) nebo číslem členské legitimace.
-  function authorize(ticket, credentials = {}) {
+  // Držitel se prokáže tokenem (prohlížeč / odkaz z e-mailu), číslem členské legitimace,
+  // nebo je přihlášený k účtu, ke kterému místenka patří.
+  function authorize(ticket, credentials = {}, user = null) {
+    if (user && ticket.user_id === user.id) return;
     if (credentials.token) {
       const row = db.prepare("SELECT 1 FROM ticket_tokens WHERE token_hash = ? AND ticket_id = ?").get(sha256(credentials.token), ticket.id);
       if (row) return;
@@ -215,22 +206,17 @@ function createService({ db, config, provider, mailer, appUrl }) {
     const today = time.pragueToday();
     const date = String(input.date || "");
     if (!time.isIsoDate(date) || date < today || date > time.addDays(today, revir.bookingDaysAhead)) throw new ApiError(400, "invalid_date", `Datum lovu musí být mezi dneškem a ${revir.bookingDaysAhead}. dnem dopředu.`);
-    const memberId = normalizeMemberId(input.memberId);
-    if (!MEMBER_ID_RE.test(memberId)) throw new ApiError(400, "invalid_member_id", "Zadejte 8místné číslo členské legitimace (pod čárovým kódem).");
-    const firstName = String(input.firstName || "").trim();
-    const lastName = String(input.lastName || "").trim();
-    if (!firstName || !lastName || firstName.length > 100 || lastName.length > 100) throw new ApiError(400, "invalid_name", "Vyplňte jméno a příjmení.");
-    const birthDate = String(input.birthDate || "");
-    if (!time.isIsoDate(birthDate) || birthDate >= today || birthDate < "1900-01-01") throw new ApiError(400, "invalid_birth_date", "Zadejte platné datum narození.");
-    const email = String(input.email || "").trim();
-    if (!EMAIL_RE.test(email) || email.length > 200) throw new ApiError(400, "invalid_email", "Zadejte platný e-mail.");
+    const memberId = validMemberId(input.memberId);
+    const { firstName, lastName } = validName(input.firstName, input.lastName);
+    const birthDate = validBirthDate(input.birthDate);
+    const email = validEmail(input.email);
     if (input.declaration !== true) throw new ApiError(400, "declaration_required", "Potvrďte čestné prohlášení a podmínky rezervace.");
     const voucherCode = normalizeCode(input.voucherCode);
     if (voucherCode && !VOUCHER_RE.test(voucherCode)) throw new ApiError(400, "invalid_voucher", "Kód poukazu musí mít 16 znaků A–Z nebo 0–9.");
     return { revir, date, memberId, firstName, lastName, birthDate, email, voucherCode };
   }
 
-  function createOrder(input) {
+  function createOrder(input, user = null) {
     const order = validateOrder(input);
     return transaction(db, () => {
       const { revir } = order;
@@ -246,11 +232,11 @@ function createService({ db, config, provider, mailer, appUrl }) {
       const free = due === 0;
       const code = makeCode();
       const result = db.prepare(`INSERT INTO tickets (code, revir_id, fishing_date, member_id, first_name, last_name, birth_date, email,
-        price_halere, amount_due_halere, variable_symbol, voucher_code, status, created_at, reserved_until, paid_at, issued_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        price_halere, amount_due_halere, variable_symbol, voucher_code, status, created_at, reserved_until, paid_at, issued_at, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         code, revir.id, order.date, order.memberId, order.firstName, order.lastName, order.birthDate, order.email,
         price, due, free ? null : makeVariableSymbol(), order.voucherCode || null, free ? "issued" : "pending_payment", iso(now),
-        free ? null : iso(new Date(now.getTime() + config.payment.reservationMinutes * 60_000)), null, free ? iso(now) : null
+        free ? null : iso(new Date(now.getTime() + config.payment.reservationMinutes * 60_000)), null, free ? iso(now) : null, user?.id ?? null
       );
       const ticketId = Number(result.lastInsertRowid);
       if (order.voucherCode) {
@@ -267,14 +253,18 @@ function createService({ db, config, provider, mailer, appUrl }) {
   function getPublicTicket(code) {
     return publicTicket(findTicket(code));
   }
-  function getOwnerTicket(code, credentials) {
+  function getOwnerTicket(code, credentials, user) {
     const ticket = findTicket(code);
-    authorize(ticket, credentials);
+    authorize(ticket, credentials, user);
     return ownerTicket(ticket);
   }
-  function cancelOrder(code, credentials) {
+  // Místenky přihlášeného uživatele, nejnovější den lovu první.
+  function ticketsForUser(user) {
+    return db.prepare("SELECT * FROM tickets WHERE user_id = ? ORDER BY fishing_date DESC, id DESC LIMIT 200").all(user.id).map(ownerTicket);
+  }
+  function cancelOrder(code, credentials, user) {
     const ticket = findTicket(code);
-    authorize(ticket, credentials);
+    authorize(ticket, credentials, user);
     return transaction(db, () => {
       const fresh = db.prepare("SELECT * FROM tickets WHERE id = ?").get(ticket.id);
       if (fresh.status !== "pending_payment" && fresh.status !== "payment_expired") throw new ApiError(409, "not_cancellable", "Zrušit lze jen nezaplacenou objednávku.");
@@ -283,9 +273,9 @@ function createService({ db, config, provider, mailer, appUrl }) {
     });
   }
 
-  function submitReturn(code, credentials, body = {}) {
+  function submitReturn(code, credentials, body = {}, user = null) {
     const ticket = findTicket(code);
-    authorize(ticket, credentials);
+    authorize(ticket, credentials, user);
     const noCatch = body.noCatch === true;
     const items = Array.isArray(body.catches) ? body.catches : [];
     if (noCatch && items.length) throw new ApiError(400, "invalid_catches", "Při hlášení bez úlovku neuvádějte žádné úlovky.");
@@ -452,6 +442,8 @@ function createService({ db, config, provider, mailer, appUrl }) {
   }
 
   // Plánované úlohy: v Node běží v intervalu, ve WordPressu je spustí cron hostingu.
+  const extraJobs = [];
+  const addJob = (name, fn) => extraJobs.push([name, fn]);
   async function runJobs({ force = false } = {}) {
     const report = {};
     const step = async (name, fn) => {
@@ -461,6 +453,7 @@ function createService({ db, config, provider, mailer, appUrl }) {
     await step("payments", () => syncPayments(force));
     await step("reminders", () => sendReminders());
     await step("closed", () => closeOverdue());
+    for (const [name, fn] of extraJobs) await step(name, fn);
     await step("emails", () => deliverOutbox());
     return report;
   }
@@ -481,7 +474,7 @@ function createService({ db, config, provider, mailer, appUrl }) {
     return { result: report.payments?.results?.[0] || null };
   }
 
-  return { availability, createOrder, getPublicTicket, getOwnerTicket, cancelOrder, submitReturn, checkVoucher, createVoucher, runJobs, simulatePayment, processTransaction, stateOf };
+  return { availability, createOrder, getPublicTicket, getOwnerTicket, ticketsForUser, cancelOrder, submitReturn, checkVoucher, createVoucher, runJobs, addJob, simulatePayment, processTransaction, stateOf };
 }
 
 module.exports = { createService, ApiError };

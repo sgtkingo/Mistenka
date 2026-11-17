@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Místenka · Můj účet</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="Místenka, domů"><span class="brand-mark" aria-hidden="true">⌁</span><span>Místenka</span></a>
+    <nav class="main-nav" aria-label="Hlavní navigace"><a href="./">Revír</a><a href="./#kontakt">Kontakt</a></nav>
+    <div class="user-menu"><a class="login-button hidden" data-manage-link href="manage.html">Správa</a><a class="login-button" data-account-link href="account.html">Přihlásit se</a></div>
+  </header>
+  <main class="status-page">
+    <div id="loadingState" class="status-shell status-loading">Načítám…</div>
+
+    <!-- Nepřihlášený: přihlášení, registrace, obnova hesla, kód 2FA -->
+    <section class="panel-card status-shell hidden" id="authView">
+      <div class="panel-heading"><div><span class="section-kicker">Uživatelský účet</span><h1 id="authTitle">Přihlášení</h1></div></div>
+      <div class="tabs" role="tablist">
+        <button class="tab active" type="button" data-tab="login" role="tab">Přihlášení</button>
+        <button class="tab" type="button" data-tab="register" role="tab">Registrace</button>
+      </div>
+      <div id="authMessage" class="info-box hidden" role="status"></div>
+
+      <form id="loginForm" class="auth-form" novalidate>
+        <label class="field-label" for="loginEmail">E-mail</label>
+        <input id="loginEmail" type="email" autocomplete="username" maxlength="200" required>
+        <label class="field-label" for="loginPassword">Heslo</label>
+        <input id="loginPassword" type="password" autocomplete="current-password" maxlength="200">
+        <div class="otp-field hidden" id="loginOtpField">
+          <label class="field-label" for="loginOtp">Kód z ověřovací aplikace</label>
+          <input id="loginOtp" class="otp-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456">
+        </div>
+        <button class="primary-button full-width" type="submit">Přihlásit se</button>
+        <div class="auth-links">
+          <button class="text-button" type="button" id="sendMagicLink">Poslat odkaz pro přihlášení bez hesla</button>
+          <button class="text-button" type="button" id="sendReset">Zapomenuté heslo</button>
+        </div>
+      </form>
+
+      <form id="registerForm" class="auth-form hidden" novalidate>
+        <p class="panel-intro">S účtem se vám formulář místenky vyplní sám a uvidíte historii svých místenek. Nakupovat můžete i bez účtu.</p>
+        <div class="form-two-col"><div><label class="field-label" for="regFirstName">Jméno <span class="required">*</span></label><input id="regFirstName" autocomplete="given-name" maxlength="100"></div><div><label class="field-label" for="regLastName">Příjmení <span class="required">*</span></label><input id="regLastName" autocomplete="family-name" maxlength="100"></div></div>
+        <div class="form-two-col"><div><label class="field-label" for="regBirthDate">Datum narození <span class="required">*</span></label><input id="regBirthDate" type="text" class="date-input" inputmode="numeric" placeholder="dd.mm.rrrr" maxlength="10" autocomplete="bday"></div><div><label class="field-label" for="regMemberId">Číslo členské legitimace <span class="required">*</span></label><input id="regMemberId" inputmode="numeric" maxlength="10" placeholder="8 číslic pod čárovým kódem" autocomplete="off"></div></div>
+        <label class="field-label" for="regEmail">E-mail <span class="required">*</span></label>
+        <input id="regEmail" type="email" autocomplete="email" maxlength="200">
+        <div class="form-two-col"><div><label class="field-label" for="regPassword">Heslo <span class="optional">(volitelné, alespoň 8 znaků)</span></label>
+        <input id="regPassword" type="password" autocomplete="new-password" maxlength="200"></div><div><label class="field-label" for="regPassword2">Heslo znovu</label>
+        <input id="regPassword2" type="password" autocomplete="new-password" maxlength="200"></div></div>
+        <p class="field-help">Bez hesla se budete přihlašovat odkazem, který vám pošleme e-mailem.</p>
+        <label class="checkbox-label consent-label"><input type="checkbox" id="regConsent"> <span>Souhlasím se zpracováním osobních údajů pro vedení účtu. Souhlas můžete kdykoli odvolat smazáním účtu.</span></label>
+        <button class="primary-button full-width" type="submit">Zaregistrovat se</button>
+      </form>
+
+      <form id="resetForm" class="auth-form hidden" novalidate>
+        <p class="panel-intro" id="resetIntro">Zvolte si nové heslo. Po uložení vás odhlásíme na ostatních zařízeních.</p>
+        <label class="field-label" for="resetPassword">Nové heslo <span class="optional">(alespoň 8 znaků)</span></label>
+        <input id="resetPassword" type="password" autocomplete="new-password" maxlength="200">
+        <label class="field-label" for="resetPassword2">Nové heslo znovu</label>
+        <input id="resetPassword2" type="password" autocomplete="new-password" maxlength="200">
+        <div class="otp-field hidden" id="resetOtpField">
+          <label class="field-label" for="resetOtp">Kód z ověřovací aplikace</label>
+          <input id="resetOtp" class="otp-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456">
+        </div>
+        <button class="primary-button full-width" type="submit">Uložit heslo a přihlásit se</button>
+      </form>
+
+      <form id="magicOtpForm" class="auth-form hidden" novalidate>
+        <p class="panel-intro">Váš účet má zapnuté dvoufázové ověření. Zadejte kód z ověřovací aplikace.</p>
+        <label class="field-label" for="magicOtp">Kód z ověřovací aplikace</label>
+        <input id="magicOtp" class="otp-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456">
+        <button class="primary-button full-width" type="submit">Přihlásit se</button>
+      </form>
+    </section>
+
+    <!-- Přihlášený: klientská zóna -->
+    <div class="account-shell hidden" id="accountView">
+      <section class="panel-card account-card">
+        <div class="panel-heading account-heading">
+          <div><span class="section-kicker">Můj účet</span><h1 id="accountName"></h1><div class="role-badges" id="roleBadges"></div></div>
+          <div class="account-actions"><a class="secondary-button hidden" data-manage-link href="manage.html">Manažerský portál →</a><button class="text-button" type="button" id="logoutButton">Odhlásit se</button></div>
+        </div>
+        <div class="status-error hidden" id="mfaWarning">Jako admin musíte mít zapnuté dvoufázové ověření. Dokud ho nezapnete, nemůžete nic spravovat. <a href="#2fa" id="mfaLink">Nastavit 2FA →</a></div>
+        <span class="section-kicker">Aktuální místenka</span>
+        <div id="currentTicket" class="current-ticket"></div>
+        <a class="primary-button buy-link" href="./">Koupit místenku →</a>
+      </section>
+
+      <section class="panel-card account-card">
+        <span class="section-kicker">Historie</span><h2>Moje místenky</h2>
+        <div id="ticketList" class="ticket-list"><p class="muted">Načítám…</p></div>
+      </section>
+
+      <section class="panel-card account-card">
+        <span class="section-kicker">Osobní údaje</span><h2>Moje údaje</h2>
+        <p class="panel-intro" id="profileIntro">Použijeme je k předvyplnění místenky. Na již vystavených místenkách se nezmění.</p>
+        <form id="profileForm" novalidate>
+          <div class="form-two-col"><div><label class="field-label" for="pFirstName">Jméno</label><input id="pFirstName" autocomplete="given-name" maxlength="100"></div><div><label class="field-label" for="pLastName">Příjmení</label><input id="pLastName" autocomplete="family-name" maxlength="100"></div></div>
+          <div class="form-two-col"><div><label class="field-label" for="pBirthDate">Datum narození <span class="optional staff-optional hidden">(volitelné)</span></label><input id="pBirthDate" type="text" class="date-input" inputmode="numeric" placeholder="dd.mm.rrrr" maxlength="10" autocomplete="bday"></div><div><label class="field-label" for="pMemberId">Číslo členské legitimace <span class="optional staff-optional hidden">(volitelné)</span></label><input id="pMemberId" inputmode="numeric" maxlength="10" autocomplete="off"></div></div>
+          <label class="field-label" for="pEmail">E-mail</label>
+          <input id="pEmail" type="email" autocomplete="email" maxlength="200">
+          <p class="field-help" id="emailHelp">Změnu e-mailu potvrdíte odkazem, který pošleme na novou adresu.</p>
+          <button class="primary-button" type="submit">Uložit údaje</button>
+        </form>
+      </section>
+
+      <section class="panel-card account-card">
+        <span class="section-kicker">Zabezpečení</span><h2 id="passwordTitle">Heslo</h2>
+        <form id="passwordForm" novalidate>
+          <div id="currentPasswordWrap"><label class="field-label" for="currentPassword">Současné heslo</label><input id="currentPassword" type="password" autocomplete="current-password" maxlength="200"></div>
+          <div class="form-two-col">
+            <div><label class="field-label" for="newPassword" id="newPasswordLabel">Nové heslo</label><input id="newPassword" type="password" autocomplete="new-password" maxlength="200"></div>
+            <div><label class="field-label" for="newPassword2">Nové heslo znovu</label><input id="newPassword2" type="password" autocomplete="new-password" maxlength="200"></div>
+          </div>
+          <button class="secondary-button" type="submit" id="passwordSubmit">Změnit heslo</button>
+        </form>
+      </section>
+
+      <section class="panel-card account-card" id="twoFactorCard">
+        <span class="section-kicker">Dodatečné zabezpečení</span><h2>Dvoufázové ověření (2FA)</h2>
+        <p class="panel-intro">Při přihlášení zadáte kromě hesla i šestimístný kód z mobilní aplikace. Účet tak neovládne nikdo, kdo zná jen vaše heslo.</p>
+        <div class="two-factor" id="twoFactor"></div>
+      </section>
+
+      <section class="panel-card account-card danger-card">
+        <span class="section-kicker">Smazání účtu</span><h2>Smazat účet</h2>
+        <p class="panel-intro">Smaže účet a přihlašovací údaje. Vystavené místenky uchováváme po dobu stanovenou pro evidenci, už ale nebudou spojené s účtem.</p>
+        <form id="deleteForm" novalidate>
+          <div id="deletePasswordWrap"><label class="field-label" for="deletePassword">Heslo</label><input id="deletePassword" type="password" autocomplete="current-password" maxlength="200"></div>
+          <label class="checkbox-label"><input type="checkbox" id="deleteConfirm"> <span>Rozumím, že smazání nelze vrátit.</span></label>
+          <button class="danger-button" type="submit">Smazat účet</button>
+        </form>
+      </section>
+    </div>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="js/env.js"></script>
+  <script src="vendor/qrcode.js"></script>
+  <script src="js/common.js"></script>
+  <script src="js/account.js"></script>
+</body>
+</html>

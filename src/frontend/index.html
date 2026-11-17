@@ -18,7 +18,7 @@
       <a href="#jak-to-funguje">Jak to funguje</a>
       <a href="#kontakt">Kontakt</a>
     </nav>
-    <button class="login-button" id="loginButton" type="button">Přihlásit se <span aria-hidden="true">↗</span></button>
+    <div class="user-menu"><a class="login-button hidden" data-manage-link href="manage.html">Správa</a><a class="login-button" data-account-link href="account.html">Přihlásit se</a></div>
   </header>
 
   <main>
@@ -52,6 +52,8 @@
         <div class="art-label" id="artLabel"></div>
       </div>
     </section>
+
+    <a class="my-ticket-banner hidden" id="myTicketBanner" href="account.html"></a>
 
     <section class="action-section" id="jak-to-funguje" aria-labelledby="action-heading">
       <div class="section-intro">
@@ -104,8 +106,9 @@
           <div id="personPanel" class="panel-content hidden">
             <button class="back-button" id="backToStart" type="button">← Zpět</button>
             <p class="panel-intro">Údaje použijeme na místenku a pro její ověření. Vyplňte je prosím přesně podle dokladu.</p>
+            <p class="prefill-note hidden" id="prefillNote">Údaje jsme předvyplnili z vašeho účtu. Změny zde se týkají jen této místenky.</p>
             <div class="form-two-col"><div><label class="field-label" for="firstName">Jméno <span class="required">*</span></label><input id="firstName" type="text" placeholder="Jan" maxlength="100" autocomplete="given-name"></div><div><label class="field-label" for="lastName">Příjmení <span class="required">*</span></label><input id="lastName" type="text" placeholder="Novák" maxlength="100" autocomplete="family-name"></div></div>
-            <label class="field-label" for="birthDate">Datum narození <span class="required">*</span></label><input id="birthDate" type="date" autocomplete="bday">
+            <label class="field-label" for="birthDate">Datum narození <span class="required">*</span></label><input id="birthDate" type="text" class="date-input" inputmode="numeric" placeholder="dd.mm.rrrr" maxlength="10" autocomplete="bday">
             <label class="field-label payment-email-label" for="email">E-mail pro místenku <span class="required">*</span></label>
             <input id="email" type="email" placeholder="jan.novak@example.cz" maxlength="200" autocomplete="email">
             <button class="primary-button full-width" id="continuePerson" type="button">Pokračovat k rekapitulaci <span>→</span></button>

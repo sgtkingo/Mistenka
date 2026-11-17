@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Místenka · Správa</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="manage-body">
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="Místenka, domů"><span class="brand-mark" aria-hidden="true">⌁</span><span>Místenka</span></a>
+    <span class="portal-tag">Manažerský portál</span>
+    <div class="user-menu"><a class="login-button" href="./">← Uživatelský portál</a><a class="login-button" data-account-link href="account.html">Přihlásit se</a></div>
+  </header>
+  <main class="manage-page">
+    <div id="loadingState" class="status-loading">Načítám…</div>
+    <div id="deniedState" class="status-error manage-denied hidden"></div>
+    <div class="manage-layout hidden" id="portal">
+      <nav class="manage-nav" aria-label="Sekce správy">
+        <span class="section-kicker" data-org-short></span>
+        <button class="manage-nav-item active" type="button" data-section="users">Uživatelé a role</button>
+        <span class="manage-nav-group">Připravujeme</span>
+        <button class="manage-nav-item" type="button" data-section="soon" data-title="Místenky a platby" data-step="B4">Místenky a platby</button>
+        <button class="manage-nav-item" type="button" data-section="soon" data-title="Důležité zprávy" data-step="B4">Důležité</button>
+        <button class="manage-nav-item" type="button" data-section="soon" data-title="Sezona a uzavření" data-step="B4">Sezona</button>
+        <button class="manage-nav-item" type="button" data-section="soon" data-title="Nastavení organizace a revírů" data-step="B5">Nastavení</button>
+        <button class="manage-nav-item" type="button" data-section="soon" data-title="Zarybnění" data-step="B6">Zarybnění</button>
+        <button class="manage-nav-item" type="button" data-section="soon" data-title="Přehledy a uzávěrky" data-step="B6">Přehledy</button>
+        <button class="manage-nav-item admin-only hidden" type="button" data-section="soon" data-title="Zálohy" data-step="B7">Zálohy</button>
+      </nav>
+
+      <section class="panel-card manage-section" id="section-users">
+        <div class="panel-heading"><div><span class="section-kicker">Uživatelé</span><h1>Uživatelé a role</h1></div></div>
+        <p class="panel-intro" id="rolesHelp"></p>
+        <details class="invite-box admin-only hidden" id="inviteBox">
+          <summary>+ Pozvat správce nebo admina</summary>
+          <form id="inviteForm" novalidate>
+            <p class="field-help">Vznikne účet jen pro správu (bez čísla legitimace). Pozvaný dostane e-mail s odkazem na nastavení hesla (platí 72 hodin). Existujícímu uživateli roli přidělte v seznamu níže.</p>
+            <div class="form-two-col"><div><label class="field-label" for="invFirstName">Jméno</label><input id="invFirstName" maxlength="100"></div><div><label class="field-label" for="invLastName">Příjmení</label><input id="invLastName" maxlength="100"></div></div>
+            <div class="form-two-col"><div><label class="field-label" for="invEmail">E-mail</label><input id="invEmail" type="email" maxlength="200"></div><div><label class="field-label" for="invRole">Role</label><select id="invRole"><option value="manager">Správce</option><option value="admin">Admin</option></select></div></div>
+            <button class="primary-button" type="submit">Poslat pozvánku</button>
+          </form>
+        </details>
+        <form class="code-row search-row" id="userSearch">
+          <input id="userQuery" type="search" placeholder="Jméno, e-mail nebo číslo legitimace" maxlength="100" autocomplete="off">
+          <button class="primary-button" type="submit">Hledat</button>
+        </form>
+        <div id="userList" class="user-list"></div>
+      </section>
+
+      <section class="panel-card manage-section hidden" id="section-soon">
+        <div class="panel-heading"><div><span class="section-kicker" id="soonStep"></span><h1 id="soonTitle"></h1></div></div>
+        <p class="muted">Tato sekce přibude v dalším kroku podle plánu (docs/PLAN.md).</p>
+      </section>
+    </div>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="js/env.js"></script>
+  <script src="js/common.js"></script>
+  <script src="js/manage.js"></script>
+</body>
+</html>

@@ -30,6 +30,20 @@ npm test        # sdílené testy API (spustí vlastní server s testovací konf
 - E-maily se neodesílají, ukládají se do `data/outbox/` (HTML a text).
 - Další proměnné prostředí jsou popsané v hlavičce [src/node/server.js](src/node/server.js).
 
+## Účty a role
+
+Registrace a přihlášení na `account.html` (heslem nebo odkazem z e-mailu; odkazy z e-mailů najdete v `data/outbox/`). Manažerský portál je na `manage.html`.
+
+**První admin:** dokud žádný není, server při startu vypíše jednorázový odkaz na průvodce (`setup.html#…`, platí 60 minut). V průvodci vyplníte údaje, heslo a rovnou nastavíte dvoufázové ověření. Admin je účet jen pro správu, bez čísla legitimace.
+
+Další správce a adminy admin **pozve** v portálu (Uživatelé a role → Pozvat), porybné jmenuje správce i admin. Nouzové příkazy:
+
+```bash
+npm run user -- list                      # přehled účtů
+npm run user -- setup                     # nový odkaz na průvodce (jen když žádný admin není)
+npm run user -- roles vas@email.cz admin  # ruční přidělení role
+```
+
 ## Jiná MO nebo jiný revír
 
 1. Zkopírujte `config/organization.json` a upravte `organization`, `payment`, `email` a seznam `reviry`.

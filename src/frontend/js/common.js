@@ -15,8 +15,44 @@
     constructor(message, status, code) { super(message); this.status = status; this.code = code; }
   }
 
+  // ---------- přihlášený uživatel ----------
+  // Relace je v HttpOnly cookie; měnící požadavky nesou CSRF token z GET /auth/me.
+  let sessionPromise = null;
+  let csrfToken = null;
+  function loadSession(force = false) {
+    if (force || !sessionPromise) {
+      sessionPromise = rawApi("/auth/me").then((data) => { csrfToken = data.csrf; return data.user; }).catch(() => { csrfToken = null; return null; });
+    }
+    return sessionPromise;
+  }
+  // Po přihlášení / odhlášení: odpověď { user, csrf }.
+  function setSession(data) {
+    csrfToken = data?.csrf || null;
+    sessionPromise = Promise.resolve(data?.user || null);
+    renderUserMenu(data?.user || null);
+  }
+  // Změna údajů uživatele ve stejné relaci (CSRF token zůstává).
+  function setSessionUser(user) {
+    sessionPromise = Promise.resolve(user);
+    renderUserMenu(user);
+  }
+  const hasRole = (user, role) => Boolean(user?.roles?.includes(role));
+  const isStaff = (user) => hasRole(user, "manager") || hasRole(user, "admin");
+
   // Volání API. Prefix může obsahovat "?" (WordPress: /?rest_route=/mistenka/v1), proto se query skládá ručně.
-  async function api(path, { method = "GET", body, token, memberId, query } = {}) {
+  async function api(path, options = {}) {
+    const method = options.method || "GET";
+    if (method === "GET") return rawApi(path, options);
+    await loadSession();
+    try {
+      return await rawApi(path, options);
+    } catch (error) {
+      if (error.code !== "csrf_failed") throw error;
+      await loadSession(true); // relace se mezitím změnila (jiná záložka) – jeden nový pokus
+      return rawApi(path, options);
+    }
+  }
+  async function rawApi(path, { method = "GET", body, token, memberId, query } = {}) {
     let url = API_BASE + path;
     if (query) {
       const params = new URLSearchParams(query).toString();
@@ -26,9 +62,10 @@
     if (body !== undefined) headers["Content-Type"] = "application/json";
     if (token) headers["X-Mistenka-Token"] = token;
     if (memberId) headers["X-Mistenka-Member-Id"] = memberId;
+    if (method !== "GET" && csrfToken) headers["X-Mistenka-Csrf"] = csrfToken;
     let response;
     try {
-      response = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+      response = await fetch(url, { method, headers, credentials: "same-origin", body: body === undefined ? undefined : JSON.stringify(body) });
     } catch {
       throw new ApiError("Server je nedostupný. Zkontrolujte připojení a zkuste to znovu.", 0, "network");
     }
@@ -76,6 +113,22 @@
     const month = Number(iso.slice(5, 7));
     const rule = (revir.fishingHours || []).find((item) => item.months.includes(month));
     return rule ? `${rule.from}–${rule.to}` : "";
+  }
+  // Datum narození v českém tvaru (d.m.rrrr) – nativní <input type=date> se řídí jazykem prohlížeče, ne stránky.
+  function parseCzDate(value) {
+    const m = String(value || "").trim().match(/^(\d{1,2})\s*\.\s*(\d{1,2})\s*\.\s*(\d{4})$/);
+    if (!m) return "";
+    const iso = `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+    const d = new Date(`${iso}T12:00:00Z`);
+    return d.getUTCDate() === Number(m[1]) && d.getUTCMonth() + 1 === Number(m[2]) ? iso : "";
+  }
+  const formatCzDate = (iso) => (/^\d{4}-\d{2}-\d{2}$/.test(iso || "") ? `${Number(iso.slice(8))}. ${Number(iso.slice(5, 7))}. ${iso.slice(0, 4)}` : "");
+  // Heslo: alespoň 8 znaků a shoda s potvrzením. Vrátí chybovou zprávu, nebo "".
+  const PASSWORD_MIN = 8;
+  function passwordProblem(password, confirmation) {
+    if (password.length < PASSWORD_MIN) return `Heslo musí mít alespoň ${PASSWORD_MIN} znaků.`;
+    if (password !== confirmation) return "Hesla se neshodují.";
+    return "";
   }
   // Číslo členské legitimace: 8 číslic pod čárovým kódem, mezery se ignorují.
   const normalizeMemberId = (value) => String(value || "").replace(/\s+/g, "");
@@ -160,6 +213,33 @@
     showToast.timer = window.setTimeout(() => toast.classList.remove("show"), 3200);
   }
 
+  // Stav místenky pro seznamy (klientská zóna, správa). Podrobné texty má status.js.
+  const TICKET_STATES = {
+    pending_payment: ["Čeká na platbu", "warn"], payment_expired: ["Nezaplacená", "off"], cancelled: ["Zrušená", "off"],
+    future: ["Budoucí", "info"], active: ["Aktivní", "ok"], expired_unreturned: ["K odevzdání", "warn"],
+    closed_unreturned: ["Neodevzdaná", "bad"], expired_returned: ["Odevzdaná", "ok"]
+  };
+  function ticketState(ticket) {
+    const [label, tone] = TICKET_STATES[ticket.status] || [ticket.status, "off"];
+    return { label: ticket.status === "expired_returned" && ticket.late ? "Odevzdaná opožděně" : label, tone };
+  }
+  const ROLE_LABELS = { member: "Uživatel", warden: "Porybný", manager: "Správce", admin: "Admin" };
+
+  // Odkaz na účet v hlavičce ([data-account-link]) a do správy ([data-manage-link]).
+  function renderUserMenu(user) {
+    qsa("[data-account-link]").forEach((el) => {
+      el.textContent = user ? `${user.firstName} ${user.lastName}` : "Přihlásit se";
+      el.title = user ? "Můj účet" : "Přihlášení a registrace";
+      el.href = "account.html";
+    });
+    qsa("[data-manage-link]").forEach((el) => el.classList.toggle("hidden", !isStaff(user)));
+  }
+  async function initUserMenu() {
+    const user = await loadSession();
+    renderUserMenu(user);
+    return user;
+  }
+
   // Hlavička, patička a kontakt podle konfigurace MO.
   function applyBranding(config) {
     const org = config.organization;
@@ -168,5 +248,5 @@
     qsa("[data-privacy]").forEach((el) => { if (org.privacyUrl) el.href = org.privacyUrl; else el.hidden = true; });
   }
 
-  window.Mistenka = { qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding };
+  window.Mistenka = { qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem };
 })();

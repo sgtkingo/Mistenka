@@ -1,4 +1,4 @@
-const { qs, qsa, esc, api, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, plural, subdistrictLabel, subdistrictTitle, normalizeMemberId, isMemberId, saveToken, rememberMemberId, showToast, applyBranding } = window.Mistenka;
+const { qs, qsa, esc, api, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, plural, subdistrictLabel, subdistrictTitle, normalizeMemberId, isMemberId, saveToken, rememberMemberId, showToast, applyBranding, initUserMenu, ticketState, parseCzDate, formatCzDate } = window.Mistenka;
 
 const panels = { buy: qs("#buyPanel"), person: qs("#personPanel"), return: qs("#returnPanel"), check: qs("#checkPanel"), payment: qs("#paymentPanel") };
 let config = null;
@@ -149,9 +149,10 @@ qs("#email").addEventListener("input", () => qs("#email").classList.remove("emai
 qs("#continuePerson").addEventListener("click", () => {
   const firstName = qs("#firstName").value.trim();
   const lastName = qs("#lastName").value.trim();
-  const birthDate = qs("#birthDate").value;
+  const birthDate = parseCzDate(qs("#birthDate").value);
   const email = qs("#email").value.trim();
-  if (!firstName || !lastName || !birthDate) return showToast("Vyplňte jméno, příjmení a datum narození.");
+  if (!firstName || !lastName) return showToast("Vyplňte jméno a příjmení.");
+  if (!birthDate) return showToast("Zadejte datum narození ve tvaru den.měsíc.rok, např. 3.2.1988.");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return markInvalid(qs("#email"), "email-invalid", "Zadejte platný e-mail pro zaslání místenky.");
   Object.assign(purchase, { firstName, lastName, birthDate, email });
   qs("#summaryDate").textContent = czDate(purchase.date, { weekday: true });
@@ -259,7 +260,31 @@ qs("#checkButton").addEventListener("click", () => {
   window.location.href = `status.html?code=${encodeURIComponent(code)}`;
 });
 qs("#checkCode").addEventListener("keydown", (event) => { if (event.key === "Enter") qs("#checkButton").click(); });
-qs("#loginButton").addEventListener("click", () => showToast("Přihlášení bude dostupné v další verzi pilotu."));
+
+// ---------- přihlášený uživatel ----------
+// Předvyplní formulář z účtu (číslo legitimace se i tak ověří) a upozorní na aktuální místenku.
+function prefill(user) {
+  const fields = { memberId: user.memberId, firstName: user.firstName, lastName: user.lastName, birthDate: formatCzDate(user.birthDate), email: user.email };
+  for (const [id, value] of Object.entries(fields)) {
+    const input = qs(`#${id}`);
+    if (input && !input.value) { input.value = value || ""; input.dispatchEvent(new Event("input")); }
+  }
+  qs("#prefillNote").classList.remove("hidden");
+}
+async function showCurrentTicket() {
+  try {
+    const { tickets } = await api("/me/tickets");
+    const pick = (status) => tickets.filter((t) => t.status === status && (!revir || t.revir.id === revir.id));
+    const current = pick("active")[0] || pick("expired_unreturned").find((t) => t.returnable) || pick("pending_payment")[0] || pick("future").slice(-1)[0];
+    if (!current) return;
+    const state = ticketState(current);
+    const action = current.status === "expired_unreturned" ? "Odevzdat →" : current.status === "pending_payment" ? "Zaplatit →" : "Zobrazit →";
+    const banner = qs("#myTicketBanner");
+    banner.href = current.status === "expired_unreturned" ? `return.html?code=${encodeURIComponent(current.code)}` : `payment.html?code=${encodeURIComponent(current.code)}`;
+    banner.innerHTML = `<span class="badge badge-${esc(state.tone)}">${esc(state.label)}</span><span><b>Vaše místenka ${esc(current.code)}</b> · ${esc(current.revir.name)} · ${esc(czDate(current.date, { weekday: true }))}</span><span class="banner-action">${action}</span>`;
+    banner.classList.remove("hidden");
+  } catch { /* banner je jen doplněk */ }
+}
 
 // ---------- start ----------
 (async function init() {
@@ -274,7 +299,9 @@ qs("#loginButton").addEventListener("click", () => showToast("Přihlášení bud
   applyBranding(config);
   renderContact();
   revir = selectedRevir(config);
+  const user = await initUserMenu();
   if (!revir) return renderPicker();
+  if (user) { prefill(user); showCurrentTicket(); }
   qs("#revirContent").classList.remove("hidden");
   renderRevir();
   renderDates();

@@ -44,15 +44,26 @@ after(async () => {
 
 // ---------- pomocné ----------
 function url(p) {
-  return BASE + p;
+  // Prefix WordPressu už obsahuje "?" (/?rest_route=…), další parametry se připojí přes "&".
+  return BASE.includes("?") ? BASE + p.replace("?", "&") : BASE + p;
 }
-async function call(method, p, { body, token, memberId } = {}) {
+// session = { cookie, csrf } – „prohlížeč“ přihlášeného uživatele; cookie i CSRF se aktualizují z odpovědí.
+async function call(method, p, { body, token, memberId, session, csrf } = {}) {
   const headers = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (token) headers["X-Mistenka-Token"] = token;
   if (memberId) headers["X-Mistenka-Member-Id"] = memberId;
+  if (session?.cookie) headers.Cookie = session.cookie;
+  const csrfValue = csrf === undefined ? session?.csrf : csrf;
+  if (csrfValue) headers["X-Mistenka-Csrf"] = csrfValue;
   const response = await fetch(url(p), { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const data = await response.json().catch(() => null);
+  if (session) {
+    const setCookie = response.headers.get("set-cookie");
+    const match = setCookie && setCookie.match(/mistenka_session=([^;]*)/);
+    if (match) session.cookie = match[1] ? `mistenka_session=${match[1]}` : "";
+    if (data && typeof data === "object" && "csrf" in data) session.csrf = data.csrf;
+  }
   return { status: response.status, data };
 }
 const setClock = (now) => call("POST", "/dev/clock", { body: { now } });
@@ -304,4 +315,286 @@ test("platnost místenky respektuje pásmo Europe/Prague a přelom roku", async 
   await setClock("2027-01-01T09:00:00Z");
   assert.equal((await call("GET", `/tickets/${winter.code}`)).data.status, "expired_unreturned", "po přelomu roku místenka propadne, nezačne znovu platit");
   await setClock("2026-06-10T08:00:00Z");
+});
+
+// ---------- účty (B1) ----------
+const { totp } = require("../src/node/lib/security");
+const T0 = Date.parse("2026-06-10T08:00:00Z");
+let accountSeq = 0;
+function accountBody(overrides = {}) {
+  accountSeq += 1;
+  return { email: `ucet${accountSeq}@example.cz`, password: "tajne-heslo-123", firstName: "Eva", lastName: "Účtová", birthDate: "1990-04-01", memberId: String(50000000 + accountSeq), consent: true, ...overrides };
+}
+async function lastEmail(to, kind) {
+  const { data } = await call("GET", `/dev/outbox?to=${encodeURIComponent(to)}`);
+  return data.emails.find((mail) => !kind || mail.kind === kind) || null;
+}
+async function linkToken(to, kind, fragment) {
+  const mail = await lastEmail(to, kind);
+  assert.ok(mail, `chybí e-mail ${kind} pro ${to}`);
+  const match = mail.text.match(new RegExp(`#${fragment}=([A-Za-z0-9_-]+)`));
+  assert.ok(match, mail.text);
+  return match[1];
+}
+// Registrace + ověření e-mailu → přihlášená relace.
+async function verifiedAccount(overrides) {
+  const body = accountBody(overrides);
+  assert.equal((await call("POST", "/auth/register", { body })).status, 200);
+  const session = {};
+  const verified = await call("POST", "/auth/verify", { body: { token: await linkToken(body.email, "account_verify", "verify") }, session });
+  assert.equal(verified.status, 200, JSON.stringify(verified.data));
+  return { ...body, session, user: verified.data.user };
+}
+async function enableTwoFactor(session, atMs) {
+  const setup = await call("POST", "/me/2fa/setup", { session });
+  assert.equal(setup.status, 200, JSON.stringify(setup.data));
+  await setClock(new Date(atMs).toISOString());
+  const enabled = await call("POST", "/me/2fa/enable", { body: { otp: totp(setup.data.secret, atMs) }, session });
+  assert.equal(enabled.status, 200, JSON.stringify(enabled.data));
+  return setup.data.secret;
+}
+
+test("registrace: validace, ověření e-mailu, přihlášení heslem, odhlášení", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  for (const [overrides, code] of [[{ consent: false }, "consent_required"], [{ password: "kratke" }, "weak_password"], [{ memberId: "123" }, "invalid_member_id"], [{ email: "x" }, "invalid_email"]]) {
+    const res = await call("POST", "/auth/register", { body: accountBody(overrides) });
+    assert.equal(res.data?.code, code, JSON.stringify(overrides));
+  }
+  const body = accountBody();
+  assert.deepEqual((await call("POST", "/auth/register", { body })).data, { sent: true });
+  assert.equal((await call("POST", "/auth/login", { body: { email: body.email, password: body.password } })).data.code, "email_not_verified");
+  assert.deepEqual((await call("GET", "/auth/me")).data, { user: null, csrf: null });
+
+  const token = await linkToken(body.email, "account_verify", "verify");
+  const session = {};
+  const verified = await call("POST", "/auth/verify", { body: { token }, session });
+  assert.equal(verified.status, 200);
+  assert.equal(verified.data.user.email, body.email);
+  assert.deepEqual(verified.data.user.roles, ["member"]);
+  assert.ok(session.cookie && session.csrf, "relace v cookie + CSRF token");
+  assert.equal((await call("POST", "/auth/verify", { body: { token } })).data.code, "invalid_link", "odkaz jde použít jen jednou");
+  const me = await call("GET", "/auth/me", { session });
+  assert.equal(me.data.user.memberId, body.memberId);
+  assert.equal(me.data.csrf, session.csrf);
+
+  assert.equal((await call("POST", "/auth/login", { body: { email: body.email, password: "spatne-heslo-1" } })).data.code, "invalid_credentials");
+  assert.equal((await call("POST", "/auth/login", { body: { email: "nikdo@example.cz", password: "spatne-heslo-1" } })).data.code, "invalid_credentials");
+  const second = {};
+  assert.equal((await call("POST", "/auth/login", { body: { email: body.email.toUpperCase(), password: body.password }, session: second })).status, 200, "e-mail bez ohledu na velikost písmen");
+  const secondCookie = second.cookie;
+  assert.equal((await call("POST", "/auth/logout", { session: second })).status, 200);
+  assert.equal((await call("GET", "/auth/me", { session: { cookie: secondCookie } })).data.user, null, "relace po odhlášení neplatí");
+
+  // Opakovaná registrace neprozradí existenci účtu; číslo legitimace je unikátní.
+  assert.deepEqual((await call("POST", "/auth/register", { body: { ...body, memberId: "59999999" } })).data, { sent: true });
+  assert.ok(await lastEmail(body.email, "account_exists"));
+  const taken = await call("POST", "/auth/register", { body: accountBody({ memberId: body.memberId }) });
+  assert.equal(taken.status, 409);
+  assert.equal(taken.data.code, "member_id_taken");
+});
+
+test("účet: CSRF, úprava údajů, změna e-mailu a hesla", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const account = await verifiedAccount();
+  const { session } = account;
+  assert.equal((await call("PATCH", "/me", { body: { firstName: "Iva" }, session, csrf: "" })).data.code, "csrf_failed");
+  assert.equal((await call("PATCH", "/me", { body: { firstName: "Iva" }, session, csrf: "spatny" })).data.code, "csrf_failed");
+  const updated = await call("PATCH", "/me", { body: { firstName: "Iva", memberId: "5800 0001" }, session });
+  assert.equal(updated.status, 200, JSON.stringify(updated.data));
+  assert.equal(updated.data.user.firstName, "Iva");
+  assert.equal(updated.data.user.memberId, "58000001");
+  assert.equal((await call("PATCH", "/me", { body: {} })).data.code, "unauthorized");
+
+  const newEmail = `zmena${accountSeq}@example.cz`;
+  const change = await call("PATCH", "/me", { body: { email: newEmail }, session });
+  assert.equal(change.data.emailChangePending, newEmail);
+  assert.equal(change.data.user.email, account.email, "e-mail se změní až po potvrzení");
+  const confirmed = await call("POST", "/auth/email/confirm", { body: { token: await linkToken(newEmail, "email_change", "email") } });
+  assert.equal(confirmed.data.user.email, newEmail);
+
+  assert.equal((await call("PUT", "/me/password", { body: { currentPassword: "spatne-heslo-1", newPassword: "nove-heslo-456" }, session })).data.code, "wrong_password");
+  assert.equal((await call("PUT", "/me/password", { body: { currentPassword: account.password, newPassword: "nove-heslo-456" }, session })).status, 200);
+  assert.equal((await call("POST", "/auth/login", { body: { email: newEmail, password: account.password } })).data.code, "invalid_credentials");
+  assert.equal((await call("POST", "/auth/login", { body: { email: newEmail, password: "nove-heslo-456" } })).status, 200);
+});
+
+test("přihlášení odkazem z e-mailu a obnova hesla", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const account = await verifiedAccount({ password: undefined });
+  assert.equal(account.user.hasPassword, false, "účet bez hesla – jen přihlášení odkazem");
+  assert.deepEqual((await call("POST", "/auth/magic-link", { body: { email: "neexistuje@example.cz" } })).data, { sent: true }, "neprozradí, zda účet existuje");
+  assert.equal(await lastEmail("neexistuje@example.cz"), null);
+  await call("POST", "/auth/magic-link", { body: { email: account.email } });
+  const session = {};
+  const magic = await call("POST", "/auth/magic", { body: { token: await linkToken(account.email, "magic_link", "login") }, session });
+  assert.equal(magic.status, 200);
+  assert.equal((await call("GET", "/auth/me", { session })).data.user.email, account.email);
+  await setClock("2026-06-10T08:16:00Z");
+  await call("POST", "/auth/magic-link", { body: { email: account.email } });
+  const token = await linkToken(account.email, "magic_link", "login");
+  await setClock("2026-06-10T08:32:00Z");
+  assert.equal((await call("POST", "/auth/magic", { body: { token } })).data.code, "invalid_link", "odkaz pro přihlášení platí 15 minut");
+
+  await call("POST", "/auth/password-reset", { body: { email: account.email } });
+  const resetToken = await linkToken(account.email, "password_reset", "reset");
+  assert.equal((await call("POST", "/auth/password-reset/confirm", { body: { token: resetToken, password: "kratke" } })).data.code, "weak_password");
+  assert.equal((await call("POST", "/auth/password-reset/confirm", { body: { token: resetToken, password: "obnovene-heslo-1" } })).status, 200);
+  assert.equal((await call("GET", "/auth/me", { session })).data.user, null, "obnova hesla odhlásí ostatní zařízení");
+  assert.equal((await call("POST", "/auth/login", { body: { email: account.email, password: "obnovene-heslo-1" } })).status, 200);
+  await setClock("2026-06-10T08:00:00Z");
+});
+
+test("místenky účtu: předchozí nákupy se připojí po ověření, nové se ukládají k účtu", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const body = accountBody();
+  const guest = await paidTicket({ memberId: body.memberId, email: body.email.toUpperCase() });
+  const stranger = await paidTicket({ memberId: body.memberId }); // jiný e-mail → nepřipojí se
+  await call("POST", "/auth/register", { body });
+  const session = {};
+  await call("POST", "/auth/verify", { body: { token: await linkToken(body.email, "account_verify", "verify") }, session });
+  const own = await order({ memberId: body.memberId, email: body.email });
+  const bought = await call("POST", "/orders", { body: orderBody({ memberId: body.memberId, email: body.email }), session });
+  assert.equal(bought.status, 201, JSON.stringify(bought.data));
+  assert.equal((await call("POST", "/orders", { body: orderBody(), session, csrf: "" })).data.code, "csrf_failed", "nákup s relací vyžaduje CSRF");
+  const list = (await call("GET", "/me/tickets", { session })).data.tickets.map((t) => t.code);
+  assert.ok(list.includes(guest.code), "dřívější nákup se stejným e-mailem a legitimací");
+  assert.ok(list.includes(bought.data.ticket.code), "nákup přihlášeného uživatele");
+  assert.ok(!list.includes(stranger.code) && !list.includes(own.ticket.code), "jiný e-mail ani nákup bez přihlášení se nepřipojí");
+  assert.equal((await call("GET", `/orders/${bought.data.ticket.code}`, { session })).status, 200, "držitel otevře místenku bez tokenu");
+  assert.equal((await call("GET", `/orders/${stranger.code}`, { session })).status, 403);
+  assert.equal((await call("GET", "/me/tickets")).data.code, "unauthorized");
+});
+
+test("2FA: zapnutí, povinný kód při přihlášení, ochrana proti opakování", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const account = await verifiedAccount();
+  const secret = await enableTwoFactor(account.session, T0 + 60_000);
+  const loginBody = { email: account.email, password: account.password };
+  assert.equal((await call("POST", "/auth/login", { body: loginBody })).data.code, "otp_required");
+  assert.equal((await call("POST", "/auth/login", { body: { ...loginBody, otp: "000000" } })).data.code, "invalid_otp");
+  assert.equal((await call("POST", "/auth/login", { body: { ...loginBody, otp: totp(secret, T0 + 60_000) } })).data.code, "invalid_otp", "kód použitý při zapnutí nejde použít znovu");
+  await setClock(new Date(T0 + 120_000).toISOString());
+  const code = totp(secret, T0 + 120_000);
+  assert.equal((await call("POST", "/auth/login", { body: { ...loginBody, otp: code } })).status, 200);
+  assert.equal((await call("POST", "/auth/login", { body: { ...loginBody, otp: code } })).data.code, "invalid_otp", "stejný kód podruhé neprojde");
+  await call("POST", "/auth/magic-link", { body: { email: account.email } });
+  const magicToken = await linkToken(account.email, "magic_link", "login");
+  assert.equal((await call("POST", "/auth/magic", { body: { token: magicToken } })).data.code, "otp_required", "2FA platí i pro přihlášení odkazem");
+  await setClock(new Date(T0 + 180_000).toISOString());
+  assert.equal((await call("POST", "/auth/magic", { body: { token: magicToken, otp: totp(secret, T0 + 180_000) } })).status, 200, "odkaz zůstal platný po chybějícím kódu");
+  await setClock("2026-06-10T08:00:00Z");
+});
+
+test("role: správce jmenuje porybné, admin správce; admin musí mít 2FA; posledního admina nelze odebrat", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const admin = await verifiedAccount();
+  const manager = await verifiedAccount();
+  const member = await verifiedAccount();
+  assert.equal((await call("GET", "/manage/users", { session: member.session })).data.code, "forbidden_role");
+  assert.equal((await call("GET", "/manage/users")).data.code, "unauthorized");
+  await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: ["admin"] } });
+  assert.equal((await call("GET", "/manage/users", { session: admin.session })).data.code, "mfa_required", "admin bez 2FA nic nespravuje");
+  assert.equal((await call("GET", "/auth/me", { session: admin.session })).data.user.mfaRequired, true);
+  await enableTwoFactor(admin.session, T0 + 30_000);
+  await setClock("2026-06-10T08:00:00Z");
+
+  const found = await call("GET", `/manage/users?q=${encodeURIComponent(manager.email)}`, { session: admin.session });
+  assert.equal(found.status, 200, JSON.stringify(found.data));
+  const managerId = found.data.users[0].id;
+  assert.ok(!("birthDate" in found.data.users[0]), "seznam neobsahuje datum narození");
+  const promoted = await call("PUT", `/manage/users/${managerId}/roles`, { body: { roles: ["manager"] }, session: admin.session });
+  assert.deepEqual(promoted.data.user.roles, ["member", "manager"]);
+  assert.equal((await call("PUT", `/manage/users/${managerId}/roles`, { body: { roles: ["boss"] }, session: admin.session })).data.code, "invalid_roles");
+
+  // Správce (bez 2FA – pro správce je volitelná) smí jen porybného.
+  const warden = await call("PUT", `/manage/users/${member.user.id}/roles`, { body: { roles: ["warden"] }, session: manager.session });
+  assert.equal(warden.status, 200, JSON.stringify(warden.data));
+  assert.deepEqual(warden.data.user.roles, ["member", "warden"]);
+  assert.equal((await call("PUT", `/manage/users/${member.user.id}/roles`, { body: { roles: ["warden", "manager"] }, session: manager.session })).data.code, "forbidden_role");
+  assert.equal((await call("PUT", `/manage/users/${admin.user.id}/roles`, { body: { roles: [] }, session: manager.session })).data.code, "forbidden_role");
+
+  // Posledního admina nelze odebrat ani smazat; admin si nemůže vypnout 2FA.
+  assert.equal((await call("PUT", `/manage/users/${admin.user.id}/roles`, { body: { roles: ["manager"] }, session: admin.session })).data.code, "last_admin");
+  assert.equal((await call("POST", "/me/delete", { body: { confirm: true, password: admin.password }, session: admin.session })).data.code, "last_admin");
+  assert.equal((await call("POST", "/me/2fa/disable", { body: { otp: "123456" }, session: admin.session })).data.code, "two_factor_required");
+
+  // Neověřený účet nedostane roli.
+  const pending = accountBody();
+  await call("POST", "/auth/register", { body: pending });
+  const pendingId = (await call("GET", `/manage/users?q=${encodeURIComponent(pending.email)}`, { session: admin.session })).data.users[0].id;
+  assert.equal((await call("PUT", `/manage/users/${pendingId}/roles`, { body: { roles: ["warden"] }, session: admin.session })).data.code, "user_not_verified");
+  // Úklid pro další testy: druhý admin by jinak ovlivnil kontrolu „posledního admina“.
+  await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: [] } });
+});
+
+test("smazání účtu: místenky zůstanou, přihlášení přestane fungovat; neověřené účty se po 48 h smažou", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const account = await verifiedAccount();
+  const bought = await call("POST", "/orders", { body: orderBody({ memberId: account.memberId, email: account.email }), session: account.session });
+  assert.equal(bought.status, 201, JSON.stringify(bought.data));
+  assert.equal((await call("POST", "/me/delete", { body: { confirm: true, password: "spatne-heslo-1" }, session: account.session })).data.code, "wrong_password");
+  assert.equal((await call("POST", "/me/delete", { body: { password: account.password }, session: account.session })).data.code, "confirm_required");
+  const deleted = await call("POST", "/me/delete", { body: { confirm: true, password: account.password }, session: account.session });
+  assert.equal(deleted.status, 200, JSON.stringify(deleted.data));
+  assert.equal((await call("GET", "/auth/me", { session: account.session })).data.user, null);
+  assert.equal((await call("POST", "/auth/login", { body: { email: account.email, password: account.password } })).data.code, "invalid_credentials");
+  assert.equal((await call("GET", `/tickets/${bought.data.ticket.code}`)).status, 200, "místenka zůstává");
+  assert.ok(await lastEmail(account.email, "account_deleted"));
+
+  const pending = accountBody();
+  await call("POST", "/auth/register", { body: pending });
+  await setClock("2026-06-12T08:00:01Z");
+  const again = await call("POST", "/auth/register", { body: accountBody({ memberId: pending.memberId }) });
+  assert.equal(again.status, 200, "číslo legitimace z neověřeného účtu se po 48 h uvolní");
+  await setClock("2026-06-10T08:00:00Z");
+});
+
+// ---------- průvodce prvním spuštěním a pozvání správce ----------
+// Musí běžet poslední: po založení admina se průvodce zavře.
+test("průvodce prvním spuštěním: admin vznikne jen s jednorázovým odkazem a rovnou s 2FA", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  assert.deepEqual((await call("GET", "/setup")).data, { needed: true });
+  assert.equal((await call("POST", "/setup/2fa", { body: { token: "spatny-token" } })).data.code, "invalid_setup_token");
+  const { token } = (await call("POST", "/dev/setup-token")).data;
+  const setup = await call("POST", "/setup/2fa", { body: { token } });
+  assert.equal(setup.status, 200, JSON.stringify(setup.data));
+  assert.ok(setup.data.otpauthUrl.startsWith("otpauth://totp/"));
+  const body = { token, email: "Admin@Example.cz", firstName: "Hlavní", lastName: "Admin", password: "admin-heslo" };
+  assert.equal((await call("POST", "/setup", { body: { ...body, password: "kratke" } })).data.code, "weak_password");
+  assert.equal((await call("POST", "/setup", { body: { ...body, otp: "000000" } })).data.code, "invalid_otp");
+  const session = {};
+  const done = await call("POST", "/setup", { body: { ...body, otp: totp(setup.data.secret, T0) }, session });
+  assert.equal(done.status, 200, JSON.stringify(done.data));
+  assert.deepEqual(done.data.user.roles, ["member", "admin"]);
+  assert.equal(done.data.user.twoFactor, true);
+  assert.equal(done.data.user.mfaRequired, false);
+  assert.equal(done.data.user.staffOnly, true, "admin nemusí mít rybářské údaje");
+  assert.equal(done.data.user.memberId, null);
+  assert.equal((await call("GET", "/manage/users", { session })).status, 200, "admin může hned spravovat");
+  assert.deepEqual((await call("GET", "/setup")).data, { needed: false });
+  assert.equal((await call("POST", "/setup", { body: { ...body, otp: totp(setup.data.secret, T0 + 30_000) } })).data.code, "setup_closed");
+  assert.equal((await call("POST", "/dev/setup-token")).status, 404, "dokud admin existuje, nový odkaz nevznikne");
+  // Přihlášení admina: heslo + 2FA.
+  await setClock(new Date(T0 + 60_000).toISOString());
+  assert.equal((await call("POST", "/auth/login", { body: { email: "admin@example.cz", password: "admin-heslo" } })).data.code, "otp_required");
+  assert.equal((await call("POST", "/auth/login", { body: { email: "admin@example.cz", password: "admin-heslo", otp: totp(setup.data.secret, T0 + 60_000) } })).status, 200);
+
+  // Admin pozve správce: účet jen pro správu, heslo si nastaví z odkazu.
+  await setClock("2026-06-10T08:00:00Z");
+  const member = await verifiedAccount();
+  assert.equal((await call("POST", "/manage/users", { body: { email: "x@example.cz", firstName: "A", lastName: "B", roles: ["warden"] }, session })).data.code, "invalid_roles");
+  assert.equal((await call("POST", "/manage/users", { body: { email: member.email, firstName: "A", lastName: "B", roles: ["manager"] }, session })).data.code, "email_taken");
+  const invited = await call("POST", "/manage/users", { body: { email: "spravce@example.cz", firstName: "Sára", lastName: "Správcová", roles: ["manager"] }, session });
+  assert.equal(invited.status, 201, JSON.stringify(invited.data));
+  assert.deepEqual(invited.data.user.roles, ["member", "manager"]);
+  const managerSession = {};
+  const accepted = await call("POST", "/auth/password-reset/confirm", { body: { token: await linkToken("spravce@example.cz", "staff_invite", "invite"), password: "spravce-heslo" }, session: managerSession });
+  assert.equal(accepted.status, 200, JSON.stringify(accepted.data));
+  assert.equal(accepted.data.user.staffOnly, true);
+  assert.equal((await call("POST", "/manage/users", { body: { email: "dalsi@example.cz", firstName: "C", lastName: "D", roles: ["manager"] }, session: managerSession })).data.code, "forbidden_role", "zvát smí jen admin");
+  // Správce nemusí mít rybářské údaje, běžný uživatel ano.
+  assert.equal((await call("PATCH", "/me", { body: { firstName: "Sára", memberId: "", birthDate: "" }, session: managerSession })).status, 200);
+  const withFisher = await call("PATCH", "/me", { body: { memberId: "6100 0001", birthDate: "1980-01-01" }, session: managerSession });
+  assert.equal(withFisher.data.user.staffOnly, false, "správce si může rybářské údaje doplnit");
+  assert.equal((await call("PATCH", "/me", { body: { memberId: "" }, session: member.session })).data.code, "invalid_member_id");
 });

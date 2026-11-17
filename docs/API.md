@@ -27,6 +27,8 @@ Operace s osobními údaji vyžadují jednu z hlaviček:
 
 Tokeny jsou náhodné (≥ 32 znaků base64url), server ukládá jen jejich SHA-256 hash. Jedna místenka může mít víc tokenů (prohlížeč, každý e-mail). Token v odkazu je ve fragmentu URL, takže se neposílá serveru ani do logů. Chybný přístup → `403 forbidden`.
 
+Přihlášený uživatel nepotřebuje token ani číslo legitimace k místenkám, které patří k jeho účtu (viz Účty).
+
 ### Omezení počtu požadavků (na IP)
 
 | Skupina | Limit |
@@ -35,6 +37,8 @@ Tokeny jsou náhodné (≥ 32 znaků base64url), server ukládá jen jejich SHA-
 | `GET /vouchers/{code}` | 20 / min |
 | `GET /tickets/{code}` | 60 / min |
 | neúspěšný přístup držitele (403/404) | 10 / 10 min, pak `429` i pro správné údaje |
+| `POST /auth/register`, `/auth/magic-link`, `/auth/password-reset` (+ opakované `email_not_verified`) | 5 / 10 min |
+| neúspěšné přihlášení (`invalid_credentials`, `invalid_otp`, `invalid_link`) | 10 / 10 min, pak `429` pro všechny `/auth/*` kromě odhlášení |
 
 Překročení → `429 rate_limited`. Ve vývojovém režimu lze limity vypnout (testy).
 
@@ -99,7 +103,7 @@ Veřejná konfigurace: `organization` (`name`, `shortName`, `web`, `privacyUrl`,
 `{ revirId, today, days: [{ date, capacity, taken, available }] }` pro dnešek až `bookingDaysAhead`. Neznámý revír → `404 unknown_revir`.
 
 ### `POST /orders`
-Tělo: `{ revirId, date, memberId, firstName, lastName, birthDate, email, declaration: true, voucherCode? }`
+Tělo: `{ revirId, date, memberId, firstName, lastName, birthDate, email, declaration: true, voucherCode? }`. Objednávka přihlášeného uživatele se uloží k jeho účtu (bez ohledu na zadané údaje; frontend je předvyplní z účtu).
 
 Odpověď `201`: `{ token, ticket: <OwnerTicket> }`. U nezaplacené objednávky obsahuje `ticket.payment` (viz níže). Server odešle e-mail s pokyny k platbě, nebo rovnou s místenkou.
 
@@ -117,7 +121,7 @@ Kapacita, poukaz i vytvoření se provádějí v jedné transakci; poukaz se ode
 Zruší nezaplacenou objednávku (`pending_payment` nebo `payment_expired`) a uvolní místo. Jinak `409 not_cancellable`.
 
 ### `GET /tickets/{code}`
-Veřejná kontrola – smí ji provést kdokoli (QR kód na místence, ruční zadání kódu), vrací jen `<PublicTicket>` a nic nemění. Zadržení místenky rybářskou stráží přibude s uživatelskými účty.  Neexistuje → `404 not_found`, špatný formát → `400 invalid_code`.
+Veřejná kontrola – smí ji provést kdokoli (QR kód na místence, ruční zadání kódu), vrací jen `<PublicTicket>` a nic nemění. Plná kontrola a zadržení porybným přibudou v kroku B2.  Neexistuje → `404 not_found`, špatný formát → `400 invalid_code`.
 
 ### `POST /tickets/{code}/return` 🔒
 Tělo: `{ noCatch: boolean, catches: [{ species, length, weight?, weightEstimated? }] }`
@@ -136,6 +140,90 @@ Odpověď `200`: `<OwnerTicket>` se stavem `expired_returned`.
 
 ### `GET /vouchers/{code}`
 `{ code, valid, usedAt, revirId }` (`revirId: null` = platí pro všechny revíry). Špatný formát (≠ 16 znaků `A–Z0–9`) → `400 invalid_voucher`.
+
+## Účty
+
+Nákup bez účtu funguje dál. Účet předvyplňuje formulář, drží historii místenek a nese role.
+
+### Role
+
+Sada oprávnění (`roles: ["member", …]`), ne žebříček. `member` má každý účet.
+
+| Role | Přiděluje | Oprávnění |
+| --- | --- | --- |
+| `member` | registrace | vlastní účet a místenky |
+| `warden` | `manager` nebo `admin` | plná kontrola a zadržení místenky (B2) |
+| `manager` | `admin` | manažerský portál (`/manage/*`) |
+| `admin` | `admin` | jako `manager` + přidělování rolí `manager`/`admin` |
+
+- Admin **musí** mít zapnutou 2FA; bez ní vrací všechny `/manage/*` `403 mfa_required` a `user.mfaRequired = true`. Pro ostatní je 2FA volitelná, ale když ji mají zapnutou, kód je povinný při každém přihlášení (heslem, odkazem, obnovou hesla).
+- Posledního admina nelze odebrat ani smazat (`409 last_admin`). Role kromě `member` lze dát jen účtu s ověřeným e-mailem (`409 user_not_verified`).
+- Prvního admina zakládá **průvodce prvním spuštěním** (viz níže); ve WordPressu je adminem administrátor webu, který plugin aktivoval.
+- **Účet jen pro správu:** `memberId` a `birthDate` jsou u účtu s rolí `manager`/`admin` volitelné (`staffOnly: true`, když číslo legitimace chybí). Běžný uživatel je mít musí. Správce si je může doplnit a pak z účtu kupovat místenky.
+
+### Přihlášení, relace a CSRF
+
+- Relace je v cookie `mistenka_session` (`HttpOnly`, `SameSite=Lax`, na HTTPS `Secure`), na serveru jen SHA-256 hash. Platnost 30 dní, pro správce a adminy 12 hodin.
+- Každá **měnící** žádost (ne `GET`) s platnou relací musí mít hlavičku `X-Mistenka-Csrf` s hodnotou `csrf` z `GET /auth/me` nebo z odpovědi na přihlášení; jinak `403 csrf_failed`. Výjimkou jsou endpointy, které relaci vytvářejí (`/auth/login`, `/auth/register`, `/auth/verify`, `/auth/magic-link`, `/auth/magic`, `/auth/password-reset`, `/auth/password-reset/confirm`, `/auth/email/confirm`). WordPress tuto hlavičku ověří jako nonce `wp_rest`.
+- Odpovědi neprozrazují existenci účtu: `register` pro existující ověřený e-mail vrátí totéž a pošle e-mail `account_exists`; `magic-link` a `password-reset` vrací vždy `{ sent: true }`. Výjimka: obsazené číslo legitimace → `409 member_id_taken`.
+- Odkazy z e-mailů vedou na `account.html#<druh>=<token>` (token ve fragmentu). Jsou jednorázové; nový odkaz stejného účelu ruší starý. Neplatný, použitý nebo prošlý → `400 invalid_link`.
+
+| Odkaz | Fragment | Platnost |
+| --- | --- | --- |
+| ověření registrace | `#verify=` | 48 h |
+| přihlášení bez hesla | `#login=` | 15 min |
+| obnova hesla | `#reset=` | 60 min |
+| potvrzení nového e-mailu | `#email=` | 24 h |
+
+- Heslo je volitelné (bez něj jen přihlášení odkazem), jinak 8–200 znaků (`400 weak_password`). E-mail se porovnává bez ohledu na velikost písmen.
+- Ověření e-mailu (i přihlášení odkazem nebo obnova hesla, které vlastnictví adresy také prokazují) připojí k účtu dřívější místenky bez účtu se **stejným číslem legitimace a e-mailem**.
+- Neověřené účty se plánovanou úlohou smažou po 48 h; jejich číslo legitimace se tím uvolní.
+
+### Průvodce prvním spuštěním
+
+Dokud neexistuje žádný admin, server při startu vypíše do konzole jednorázový odkaz `setup.html#<token>` (platí 60 min, každý start vytvoří nový a předchozí zneplatní; nouzově `npm run user -- setup`). Kdo nemá přístup ke konzoli, admina nezaloží. Admin vzniká rovnou s ověřeným e-mailem a zapnutou 2FA; pak je průvodce vypnutý.
+
+| Endpoint | Tělo | Odpověď / chyby |
+| --- | --- | --- |
+| `GET /setup` | – | `{ needed }` |
+| `POST /setup/2fa` | `{ token }` | `{ secret, otpauthUrl }`; `400 invalid_setup_token`, `404 setup_closed` |
+| `POST /setup` | `{ token, email, firstName, lastName, password, otp }` | `{ user, csrf }` + cookie; `400 invalid_otp`, `weak_password`, …; `409 two_factor_not_setup`, `email_taken`; `404 setup_closed` |
+
+Ve WordPressu průvodce není (admin = administrátor webu).
+
+### Endpointy účtu
+
+| Endpoint | Tělo | Odpověď / chyby |
+| --- | --- | --- |
+| `GET /auth/me` | – | `{ user: <User> \| null, csrf }` (vždy `200`) |
+| `POST /auth/register` | `{ email, firstName, lastName, birthDate, memberId, password?, consent: true }` | `{ sent: true }`; `400 invalid_email`, `invalid_name`, `invalid_birth_date`, `invalid_member_id`, `weak_password`, `consent_required`; `409 member_id_taken` |
+| `POST /auth/verify` | `{ token }` | `{ user, csrf }` + cookie; `400 invalid_link` |
+| `POST /auth/login` | `{ email, password, otp? }` | `{ user, csrf }` + cookie; `401 invalid_credentials`, `401 otp_required`, `401 invalid_otp`, `403 email_not_verified` (pošle nový ověřovací odkaz) |
+| `POST /auth/magic-link` | `{ email }` | `{ sent: true }` |
+| `POST /auth/magic` | `{ token, otp? }` | `{ user, csrf }` + cookie; `400 invalid_link`, `401 otp_required`/`invalid_otp` (odkaz pak zůstává platný) |
+| `POST /auth/password-reset` | `{ email }` | `{ sent: true }` |
+| `POST /auth/password-reset/confirm` | `{ token, password, otp? }` | `{ user, csrf }` + cookie; odhlásí ostatní relace |
+| `POST /auth/email/confirm` | `{ token }` | `{ user }`; `409 email_taken` |
+| `POST /auth/logout` | – | `{ ok: true }`, smaže cookie |
+| `PATCH /me` 👤 | `{ firstName?, lastName?, birthDate?, memberId?, email? }` | `{ user, emailChangePending }` – nový e-mail se změní až po potvrzení odkazem; `409 member_id_taken`, `email_taken` |
+| `PUT /me/password` 👤 | `{ currentPassword, newPassword }` (`currentPassword` jen pokud účet heslo má) | `{ user }`; `400 wrong_password`; odhlásí ostatní relace |
+| `POST /me/delete` 👤 | `{ confirm: true, password? }` | `{ deleted: true }` + smaže cookie; místenky zůstanou bez vazby na účet; `400 confirm_required`, `wrong_password`; `409 last_admin` |
+| `GET /me/tickets` 👤 | – | `{ tickets: [<OwnerTicket>] }`, nejnovější den lovu první |
+| `POST /me/2fa/setup` 👤 | – | `{ secret, otpauthUrl }` (TOTP, SHA-1, 6 číslic, 30 s); `409 two_factor_enabled` |
+| `POST /me/2fa/enable` 👤 | `{ otp }` | `{ user }`; `400 invalid_otp`, `409 two_factor_not_setup` |
+| `POST /me/2fa/disable` 👤 | `{ otp }` | `{ user }`; admin → `409 two_factor_required` |
+| `GET /manage/users?q=` 🛠 | – | `{ users: [<StaffUser>] }` (max. 100, hledá v e-mailu, jménu a čísle legitimace) |
+| `POST /manage/users` 🛠 (jen admin) | `{ email, firstName, lastName, roles: ["manager"] \| ["admin"] }` | `201 { user: <StaffUser> }` – účet jen pro správu s ověřeným e-mailem; pozvaný dostane e-mail `staff_invite` s odkazem `account.html#invite=<token>` (72 h), heslo nastaví přes `POST /auth/password-reset/confirm`; `400 invalid_roles`, `403 forbidden_role`, `409 email_taken` |
+| `PUT /manage/users/{id}/roles` 🛠 | `{ roles: [...] }` | `{ user: <StaffUser> }`; `400 invalid_roles`, `403 forbidden_role` (správce mění jen `warden`), `404`, `409 last_admin`, `user_not_verified`; změna se zapíše do auditu |
+
+👤 = přihlášený uživatel (jinak `401 unauthorized`). 🛠 = `manager` nebo `admin` (jinak `403 forbidden_role`, admin bez 2FA `403 mfa_required`). TOTP kód lze použít jen jednou (ochrana proti opakování), tolerance ±30 s.
+
+```jsonc
+// User
+{ "id": 7, "email": "eva@example.cz", "firstName": "Eva", "lastName": "Nováková", "birthDate": "1988-02-03", "memberId": "12345678",
+  "staffOnly": false, "roles": ["member", "warden"], "emailVerified": true, "hasPassword": true, "twoFactor": false, "mfaRequired": false, "createdAt": "…" }
+// StaffUser = User bez birthDate, hasPassword a mfaRequired
+```
 
 ## Tvary odpovědí
 
@@ -191,7 +279,8 @@ V tomto pořadí; Node je spouští v intervalu, WordPress cron hostingu přes `
 2. stažení a párování plateb,
 3. připomínky odevzdání (jednou, po skončení dne lovu, dokud běží lhůta),
 4. uzavření neodevzdaných místenek po lhůtě `lateReturnDays` (stav `closed_unreturned`, bez úlovku) + e-mail držiteli,
-5. odeslání fronty e-mailů.
+5. úklid účtů: smazání neověřených účtů starších 48 h, prošlých relací a odkazů,
+6. odeslání fronty e-mailů.
 
 `POST /jobs/run` vyžaduje hlavičku `X-Mistenka-Cron-Key` s tajným klíčem z konfigurace serveru; bez něj `404`.
 
@@ -203,6 +292,13 @@ V tomto pořadí; Node je spouští v intervalu, WordPress cron hostingu přes `
 | `ticket_issued` | místenka vystavena | místenka + `return.html?code=…#t=<token>` |
 | `return_reminder` | po dni lovu, neodevzdaná, lhůta běží; upozorní na automatické uzavření | `return.html?code=…#t=<token>` |
 | `ticket_closed` | místenka uzavřena jako neodevzdaná | kontakt na hospodáře |
+| `account_verify` | registrace, přihlášení neověřeného účtu | `account.html#verify=<token>` |
+| `account_exists` | registrace s e-mailem existujícího ověřeného účtu | `account.html` |
+| `magic_link` | žádost o přihlášení bez hesla | `account.html#login=<token>` |
+| `password_reset` | žádost o obnovu hesla | `account.html#reset=<token>` |
+| `email_change` | změna e-mailu v profilu (jde na novou adresu) | `account.html#email=<token>` |
+| `staff_invite` | admin pozval správce/admina | `account.html#invite=<token>` |
+| `account_deleted` | smazání účtu | – |
 
 Odesílají se přes frontu (tabulka `email_outbox`). Node je ukládá do `data/outbox/`, WordPress odešle přes `wp_mail()`.
 
@@ -216,3 +312,6 @@ Jen pro vývoj a testy. Na produkci musí být nedostupné (`404`).
 | `POST /dev/clock` `{ now: ISO \| null }` | vývojový režim | posun času serveru (a spuštění úloh) |
 | `POST /dev/vouchers` `{ code?, revirId? }` | vývojový režim | vytvoření poukazu |
 | `POST /dev/jobs` | vývojový režim | okamžité spuštění plánovaných úloh |
+| `POST /dev/users/roles` `{ email, roles }` | vývojový režim | nastavení rolí bez kontroly oprávnění (testy) |
+| `POST /dev/setup-token` | vývojový režim, žádný admin | nový token průvodce `{ token }` (testy) |
+| `GET /dev/outbox?to=<email>` | vývojový režim | posledních 20 e-mailů pro adresu `{ emails: [{ kind, to, subject, text, createdAt }] }` (testy čtou odkazy s tokeny) |

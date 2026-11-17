@@ -58,6 +58,24 @@ function ticketClosed(config, { ticket, revir }) {
   };
 }
 
+// ---------- účty ----------
+const validFor = (minutes) => (minutes >= 120 ? `${Math.round(minutes / 60)} hodin` : `${minutes} minut`);
+function accountMail(config, { subject, title, intro, link, label, minutes, outro }) {
+  const note = minutes ? `Odkaz platí ${validFor(minutes)} a lze ho použít jen jednou.` : "";
+  return {
+    subject,
+    html: layout(config, title, `<p>${esc(intro)}</p>${link ? button(link, label) : ""}${note ? `<p style="color:#5b6b64;font-size:13px">${esc(note)}</p>` : ""}<p style="color:#5b6b64;font-size:13px">${esc(outro || "Pokud jste o nic nežádali, zprávu ignorujte.")}</p>`),
+    text: textBlock([title, intro, link ? `${label}: ${link}` : null, note || null, outro || "Pokud jste o nic nežádali, zprávu ignorujte."])
+  };
+}
+const accountVerify = (config, { link, minutes }) => accountMail(config, { subject: "Místenka – potvrďte registraci", title: "Potvrďte svůj e-mail", intro: "Děkujeme za registraci. Účet aktivujete kliknutím na tlačítko níže.", link, label: "Potvrdit e-mail", minutes });
+const accountExists = (config, { link }) => accountMail(config, { subject: "Místenka – účet už existuje", title: "Účet s tímto e-mailem už máte", intro: "Někdo (pravděpodobně vy) se pokusil znovu zaregistrovat s tímto e-mailem. Přihlaste se, případně si nechte poslat odkaz pro přihlášení nebo obnovu hesla.", link, label: "Přihlásit se" });
+const magicLink = (config, { link, minutes }) => accountMail(config, { subject: "Místenka – odkaz pro přihlášení", title: "Přihlášení do Místenky", intro: "Kliknutím na tlačítko se přihlásíte bez hesla.", link, label: "Přihlásit se", minutes });
+const passwordReset = (config, { link, minutes }) => accountMail(config, { subject: "Místenka – obnova hesla", title: "Nastavte si nové heslo", intro: "Obdrželi jsme žádost o obnovu hesla k vašemu účtu.", link, label: "Nastavit nové heslo", minutes });
+const emailChange = (config, { link, minutes }) => accountMail(config, { subject: "Místenka – potvrďte nový e-mail", title: "Potvrďte změnu e-mailu", intro: "Tuto adresu jste zadali jako nový e-mail svého účtu. Změna se projeví po potvrzení.", link, label: "Potvrdit nový e-mail", minutes });
+const staffInvite = (config, { link, minutes, roleLabel }) => accountMail(config, { subject: `Místenka – pozvánka do správy (${roleLabel})`, title: "Pozvánka do správy Místenky", intro: `Byli jste pozváni jako ${roleLabel} organizace ${config.organization.shortName}. Kliknutím na tlačítko si nastavíte heslo a přihlásíte se.`, link, label: "Nastavit heslo", minutes, outro: "Pokud pozvánku nečekáte, zprávu ignorujte – bez nastavení hesla se účet nepoužije." });
+const accountDeleted = (config) => accountMail(config, { subject: "Místenka – účet byl smazán", title: "Váš účet byl smazán", intro: "Účet a jeho přihlašovací údaje jsme smazali. Vystavené místenky uchováváme po dobu stanovenou pro evidenci, už ale nejsou spojené s účtem.", outro: "Pokud jste účet nemazali vy, kontaktujte prosím organizaci." });
+
 // Vývojové doručení: e-maily se ukládají jako soubory do data/outbox/.
 function createFileMailer(dir) {
   fs.mkdirSync(dir, { recursive: true });
@@ -71,4 +89,4 @@ function createFileMailer(dir) {
   };
 }
 
-module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, createFileMailer, czDate };
+module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, createFileMailer, czDate };

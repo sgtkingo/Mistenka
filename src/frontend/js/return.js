@@ -1,4 +1,4 @@
-const { qs, qsa, esc, api, loadConfig, revirUrl, czDate, czDateTime, plural, findSpecies, catchProblem, credentialsFor, rememberMemberId, normalizeMemberId, isMemberId, showToast, applyBranding } = window.Mistenka;
+const { qs, qsa, esc, api, loadConfig, revirUrl, czDate, czDateTime, plural, findSpecies, catchProblem, credentialsFor, rememberMemberId, normalizeMemberId, isMemberId, showToast, applyBranding, loadSession } = window.Mistenka;
 
 const code = (new URLSearchParams(location.search).get("code") || "").trim().toUpperCase();
 let credentials = credentialsFor(code);
@@ -165,7 +165,7 @@ qs("#submitReturn").addEventListener("click", async () => {
     config = await loadConfig();
     applyBranding(config);
     if (!/^[A-Z0-9]{6}$/.test(code)) throw new Error("Chybí platný kód místenky.");
-    if (!credentials.token && !credentials.memberId) return show("accessForm");
+    if (!credentials.token && !credentials.memberId && !(await loadSession())) return show("accessForm");
     await loadTicket();
   } catch (error) { showError(error.message); }
 })();

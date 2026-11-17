@@ -74,15 +74,58 @@ Pořadí odpovídá závislostem. Položky A jsou podmínkou převodu, B mohou n
 - Povolit nulové hlášení („bez úlovku“) – dnes API vyžaduje alespoň jeden úlovek.
 - Lhůta 24 h po konci platnosti vynucená na serveru; pozdní odevzdání označit (`late`).
 
-**B1. Správa (administrace)**
-- Ve WP jako stránka v administraci s vlastní rolí/capability (např. `mistenka_manage`) pro výbor a hospodáře; v Node jednoduchá chráněná stránka.
-- Seznam místenek s filtry, detail, zrušení, fronta nespárovaných plateb, export CSV, správa poukazů, oznámení na úvodní stránce.
+#### Část B: účty, porybný, limity a správa (rozhodnuto 17. 11. 2026)
 
-**B2. Kontrola rybářskou stráží**
-- Podle rozhodnutí svazu: volná kontrola s minimem údajů, nebo přihlášená role porybného s plnými údaji a akcí „zadržení místenky“.
+Vše nejdřív v Node verzi. WordPress (WP uživatelé s vlastními rolemi, přihlášení na subdoméně, nonce) se řeší až po dokončení Node verze.
 
-**B3. Provoz**
-- Zálohy DB pluginu (součást záloh webu), audit změn stavů, retenční lhůty osobních údajů, informace o zpracování osobních údajů na webu.
+**Role a portály.** Role jsou sada oprávnění, ne žebříček:
+
+| Role | Kdo ji přiděluje | Co může |
+| --- | --- | --- |
+| `member` (uživatel) | registrace | uživatelský portál: aktuální místenka, klientská zóna, vlastní údaje (předvyplní se při nákupu), historie místenek |
+| `warden` (porybný) | správce nebo admin | navíc plná kontrola místenky a zadržení |
+| `manager` (správce) | admin | uživatelský portál + přepnutí do manažerského portálu |
+| `admin` | admin | jako správce + jmenuje a odvolává správce a adminy, mění platební údaje, spravuje zálohy |
+
+- Manažerský portál je součástí stejného frontendu (`manage.html`), ne stránka ve wp-admin, aby ho měla i Node verze.
+- 2FA (TOTP): pro admina povinná, pro správce volitelná. Zatím jediný admin je autor projektu, správců se čeká do 10. Posledního admina nelze odebrat.
+- Přihlášení heslem **i** odkazem z e-mailu (bez hesla). Nákup bez účtu dál funguje.
+- Číslo členské legitimace je unikátní na účet. Po ověření e-mailu se k účtu připojí dřívější místenky se stejným e-mailem a číslem legitimace.
+
+**B1. Uživatelské účty a uživatelský portál** – *hotovo v Node verzi 17. 11. 2026 (20 sdílených testů API).* Prvního admina zakládá průvodce prvním spuštěním (jednorázový odkaz z konzole, admin vzniká rovnou s 2FA); správce a adminy admin zve e-mailem. Účty správců nemusí mít rybářské údaje. Relace v HttpOnly cookie + hlavička `X-Mistenka-Csrf`; ve WP se mapuje na nonce `wp_rest`.
+- Registrace s ověřením e-mailu (heslo volitelné, min. 8 znaků, zadává se dvakrát; datum narození v českém tvaru d. m. rrrr), přihlášení heslem nebo odkazem, obnova hesla, odhlášení. Neověřené účty se po 48 h mažou.
+- Klientská zóna (`account.html`): aktuální místenka, historie místenek, úprava údajů (změna e-mailu s ověřením), změna hesla, 2FA, smazání účtu. Místenky zůstávají kvůli evidenci, jen se odpojí od účtu.
+- Přihlášenému se formulář nákupu předvyplní. Místenka koupená přihlášeným se uloží k účtu a držitel ji otevře bez tokenu.
+- Správa rolí (`manage.html` → Uživatelé): správce jmenuje porybné, admin správce a adminy. Každá změna role jde do auditu.
+
+**B2. Porybný: plná kontrola a zadržení**
+- Veřejná kontrola zůstává (jméno a maskované číslo legitimace). Porybný (platí pro celou MO) po přihlášení navíc uvidí celé číslo legitimace, datum narození a úlovky člena v aktuálním týdnu a měsíci, včetně upozornění na překročené limity.
+- Každá kontrola porybného se zaznamená (kdo, kdy, která místenka), obdoba zápisu stráže do povolenky.
+- **Zadržení** = nový stav `seized` s důvodem a místem. Lov končí okamžitě, místenka neplatí. Držitel ji i tak musí odevzdat s úlovky. Držitel dostane e-mail, správce jen upozornění (zadržení nepotvrzuje).
+
+**B3. Týdenní a měsíční limity úlovků**
+- Počítají se podle čísla legitimace, tedy i u nákupů bez účtu. Pravidla podle BPVRP ÚS SMaS: kapr, štika, candát, amur, bolen, sumec, lín a parma dohromady 4 ks týdně a 10 ks měsíčně (krátkodobé povolenky); ostroretka 15 ks týdně; kapr 2 ks týdně na revíru nebo podrevíru do 5 ha (Petr 1 má 1,7 ha → platí). Týden je kalendářní (po–ne). Podrevíry dostanou výměru, pravidla podmínku `maxAreaHa`.
+- Limity platí na všech revírech svazu dohromady, my vidíme jen místenky. V UI proto vždy „podle místenek v Místence“.
+- **Překročení nikdy neblokuje odevzdání ani nákup.** Rybář dostane upozornění, správce e-mail na kontaktní adresu správce (nová položka organizace, nastavitelná v portálu), porybný upozornění při kontrole. Stejně se bude chovat i denní limit (dnes `400 daily_limit` → upozornění). Lovné míry a hájení dál odevzdání blokují (taková ryba se nesmí přisvojit).
+- Správce může člena ručně zablokovat (nákup místenek) a nastavit automatické pravidlo, např. „po 2 porušeních v sezoně blokace na N dní / do konce sezony“.
+
+**B4. Manažerský portál: provoz**
+- Seznam místenek s filtry a detailem, zrušení, fronta nespárovaných plateb, zadržené místenky, porušení limitů, blokace členů, poukazy, export CSV.
+- **„Důležité“:** zprávy pro MO nebo konkrétní revír, volitelně platnost od–do, jinak do smazání. Na úvodní stránce nejvýš 3 aktivní (přepínání tečkami). Nahradí `notice` v konfiguraci.
+- Sezona: otevření a uzavření, mimořádné uzavření jednotlivých dní.
+
+**B5. Manažerský portál: nastavení**
+- Organizace, revíry, ceny, kapacity, kontakty (včetně e-mailu správce), pravidla revíru a tabulka ryb. `config/organization.json` zůstane jako výchozí data a import, změny se ukládají do DB s historií. Pravidla úlovků se verzují a místenka si pamatuje verzi, podle které se kontrolovala.
+- Platební údaje (účet/IBAN) smí měnit jen admin; změna se audituje a oznámí e-mailem všem adminům. Fio token zůstává mimo DB.
+
+**B6. Zarybnění, přehledy a uzávěrky**
+- Zarybnění: datum, podrevír, druh, věková kategorie (K1–K3 …), kg, ks, cena, dodavatel. Plán zarybnění s rozpočtem, porovnání „uloveno vs. nasazeno“.
+- Přehledy (sčoty): úlovky po druzích a obdobích, tržby, poukazy.
+- **Automatická uzávěrka po ukončení sezony** (úlovky, tržby, zarybnění, docházka), uložená a exportovatelná.
+
+**B7. Provoz a zálohy**
+- Automatická záloha DB jednou denně během sezony; drží se poslední a aktuální. Po každé uzávěrce sezony jedna trvalá záloha. Spravovat, stahovat a mazat zálohy smí jen admin.
+- Audit změn stavů a rolí, retenční lhůty osobních údajů, informace o zpracování osobních údajů na webu.
 
 ### Převod do WordPress pluginu
 
@@ -94,7 +137,7 @@ Pořadí odpovídá závislostem. Položky A jsou podmínkou převodu, B mohou n
 
 ### Otevřená rozhodnutí s organizací
 
-- Kontrola místenek: volná, nebo jen přihlášený porybný (viz REPLY níže).
+- ~~Kontrola místenek: volná, nebo jen přihlášený porybný~~ → rozhodnuto: veřejná kontrola s minimem údajů + přihlášený porybný s plnými údaji a zadržením (B2).
 - Číslo účtu Fio a souhlas s API tokenem jen pro čtení; kdo bude řešit nespárované platby a vracení peněz.
 - Cena, denní kapacita, délka rezervace před zaplacením, pravidla storna.
 - Odesílatel e-mailů: WP Mail SMTP má zapnuté „Force From Email“, takže z `mistenka@` jdou i systémové e-maily webu (obnova hesla apod.). Případně zřídit obecnou adresu webu.
