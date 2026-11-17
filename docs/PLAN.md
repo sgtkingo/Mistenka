@@ -1,6 +1,93 @@
 # Místenka – validace záměru a plán realizace
 
-Stav podkladů: 6. 11. 2026. Jde o návrh pro pilot jednoho revíru, nikoli o potvrzení právní ani provozní způsobilosti. Ceny a podmínky služeb před spuštěním znovu ověřit.
+Stav podkladů: 6. 11. 2026, aktualizace platformy 17. 11. 2026. Jde o návrh pro pilot jednoho revíru, nikoli o potvrzení právní ani provozní způsobilosti. Ceny a podmínky služeb před spuštěním znovu ověřit.
+
+## Aktualizace 17. 11. 2026: platforma WordPress
+
+Cílová platforma se mění z Cloudflare Workers + D1 na **WordPress plugin** na webu organizace. Sekce „Doporučený tech stack“ níže je tím nahrazena; validace plateb, párování, právních otázek a datového modelu zůstává platná.
+
+### Prostředí (hotovo a ověřeno)
+
+| Položka | Stav |
+| --- | --- |
+| Web | `rybarikarvina.cz`, Active24 (administrace Websupport), WordPress 7.1.4, PHP 8.3, OPcache, šablona Graphene 2.9.6 |
+| Aplikace | `mistenka.rybarikarvina.cz` – alias stejné instalace WP, plugin podle hostu vykreslí aplikaci místo webu; wildcard DNS a certifikát Let's Encrypt; HTTP cache vypnutá |
+| Test | `test.rybarikarvina.cz` – samostatná kopie webu a DB (`rybarikarv_test`), neindexovaná; každou změnu ověřit nejdřív zde |
+| REST API | WordPress nemá „hezké“ trvalé odkazy → volat `/?rest_route=/mistenka/v1/...`, ne `/wp-json/...` |
+| E-mail | WP Mail SMTP, odesílatel `mistenka@rybarikarvina.cz` (`smtp.websupport.cz:465`, SSL); SPF, DKIM a DMARC nastaveny; doručení do Gmailu ověřeno. Plugin volá jen `wp_mail()` |
+| Ověřovací plugin | `wordpress-plugin/mistenka-demo` (v0.2.0) – subdoména, REST, zápis do DB a e-mail ověřeny na ostrém webu |
+| Sestavení | `python scripts/build-plugin.py [plugin]` → `dist/<plugin>.zip` |
+
+### Způsob vývoje: dvojí implementace
+
+- **Node.js (`server.js`, SQLite)** slouží k rychlému lokálnímu vývoji a ověřování UX. **PHP plugin** je produkční implementace stejného chování.
+- Frontend (HTML/JS/CSS) existuje **jen v jedné kopii**; plugin ho při sestavení převezme. Rozdíl mezi prostředími řeší jediná konfigurační hodnota s prefixem API (`/api` vs. `/?rest_route=/mistenka/v1`).
+- Rozjetí obou verzí brání **smlouva API** (`docs/API.md`) a **sdílené testy API** spustitelné proti oběma serverům (`node test/api.test.js --base=<url>`). Změna chování = změna smlouvy + testu + obou implementací v jednom commitu.
+- Node verze nemá odchylky „jen pro demo“, které by PHP neumělo: stejné stavy, validace, chybové kódy a formát dat.
+
+### Úkoly v Node verzi před převodem do WordPressu
+
+Pořadí odpovídá závislostem. Položky A jsou podmínkou převodu, B mohou následovat.
+
+**A1. Smlouva API a testy**
+- Sepsat `docs/API.md`: endpointy, vstupy, výstupy, stavy místenky, chybové kódy a texty.
+- Sdílená sada testů API (nákup, poukaz, kontrola, odevzdání, chybové stavy, souběh).
+- Konfigurovatelný prefix API ve frontendu.
+
+**A2. Opravy datového modelu**
+- Datum lovu ukládat jako ISO datum (`YYYY-MM-DD`), ne český text. Současné `ticketDate()` doplňuje aktuální rok, takže místenky přes přelom roku se vyhodnotí špatně. Formátování „8. listopadu“ jen v UI.
+- Časové výpočty platnosti v pásmu Europe/Prague (začátek a konec dne, změna času).
+- Cenu, údaje revíru (název, číslo, účet) a kapacitu přesunout z kódu (`200 Kč`, `Petrůvka 1 A · 471 115`) do konfigurace nebo tabulky; částky v haléřích.
+- Denní kapacitu hlídat na serveru atomicky v transakci, ne jen v UI.
+
+**A3. Ochrana osobních údajů a přístupu**
+- `GET /api/tickets/{code}` teď vrací e-mail a datum narození komukoli, kdo zná šestimístný kód. Veřejná kontrola smí vracet jen stav, datum a minimum identifikace (dle rozhodnutí o kontrole, viz REPLY níže, např. jméno a zkrácené číslo lístku).
+- Odevzdání (`PATCH`) chránit samostatným dlouhým náhodným tokenem z e-mailu a stránky místenky (uložený jako hash), ne jen kódem. Omezit počet pokusů o hádání kódů.
+- Escapovat všechna data vkládaná přes `innerHTML` (jména, kódy, druhy ryb) – `app.js`, `payment.js`, `return.js`, `status.js`.
+- Odebrat `Access-Control-Allow-Origin: *`; WordPress bude same-origin.
+
+**A4. Platba převodem (QR + Fio)**
+- Nový tok: objednávka → stav `pending_payment` s **číselným VS** (kód místenky je hex, do VS nepatří) a expirací rezervace → platba → `issued`. Místenka se nevydá před připsáním platby (dnes se vytváří hned po odeslání formuláře).
+- QR Platba (SPAYD): IBAN organizace, částka, VS, zpráva; vedle QR ruční údaje. Generovat na serveru ze stejné objednávky.
+- Adaptér Fio API: token jen pro čtení v konfiguraci serveru (Node `.env`, WP `wp-config.php`), nikdy v repozitáři ani v logu; dotaz `last` max. 1× za 30 s; deduplikace podle ID transakce (unikátní index); párování VS + částka + CZK.
+- Výjimky do fronty k ručnímu řešení: chybný/chybějící VS, jiná částka, duplicita, platba po expiraci.
+- Stránka čekání na platbu s průběžnou kontrolou stavu (dotaz na náš server, ne na banku).
+- Pro vývoj: simulovaný zdroj transakcí (fixture JSON) se stejným rozhraním jako Fio adaptér.
+- WordPress: plánovaná úloha přes **skutečný cron Active24** volající endpoint chráněný tajným klíčem; na `wp-cron` (spouští se jen při návštěvě) nespoléhat.
+
+**A5. Místenka a e-maily**
+- Skutečný QR kód místenky (odkaz na kontrolu, bez tokenu pro odevzdání) místo `fake-qr` v UI i v PDF.
+- E-mail po zaplacení: kód, datum, odkaz na místenku a na odevzdání (s tokenem). V Node verzi zápis do souboru nebo SMTP přes `.env`; ve WP `wp_mail()`.
+- Připomínka odevzdání po skončení platnosti (plánovaná úloha).
+
+**A6. Odevzdání úlovků**
+- Povolit nulové hlášení („bez úlovku“) – dnes API vyžaduje alespoň jeden úlovek.
+- Lhůta 24 h po konci platnosti vynucená na serveru; pozdní odevzdání označit (`late`).
+
+**B1. Správa (administrace)**
+- Ve WP jako stránka v administraci s vlastní rolí/capability (např. `mistenka_manage`) pro výbor a hospodáře; v Node jednoduchá chráněná stránka.
+- Seznam místenek s filtry, detail, zrušení, fronta nespárovaných plateb, export CSV, správa poukazů, oznámení na úvodní stránce.
+
+**B2. Kontrola rybářskou stráží**
+- Podle rozhodnutí svazu: volná kontrola s minimem údajů, nebo přihlášená role porybného s plnými údaji a akcí „zadržení místenky“.
+
+**B3. Provoz**
+- Zálohy DB pluginu (součást záloh webu), audit změn stavů, retenční lhůty osobních údajů, informace o zpracování osobních údajů na webu.
+
+### Převod do WordPress pluginu
+
+1. Plugin `wordpress-plugin/mistenka` (demo plugin zůstává jako šablona a pak se odstraní): aktivace vytvoří tabulky přes `dbDelta()`, odinstalace je volitelně smaže.
+2. REST `mistenka/v1` podle `docs/API.md`; `$wpdb->prepare()`, transakce pro kapacitu, poukazy a párování.
+3. Frontend převzatý z kořene repozitáře, vykreslený na `mistenka.rybarikarvina.cz` (detekce hostu jako v demo pluginu).
+4. Sdílené testy API proti `test.rybarikarvina.cz`, pak ruční průchod nákup → platba (malá skutečná částka) → místenka → kontrola → odevzdání.
+5. Nasazení na ostrý web, sledování prvních plateb a e-mailů.
+
+### Otevřená rozhodnutí s organizací
+
+- Kontrola místenek: volná, nebo jen přihlášený porybný (viz REPLY níže).
+- Číslo účtu Fio a souhlas s API tokenem jen pro čtení; kdo bude řešit nespárované platby a vracení peněz.
+- Cena, denní kapacita, délka rezervace před zaplacením, pravidla storna.
+- Odesílatel e-mailů: WP Mail SMTP má zapnuté „Force From Email“, takže z `mistenka@` jdou i systémové e-maily webu (obnova hesla apod.). Případně zřídit obecnou adresu webu.
 
 ## Závěr
 
@@ -49,6 +136,8 @@ REPLY: Dohodnout se svazem zda musí mít porybný účet porybného nebo zda um
 - **Poukazy:** Jednorázové uplatnění provést atomicky spolu s rezervací/vystavením, s auditem, platností, pravidly storna a ochranou náhodného kódu. Patří až po stabilním platebním toku.
 
 ## Doporučený tech stack
+
+> **Nahrazeno 17. 11. 2026** – platformou WordPress, viz „Aktualizace 17. 11. 2026“ nahoře. Ponecháno pro kontext rozhodnutí; požadavky na platby, zálohy a oddělení prostředí platí i pro WordPress.
 
 | Vrstva | Volba pro pilot | Podmínka / riziko |
 | --- | --- | --- |
