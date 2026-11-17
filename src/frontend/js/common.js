@@ -217,7 +217,7 @@
   const TICKET_STATES = {
     pending_payment: ["Čeká na platbu", "warn"], payment_expired: ["Nezaplacená", "off"], cancelled: ["Zrušená", "off"],
     future: ["Budoucí", "info"], active: ["Aktivní", "ok"], expired_unreturned: ["K odevzdání", "warn"],
-    closed_unreturned: ["Neodevzdaná", "bad"], expired_returned: ["Odevzdaná", "ok"]
+    closed_unreturned: ["Neodevzdaná", "bad"], expired_returned: ["Odevzdaná", "ok"], seized: ["Zadržená", "bad"]
   };
   function ticketState(ticket) {
     const [label, tone] = TICKET_STATES[ticket.status] || [ticket.status, "off"];

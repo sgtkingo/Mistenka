@@ -275,12 +275,13 @@ async function showCurrentTicket() {
   try {
     const { tickets } = await api("/me/tickets");
     const pick = (status) => tickets.filter((t) => t.status === status && (!revir || t.revir.id === revir.id));
-    const current = pick("active")[0] || pick("expired_unreturned").find((t) => t.returnable) || pick("pending_payment")[0] || pick("future").slice(-1)[0];
+    const current = pick("seized")[0] || pick("active")[0] || pick("expired_unreturned").find((t) => t.returnable) || pick("pending_payment")[0] || pick("future").slice(-1)[0];
     if (!current) return;
     const state = ticketState(current);
-    const action = current.status === "expired_unreturned" ? "Odevzdat →" : current.status === "pending_payment" ? "Zaplatit →" : "Zobrazit →";
+    const needsReturn = current.status === "expired_unreturned" || current.status === "seized";
+    const action = needsReturn ? "Odevzdat →" : current.status === "pending_payment" ? "Zaplatit →" : "Zobrazit →";
     const banner = qs("#myTicketBanner");
-    banner.href = current.status === "expired_unreturned" ? `return.html?code=${encodeURIComponent(current.code)}` : `payment.html?code=${encodeURIComponent(current.code)}`;
+    banner.href = needsReturn ? `return.html?code=${encodeURIComponent(current.code)}` : `payment.html?code=${encodeURIComponent(current.code)}`;
     banner.innerHTML = `<span class="badge badge-${esc(state.tone)}">${esc(state.label)}</span><span><b>Vaše místenka ${esc(current.code)}</b> · ${esc(current.revir.name)} · ${esc(czDate(current.date, { weekday: true }))}</span><span class="banner-action">${action}</span>`;
     banner.classList.remove("hidden");
   } catch { /* banner je jen doplněk */ }

@@ -85,7 +85,9 @@ function renderTicket() {
   qs("#homeLink").href = revirUrl("./", revir, config);
   qs("#returnedHome").href = revirUrl("./", revir, config);
   let status;
-  if (ticket.status === "expired_unreturned") {
+  if (ticket.status === "seized") {
+    status = `<span class="ticket-status late-return"><span>! Zadržená místenka</span><small>${esc(ticket.seizure?.reason || "")} · odevzdejte do ${esc(czDateTime(ticket.returnDeadline))}</small></span>`;
+  } else if (ticket.status === "expired_unreturned") {
     const hoursLeft = Math.max(0, Math.ceil((new Date(ticket.returnDeadline) - Date.now()) / 3600000));
     const left = hoursLeft >= 48 ? `${Math.floor(hoursLeft / 24)} ${plural(Math.floor(hoursLeft / 24), "den", "dny", "dní")}` : `${hoursLeft} ${plural(hoursLeft, "hodina", "hodiny", "hodin")}`;
     status = `<span class="ticket-status late-return"><span>! Opožděné odevzdání</span><small>do ${esc(czDateTime(ticket.returnDeadline))} (zbývá ${left}), pak se místenka uzavře jako neodevzdaná</small></span>`;

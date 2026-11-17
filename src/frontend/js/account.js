@@ -202,7 +202,7 @@ document.addEventListener("click", (event) => {
 
 function ticketLink(ticket) {
   const code = encodeURIComponent(ticket.code);
-  if (ticket.status === "expired_unreturned" && ticket.returnable) return { href: `return.html?code=${code}`, label: "Odevzdat" };
+  if ((ticket.status === "expired_unreturned" || ticket.status === "seized") && ticket.returnable) return { href: `return.html?code=${code}`, label: "Odevzdat" };
   if (ticket.status === "active") return { href: `return.html?code=${code}`, label: "Odevzdat" };
   if (ticket.status === "pending_payment") return { href: `payment.html?code=${code}`, label: "Zaplatit" };
   return { href: `payment.html?code=${code}`, label: "Zobrazit" };
@@ -211,7 +211,7 @@ function ticketLink(ticket) {
 async function loadTickets() {
   try {
     const { tickets } = await api("/me/tickets");
-    const current = tickets.find((t) => t.status === "active") || tickets.find((t) => t.status === "expired_unreturned" && t.returnable)
+    const current = tickets.find((t) => t.status === "seized") || tickets.find((t) => t.status === "active") || tickets.find((t) => t.status === "expired_unreturned" && t.returnable)
       || tickets.find((t) => t.status === "pending_payment") || tickets.filter((t) => t.status === "future").slice(-1)[0];
     if (current) {
       const state = ticketState(current);

@@ -549,6 +549,93 @@ test("smazání účtu: místenky zůstanou, přihlášení přestane fungovat; 
   await setClock("2026-06-10T08:00:00Z");
 });
 
+// ---------- porybný (B2) ----------
+async function wardenAccount() {
+  const warden = await verifiedAccount();
+  await call("POST", "/dev/users/roles", { body: { email: warden.email, roles: ["warden"] } });
+  return warden;
+}
+
+test("porybný: plná kontrola jen s rolí, údaje člena, místenky v týdnu a měsíci, záznam kontroly", async () => {
+  await setClock("2026-06-10T08:00:00Z"); // středa
+  const memberId = "71000001";
+  const monday = await paidTicket({ memberId, date: "2026-06-10" });
+  const { code } = await paidTicket({ memberId, date: "2026-06-12", revirId: "revir-b" });
+  const member = await verifiedAccount();
+  assert.equal((await call("GET", `/warden/tickets/${code}`)).data.code, "unauthorized");
+  assert.equal((await call("GET", `/warden/tickets/${code}`, { session: member.session })).data.code, "forbidden_role");
+
+  const warden = await wardenAccount();
+  const res = await call("GET", `/warden/tickets/${monday.code}`, { session: warden.session });
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  const view = res.data;
+  assert.equal(view.memberId, memberId, "celé číslo legitimace");
+  assert.equal(view.birthDate, "1985-03-02");
+  assert.equal(view.status, "active");
+  assert.equal(view.seizable, true);
+  assert.deepEqual(view.memberHistory.week, { from: "2026-06-08", to: "2026-06-14" }, "kalendářní týden po–ne");
+  assert.deepEqual(view.memberHistory.month, { from: "2026-06-01", to: "2026-06-30" });
+  assert.deepEqual(view.memberHistory.tickets.map((t) => t.code), [monday.code, code], "místenky člena v týdnu/měsíci");
+  assert.equal(view.memberHistory.tickets[0].current, true);
+  assert.equal(view.checks.length, 1, "kontrola je zapsaná");
+  assert.equal(view.checks[0].wardenName, "Eva Účtová");
+  assert.equal((await call("GET", `/warden/tickets/${monday.code}`, { session: warden.session })).data.checks.length, 1, "opakované otevření do 10 min se nezapisuje");
+  const unpaid = await order();
+  assert.equal((await call("GET", `/warden/tickets/${unpaid.ticket.code}`, { session: warden.session })).data.code, "not_issued");
+});
+
+test("zadržení: jen platná místenka, lov končí, odevzdat je nutné i tak; e-mail držiteli a správci", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const warden = await wardenAccount();
+  const active = await paidTicket({ email: "drzitel-zadrzeni@example.cz" });
+  const future = await paidTicket({ date: "2026-06-11" });
+  const seize = (code, body) => call("POST", `/warden/tickets/${code}/seize`, { body, session: warden.session });
+  assert.equal((await seize(active.code, { reason: "x" })).data.code, "invalid_reason");
+  assert.equal((await seize(future.code, { reason: "Lov bez místenky na tento den" })).data.code, "not_seizable");
+  assert.equal((await call("POST", `/warden/tickets/${active.code}/seize`, { body: { reason: "Překročení" } })).data.code, "unauthorized");
+
+  const seized = await seize(active.code, { reason: "Ponechání podměrečné štiky", place: "Petr 1, severní břeh" });
+  assert.equal(seized.status, 200, JSON.stringify(seized.data));
+  assert.equal(seized.data.status, "seized");
+  assert.equal(seized.data.seizable, false);
+  assert.equal(seized.data.seizure.reason, "Ponechání podměrečné štiky");
+  assert.equal(seized.data.seizure.wardenName, "Eva Účtová");
+  assert.equal(seized.data.checks[0].status, "seized");
+  assert.equal((await seize(active.code, { reason: "Znovu zadržet" })).data.code, "already_seized");
+
+  const pub = (await call("GET", `/tickets/${active.code}`)).data;
+  assert.equal(pub.status, "seized", "veřejná kontrola ukáže zadržení");
+  assert.equal(pub.seized, true);
+  assert.ok(!("seizure" in pub), "důvod zadržení není veřejný");
+  assert.ok(await lastEmail("drzitel-zadrzeni@example.cz", "ticket_seized"), "e-mail držiteli");
+  assert.ok(await lastEmail("spravce-mo@example.cz", "seizure_notice"), "upozornění správci");
+
+  const owner = (await call("GET", `/orders/${active.code}`, { token: active.token })).data;
+  assert.equal(owner.returnable, true, "zadrženou místenku lze odevzdat");
+  assert.equal(owner.seizure.place, "Petr 1, severní břeh");
+  const returned = await call("POST", `/tickets/${active.code}/return`, { body: { catches: [{ species: "plotice", length: 20 }] }, token: active.token });
+  assert.equal(returned.status, 200, JSON.stringify(returned.data));
+  assert.equal(returned.data.status, "expired_returned");
+  assert.equal(returned.data.seized, true, "informace o zadržení zůstává");
+});
+
+test("zadržená neodevzdaná místenka dostane připomínku a po lhůtě se uzavře jako neodevzdaná", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const warden = await wardenAccount();
+  const ticket = await paidTicket({ email: "zadrzena-neodevzdana@example.cz" });
+  await call("POST", `/warden/tickets/${ticket.code}/seize`, { body: { reason: "Lov třemi pruty" }, session: warden.session });
+  await setClock("2026-06-11T08:00:00Z");
+  const next = (await call("GET", `/tickets/${ticket.code}`)).data;
+  assert.equal(next.status, "seized");
+  assert.equal(next.late, true, "po dni lovu už jde o opožděné odevzdání");
+  assert.ok(await lastEmail("zadrzena-neodevzdana@example.cz", "return_reminder"), "připomínka odevzdání");
+  await setClock("2026-06-17T22:00:01Z");
+  const closed = (await call("GET", `/tickets/${ticket.code}`)).data;
+  assert.equal(closed.status, "closed_unreturned");
+  assert.equal(closed.seized, true);
+  await setClock("2026-06-10T08:00:00Z");
+});
+
 // ---------- průvodce prvním spuštěním a pozvání správce ----------
 // Musí běžet poslední: po založení admina se průvodce zavře.
 test("průvodce prvním spuštěním: admin vznikne jen s jednorázovým odkazem a rovnou s 2FA", async () => {

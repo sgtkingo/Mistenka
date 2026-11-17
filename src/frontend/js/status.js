@@ -1,4 +1,4 @@
-const { qs, esc, api, czDate, czDateTime } = window.Mistenka;
+const { qs, qsa, esc, api, czDate, czDateTime, initUserMenu, hasRole, ticketState, showToast } = window.Mistenka;
 const code = (new URLSearchParams(location.search).get("code") || "").trim().toUpperCase();
 
 // Stav -> [popisek, vysvětlení, CSS třída, ikona]
@@ -11,7 +11,8 @@ const STATES = {
   closed_unreturned: ["Uzavřená, neodevzdaná", "Místenka nebyla odevzdána ani v prodloužené lhůtě a byla automaticky uzavřena.", "status-expired", "×"],
   pending_payment: ["Čeká na platbu", "Místenka zatím nebyla zaplacena a neopravňuje k lovu.", "status-expired", "…"],
   payment_expired: ["Nezaplacená", "Objednávka nebyla včas zaplacena. Místenka neplatí.", "status-expired", "×"],
-  cancelled: ["Zrušená", "Objednávka byla zrušena. Místenka neplatí.", "status-expired", "×"]
+  cancelled: ["Zrušená", "Objednávka byla zrušena. Místenka neplatí.", "status-expired", "×"],
+  seized: ["Zadržená", "Místenku zadržela rybářská stráž. Neopravňuje k lovu; držitel ji musí odevzdat s úlovky.", "status-expired", "!"]
 };
 
 function showError(message) {
@@ -32,13 +33,72 @@ async function loadStatus() {
     if (ticket.holder) rows.unshift(["Rybář", ticket.holder.name], ["Č. legitimace", ticket.holder.memberId]);
     if (ticket.status === "active") rows.push(["Platí do", czDateTime(ticket.validTo)]);
     rows.push(["Stav", label]);
+    if (ticket.seized && ticket.status !== "seized") rows.push(["Poznámka", "Místenka byla zadržena rybářskou stráží"]);
     qs("#ticketStatusCard").innerHTML = `<span class="section-kicker">Místenka ${esc(ticket.code)}</span><h2>${esc([ticket.revir.name, ticket.revir.number].filter(Boolean).join(" · "))}</h2><dl class="summary-list">${rows.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`;
     document.title = `Místenka ${ticket.code} · ${label}`;
     qs("#statusLoading").classList.add("hidden");
     qs("#statusContent").classList.remove("hidden");
+    const user = await initUserMenu();
+    if (hasRole(user, "warden") && ticket.holder) loadWarden();
   } catch (error) {
     showError(error.message);
   }
+}
+
+// ---------- porybný: plná kontrola a zadržení (B2) ----------
+const catchText = (t) => (t.catches.length ? t.catches.map((c) => `${c.species} ${c.length} cm`).join(", ") : t.noCatch ? "bez úlovku" : "—");
+async function loadWarden() {
+  const panel = qs("#wardenPanel");
+  try {
+    renderWarden(await api(`/warden/tickets/${code}`));
+  } catch (error) {
+    panel.innerHTML = `<p class="status-error">${esc(error.message)}</p>`;
+    panel.classList.remove("hidden");
+  }
+}
+function renderWarden(view) {
+  const panel = qs("#wardenPanel");
+  const history = view.memberHistory.tickets;
+  const weekCount = history.filter((t) => t.inWeek).length;
+  const monthCount = history.filter((t) => t.inMonth).length;
+  const seizure = view.seizure ? `<div class="status-error"><b>Zadrženo ${esc(czDateTime(view.seizure.at))}</b>${view.seizure.wardenName ? ` · ${esc(view.seizure.wardenName)}` : ""}<br>${esc(view.seizure.reason)}${view.seizure.place ? ` · ${esc(view.seizure.place)}` : ""}</div>` : "";
+  panel.innerHTML = `
+    <div class="warden-head"><span class="section-kicker">Kontrola porybného</span><span class="badge badge-info">Porybný</span></div>
+    <dl class="summary-list">
+      <div><dt>Rybář</dt><dd>${esc(`${view.firstName} ${view.lastName}`)}</dd></div>
+      <div><dt>Datum narození</dt><dd>${esc(czDate(view.birthDate))}</dd></div>
+      <div><dt>Č. legitimace</dt><dd>${esc(view.memberId)}</dd></div>
+      ${view.returnedAt ? `<div><dt>Úlovky na této místence</dt><dd>${esc(catchText(view))}</dd></div>` : ""}
+    </dl>
+    ${seizure}
+    <h3>Místenky člena</h3>
+    <p class="field-help">Týden ${esc(czDate(view.memberHistory.week.from, { year: false }))}–${esc(czDate(view.memberHistory.week.to))}: ${weekCount} · měsíc: ${monthCount}. Jen místenky v Místence – limity platí na všech revírech svazu dohromady.</p>
+    <table class="data-table"><thead><tr><th>Den</th><th>Revír</th><th>Stav</th><th>Úlovky</th></tr></thead><tbody>${history.map((t) => {
+      const state = ticketState(t);
+      return `<tr${t.current ? ' class="current-row"' : ""}><td data-label="Den">${esc(czDate(t.date, { year: false }))}${t.inWeek ? "" : ' <small class="muted-inline">(mimo týden)</small>'}</td><td data-label="Revír">${esc(t.revir)}</td><td data-label="Stav"><span class="badge badge-${esc(state.tone)}">${esc(state.label)}</span></td><td data-label="Úlovky">${esc(catchText(t))}</td></tr>`;
+    }).join("")}</tbody></table>
+    <h3>Záznam kontrol</h3>
+    <ul class="check-log">${view.checks.map((c) => `<li>${esc(czDateTime(c.at))} · ${esc(c.wardenName)}${c.status === "seized" ? " · <b>zadržení</b>" : ""}</li>`).join("") || "<li>—</li>"}</ul>
+    ${view.seizable ? `<details class="seize-box"><summary>Zadržet místenku</summary>
+      <p class="field-help">Zadržením lov okamžitě končí a místenka neplatí. Držitel ji musí i tak odevzdat s úlovky. Držitel i správce dostanou e-mail.</p>
+      <label class="field-label" for="seizeReason">Důvod zadržení</label><textarea id="seizeReason" rows="3" maxlength="500"></textarea>
+      <label class="field-label" for="seizePlace">Místo <span class="optional">(volitelné)</span></label><input id="seizePlace" maxlength="200" placeholder="např. Petr 1, severní břeh">
+      <button class="danger-button" type="button" id="seizeButton">Zadržet místenku</button></details>` : ""}`;
+  panel.classList.remove("hidden");
+  qs("#seizeButton")?.addEventListener("click", async (event) => {
+    const reason = qs("#seizeReason").value.trim();
+    if (reason.length < 3) return showToast("Uveďte důvod zadržení.");
+    if (!window.confirm("Opravdu zadržet místenku? Lov tím okamžitě končí.")) return;
+    event.currentTarget.disabled = true;
+    try {
+      await api(`/warden/tickets/${code}/seize`, { method: "POST", body: { reason, place: qs("#seizePlace").value.trim() } });
+      showToast("Místenka byla zadržena.");
+      loadStatus();
+    } catch (error) {
+      showToast(error.message);
+      event.currentTarget.disabled = false;
+    }
+  });
 }
 
 qs("#nextCheck").addEventListener("click", () => {

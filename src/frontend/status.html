@@ -11,7 +11,7 @@
   <header class="site-header">
     <a class="brand" href="./" aria-label="Místenka, domů"><span class="brand-mark" aria-hidden="true">⌁</span><span>Místenka</span></a>
     <nav class="main-nav" aria-label="Hlavní navigace"><a href="./">Revír</a><a href="./#jak-to-funguje">Jak to funguje</a><a href="./#kontakt">Kontakt</a></nav>
-    <a class="login-button" href="./">Zpět na revír <span aria-hidden="true">←</span></a>
+    <div class="user-menu"><a class="login-button" href="./">← Zpět na revír</a><a class="login-button" data-account-link href="account.html">Přihlásit se</a></div>
   </header>
   <main class="status-page">
     <section class="panel-card status-shell">
@@ -20,6 +20,7 @@
       <div id="statusContent" class="hidden">
         <div id="statusBanner" class="status-banner"></div>
         <div id="ticketStatusCard" class="ticket-status-card"></div>
+        <div id="wardenPanel" class="warden-panel hidden"></div>
       </div>
       <div id="statusError" class="hidden status-error"></div>
       <div class="quick-check">

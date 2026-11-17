@@ -87,6 +87,9 @@ Uložený stav (`pending_payment`, `issued`, `payment_expired`, `cancelled`) + �
 | `expired_unreturned` | den lovu skončil, neodevzdaná, lhůta pro opožděné odevzdání běží (`late: true`) |
 | `closed_unreturned` | lhůta `lateReturnDays` uplynula bez odevzdání – uzavřena jako neodevzdaná, bez úlovku (`late: true`, `closedAt`) |
 | `expired_returned` | odevzdaná (i během dne lovu); `late: true`, pokud po skončení dne lovu |
+| `seized` | zadržená porybným (B2): neopravňuje k lovu, ale lze a je nutné ji odevzdat do `returnDeadline`; po dni lovu `late: true`. Po lhůtě → `closed_unreturned` |
+
+`seized: true` v `PublicTicket` zůstává i po odevzdání nebo uzavření (místenka byla zadržena). Důvod a místo zadržení vidí jen držitel (`OwnerTicket.seizure: { at, reason, place } | null`) a porybný.
 
 Místenka vzniká vždy jako objednávka. S poukazem nebo při ceně 0 Kč je rovnou `issued`, jinak `pending_payment` s rezervací na `payment.reservationMinutes`. **Místenka neopravňuje k lovu, dokud není vystavena.**
 
@@ -121,7 +124,7 @@ Kapacita, poukaz i vytvoření se provádějí v jedné transakci; poukaz se ode
 Zruší nezaplacenou objednávku (`pending_payment` nebo `payment_expired`) a uvolní místo. Jinak `409 not_cancellable`.
 
 ### `GET /tickets/{code}`
-Veřejná kontrola – smí ji provést kdokoli (QR kód na místence, ruční zadání kódu), vrací jen `<PublicTicket>` a nic nemění. Plná kontrola a zadržení porybným přibudou v kroku B2.  Neexistuje → `404 not_found`, špatný formát → `400 invalid_code`.
+Veřejná kontrola – smí ji provést kdokoli (QR kód na místence, ruční zadání kódu), vrací jen `<PublicTicket>` a nic nemění. Plnou kontrolu a zadržení má porybný (viz Porybný).  Neexistuje → `404 not_found`, špatný formát → `400 invalid_code`.
 
 ### `POST /tickets/{code}/return` 🔒
 Tělo: `{ noCatch: boolean, catches: [{ species, length, weight?, weightEstimated? }] }`
@@ -225,6 +228,31 @@ Ve WordPressu průvodce není (admin = administrátor webu).
 // StaffUser = User bez birthDate, hasPassword a mfaRequired
 ```
 
+## Porybný (B2)
+
+Veřejná kontrola (`GET /tickets/{code}`) zůstává pro každého. Přihlášený uživatel s rolí `warden` navíc (jinak `401 unauthorized` / `403 forbidden_role`; admin bez 2FA `403 mfa_required`):
+
+### `GET /warden/tickets/{code}`
+Plná kontrola. Každé otevření se zapíše do záznamu kontrol (`ticket_checks`: porybný, čas, stav); opakované otevření stejným porybným do 10 minut se nezapisuje znovu. Nevystavená místenka → `409 not_issued`.
+
+```jsonc
+// WardenTicket = PublicTicket bez "holder" +
+{ "firstName": "Jan", "lastName": "Novák", "birthDate": "1980-05-15", "memberId": "12345678",
+  "returnedAt": null, "noCatch": false, "catches": [],
+  "seizable": true,                       // jen stav active
+  "seizure": null,                        // { at, reason, place, wardenName }
+  "checks": [{ "wardenName": "Petr Strážný", "at": "…", "status": "active" }],   // nejnovější první, max. 20
+  "memberHistory": {                      // vystavené místenky téhož čísla legitimace v týdnu (po–ne) a měsíci dne lovu
+    "week": { "from": "2026-06-08", "to": "2026-06-14" }, "month": { "from": "2026-06-01", "to": "2026-06-30" },
+    "tickets": [{ "code": "…", "date": "…", "revir": "Petrůvka 1 A", "status": "active", "current": true, "inWeek": true, "inMonth": true, "noCatch": false, "catches": [] }]
+  } }
+```
+
+### `POST /warden/tickets/{code}/seize`
+Tělo `{ reason, place? }` (důvod 3–500 znaků, místo do 200). Zadržet lze jen stav `active` (`409 not_seizable`), jednou (`409 already_seized`). Lov okamžitě končí, stav `seized`. Držitel dostane e-mail `ticket_seized` s odkazem na odevzdání, správce upozornění `seizure_notice` na `organization.managerEmail` (nepotvrzuje ho). Zapíše se do záznamu kontrol a auditu. Odpověď: `<WardenTicket>`. Chyby: `400 invalid_reason`, `invalid_place`.
+
+Připomínka odevzdání chodí i zadrženým místenkám (po skončení dne lovu).
+
 ## Tvary odpovědí
 
 ```jsonc
@@ -297,6 +325,8 @@ V tomto pořadí; Node je spouští v intervalu, WordPress cron hostingu přes `
 | `magic_link` | žádost o přihlášení bez hesla | `account.html#login=<token>` |
 | `password_reset` | žádost o obnovu hesla | `account.html#reset=<token>` |
 | `email_change` | změna e-mailu v profilu (jde na novou adresu) | `account.html#email=<token>` |
+| `ticket_seized` | porybný zadržel místenku | `return.html?code=…#t=<token>` |
+| `seizure_notice` | totéž, na `organization.managerEmail` (je-li vyplněn) | `status.html?code=…` |
 | `staff_invite` | admin pozval správce/admina | `account.html#invite=<token>` |
 | `account_deleted` | smazání účtu | – |
 

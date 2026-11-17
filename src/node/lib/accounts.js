@@ -349,6 +349,14 @@ function createAccounts({ db, config, appUrl }) {
     return user;
   }
 
+  // Porybný (B2): plná kontrola a zadržení.
+  function requireWarden(ctx) {
+    const user = requireUser(ctx);
+    if (!hasRole(user, "warden")) throw new ApiError(403, "forbidden_role", "Plnou kontrolu a zadržení smí jen porybný.");
+    if (mfaRequired(user)) throw new ApiError(403, "mfa_required", "Nejdřív si v účtu zapněte dvoufázové ověření (2FA).");
+    return user;
+  }
+
   function listUsers(ctx, { q = "" } = {}) {
     requireManager(ctx);
     const term = `%${String(q).trim().toLowerCase().slice(0, 100)}%`;
@@ -474,7 +482,7 @@ function createAccounts({ db, config, appUrl }) {
   return {
     resolveSession, register, verifyEmail, login, requestMagicLink, magicLogin, requestPasswordReset, resetPassword, logout,
     me, updateProfile, confirmEmailChange, changePassword, deleteAccount, twoFactorSetup, twoFactorEnable, twoFactorDisable,
-    listUsers, setRoles, inviteStaff, forceRoles, cleanup, requireUser,
+    listUsers, setRoles, inviteStaff, requireWarden, forceRoles, cleanup, requireUser,
     setupStatus, createSetupToken, setupTwoFactor, completeSetup
   };
 }

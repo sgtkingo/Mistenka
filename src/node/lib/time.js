@@ -53,8 +53,20 @@ function pragueLocalToDate(isoDate, time = "00:00") {
   return new Date(guess);
 }
 
+// Pondělí kalendářního týdne (po–ne), do kterého datum patří.
+function weekStart(isoDate) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const dow = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7;
+  return addDays(isoDate, -dow);
+}
+// Poslední den kalendářního měsíce.
+function monthEnd(isoDate) {
+  const [y, m] = isoDate.split("-").map(Number);
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+}
+
 function monthOf(isoDate) {
   return Number(isoDate.slice(5, 7));
 }
 
-module.exports = { TZ, now, setClock, isIsoDate, pragueToday, addDays, pragueLocalToDate, monthOf };
+module.exports = { TZ, now, setClock, isIsoDate, pragueToday, addDays, pragueLocalToDate, monthOf, weekStart, monthEnd };

@@ -58,6 +58,24 @@ function ticketClosed(config, { ticket, revir }) {
   };
 }
 
+// ---------- zadržení místenky (B2) ----------
+function ticketSeized(config, { ticket, revir, links, deadline }) {
+  const rows = [["Kód místenky", ticket.code], ["Revír", revir.name], ["Datum lovu", czDate(ticket.fishing_date)], ["Zadrženo", czDateTime(ticket.seized_at)], ["Důvod", ticket.seized_reason], ...(ticket.seized_place ? [["Místo", ticket.seized_place]] : [])];
+  return {
+    subject: `Místenka ${ticket.code} byla zadržena rybářskou stráží`,
+    html: layout(config, "Místenka byla zadržena", `<p>Rybářská stráž zadržela vaši místenku. <b>Místenka od této chvíle neopravňuje k lovu.</b></p>${table(rows)}<p>Místenku musíte i tak odevzdat a zapsat všechny úlovky, nejpozději do <b>${esc(czDateTime(deadline))}</b>.</p>${button(links.return, "Odevzdat místenku")}`),
+    text: textBlock(["Rybářská stráž zadržela vaši místenku. Místenka od této chvíle neopravňuje k lovu.", ...rows.map(([k, v]) => `${k}: ${v}`), `Místenku musíte i tak odevzdat s úlovky do ${czDateTime(deadline)}: ${links.return}`])
+  };
+}
+function seizureNotice(config, { ticket, revir, links, wardenName }) {
+  const rows = [["Kód místenky", ticket.code], ["Revír", revir.name], ["Datum lovu", czDate(ticket.fishing_date)], ["Držitel", `${ticket.first_name} ${ticket.last_name}`], ["Č. legitimace", ticket.member_id], ["Porybný", wardenName], ["Zadrženo", czDateTime(ticket.seized_at)], ["Důvod", ticket.seized_reason], ...(ticket.seized_place ? [["Místo", ticket.seized_place]] : [])];
+  return {
+    subject: `Zadržená místenka ${ticket.code} – ${ticket.first_name} ${ticket.last_name}`,
+    html: layout(config, "Porybný zadržel místenku", `<p>Pro informaci: místenka byla zadržena. Zadržení není potřeba potvrzovat.</p>${table(rows)}${button(links.status, "Stav místenky")}`),
+    text: textBlock(["Porybný zadržel místenku (není potřeba potvrzovat).", ...rows.map(([k, v]) => `${k}: ${v}`), `Stav: ${links.status}`])
+  };
+}
+
 // ---------- účty ----------
 const validFor = (minutes) => (minutes >= 120 ? `${Math.round(minutes / 60)} hodin` : `${minutes} minut`);
 function accountMail(config, { subject, title, intro, link, label, minutes, outro }) {
@@ -89,4 +107,4 @@ function createFileMailer(dir) {
   };
 }
 
-module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, createFileMailer, czDate };
+module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, createFileMailer, czDate };

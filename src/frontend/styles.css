@@ -72,3 +72,9 @@
 
 .invite-box{border:1px solid var(--line);border-radius:8px;padding:12px 16px;margin-bottom:18px}.invite-box summary{cursor:pointer;color:var(--blue);font-weight:600;font-size:14px}.invite-box form{margin-top:12px}
 .manage-section select{width:100%;border:1px solid #ddd;border-radius:4px;padding:11px 12px;margin-bottom:16px;background:#fff;font:inherit}
+
+/* ---------- porybný (B2) ---------- */
+.warden-panel{margin-top:22px;padding-top:20px;border-top:2px solid #b9d8f2}.warden-panel h3{font-size:15px;margin:22px 0 6px}.warden-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.warden-panel .status-error{margin-top:14px}
+.current-row td{background:#f4f9fe}.check-log{margin:0;padding-left:18px;font-size:12px;color:var(--muted)}
+.seize-box{margin-top:22px;border:1px solid #f0c4c0;border-radius:8px;padding:12px 16px}.seize-box summary{cursor:pointer;color:#b52f27;font-weight:600;font-size:14px}
+.seize-box textarea,.seize-box input{width:100%;border:1px solid #ddd;border-radius:4px;padding:10px 12px;font:inherit;margin-bottom:12px}

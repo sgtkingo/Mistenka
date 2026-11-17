@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 // Sloupce tabulky users (sdílí vytvoření i migrace).
 const USERS_COLUMNS = `
@@ -57,6 +57,10 @@ function openDatabase(dataDir) {
   // Migrace 2 -> 3: místenka může patřit k účtu.
   if (ticketColumns.length && !ticketColumns.includes("user_id")) db.exec("ALTER TABLE tickets ADD COLUMN user_id INTEGER REFERENCES users(id)");
   migrateUsersNullable(db);
+  // Migrace 4 -> 5: zadržení místenky porybným.
+  for (const [column, definition] of [["seized_at", "TEXT"], ["seized_by", "INTEGER"], ["seized_reason", "TEXT"], ["seized_place", "TEXT"]]) {
+    if (ticketColumns.length && !ticketColumns.includes(column)) db.exec(`ALTER TABLE tickets ADD COLUMN ${column} ${definition}`);
+  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
     -- Uživatelské účty (B1). Role jsou sada oprávnění: member, warden, manager, admin.
@@ -113,8 +117,22 @@ function openDatabase(dataDir) {
       return_late INTEGER NOT NULL DEFAULT 0,
       no_catch INTEGER NOT NULL DEFAULT 0,
       reminder_sent_at TEXT,
-      user_id INTEGER REFERENCES users(id)      -- účet, ke kterému místenka patří (NULL = nákup bez účtu)
+      user_id INTEGER REFERENCES users(id),     -- účet, ke kterému místenka patří (NULL = nákup bez účtu)
+      seized_at TEXT,                          -- zadržení porybným (B2): lov končí, odevzdat je nutné i tak
+      seized_by INTEGER,                       -- id porybného (bez FK – účet může být smazán)
+      seized_reason TEXT,
+      seized_place TEXT
     );
+    -- Kontroly místenek porybným (obdoba zápisu stráže do povolenky).
+    CREATE TABLE IF NOT EXISTS ticket_checks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticket_id INTEGER NOT NULL REFERENCES tickets(id),
+      user_id INTEGER,                         -- porybný (bez FK – účet může být smazán)
+      warden_name TEXT NOT NULL,               -- jméno v době kontroly
+      at TEXT NOT NULL,
+      status TEXT NOT NULL                     -- stav místenky v okamžiku kontroly
+    );
+    CREATE INDEX IF NOT EXISTS ticket_checks_ticket ON ticket_checks (ticket_id, at);
     CREATE INDEX IF NOT EXISTS tickets_capacity ON tickets (revir_id, fishing_date, status);
     CREATE INDEX IF NOT EXISTS tickets_member ON tickets (member_id, fishing_date);
     -- Přístupové tokeny držitele (prohlížeč, odkazy v e-mailech). Ukládá se jen SHA-256 hash.

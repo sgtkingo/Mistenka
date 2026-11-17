@@ -194,6 +194,10 @@ async function handleApi(req, res, url, ip) {
   if (pathname === "/api/me/2fa/enable" && method === "POST") return send(res, 200, accounts.twoFactorEnable(ctx, await readBody(req)));
   if (pathname === "/api/me/2fa/disable" && method === "POST") return send(res, 200, accounts.twoFactorDisable(ctx, await readBody(req)));
 
+  // ---------- porybný ----------
+  if ((m = pathname.match(/^\/api\/warden\/tickets\/([^/]+)$/)) && method === "GET") return send(res, 200, service.wardenCheck(m[1], accounts.requireWarden(ctx)));
+  if ((m = pathname.match(/^\/api\/warden\/tickets\/([^/]+)\/seize$/)) && method === "POST") return send(res, 200, service.seizeTicket(m[1], accounts.requireWarden(ctx), await readBody(req)));
+
   // ---------- manažerský portál ----------
   if (pathname === "/api/manage/users" && method === "GET") return send(res, 200, accounts.listUsers(ctx, { q: url.searchParams.get("q") || "" }));
   if (pathname === "/api/manage/users" && method === "POST") return send(res, 201, accounts.inviteStaff(ctx, await readBody(req)));

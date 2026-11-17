@@ -98,7 +98,7 @@ Vše nejdřív v Node verzi. WordPress (WP uživatelé s vlastními rolemi, při
 - Přihlášenému se formulář nákupu předvyplní. Místenka koupená přihlášeným se uloží k účtu a držitel ji otevře bez tokenu.
 - Správa rolí (`manage.html` → Uživatelé): správce jmenuje porybné, admin správce a adminy. Každá změna role jde do auditu.
 
-**B2. Porybný: plná kontrola a zadržení**
+**B2. Porybný: plná kontrola a zadržení** – *hotovo v Node verzi 17. 11. 2026.* Porybný kontroluje na stránce kontroly (QR z místenky), správce upozorňuje e-mail na `organization.managerEmail`. Upozornění na limity při kontrole doplní B3.
 - Veřejná kontrola zůstává (jméno a maskované číslo legitimace). Porybný (platí pro celou MO) po přihlášení navíc uvidí celé číslo legitimace, datum narození a úlovky člena v aktuálním týdnu a měsíci, včetně upozornění na překročené limity.
 - Každá kontrola porybného se zaznamená (kdo, kdy, která místenka), obdoba zápisu stráže do povolenky.
 - **Zadržení** = nový stav `seized` s důvodem a místem. Lov končí okamžitě, místenka neplatí. Držitel ji i tak musí odevzdat s úlovky. Držitel dostane e-mail, správce jen upozornění (zadržení nepotvrzuje).

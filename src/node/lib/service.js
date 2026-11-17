@@ -72,6 +72,8 @@ function createService({ db, config, provider, mailer, appUrl }) {
     if (ticket.status !== "issued") return ticket.status;
     if (ticket.returned_at) return "expired_returned";
     const w = windowOf(ticket);
+    // Zadržená: neplatí pro lov, ale do konce lhůty ji lze (a je nutné) odevzdat.
+    if (ticket.seized_at) return at < w.deadline && !ticket.closed_at ? "seized" : "closed_unreturned";
     if (at < w.start) return "future";
     if (at < w.end) return "active";
     if (at < w.deadline && !ticket.closed_at) return "expired_unreturned";
@@ -79,7 +81,7 @@ function createService({ db, config, provider, mailer, appUrl }) {
   }
   function isReturnable(ticket, at = time.now()) {
     const state = stateOf(ticket, at);
-    return state === "active" || state === "expired_unreturned";
+    return state === "active" || state === "expired_unreturned" || state === "seized";
   }
   function takenSeats(revirId, date, excludeId = 0) {
     return db.prepare(`SELECT COUNT(*) AS n FROM tickets WHERE revir_id = ? AND fishing_date = ? AND id != ?
@@ -119,10 +121,10 @@ function createService({ db, config, provider, mailer, appUrl }) {
   }
   function enqueueEmail(ticket, kind, token, extra = {}) {
     const revir = revirOf(ticket);
-    const render = { payment_instructions: emails.paymentInstructions, ticket_issued: emails.ticketIssued, return_reminder: emails.returnReminder, ticket_closed: emails.ticketClosed }[kind];
+    const render = { payment_instructions: emails.paymentInstructions, ticket_issued: emails.ticketIssued, return_reminder: emails.returnReminder, ticket_closed: emails.ticketClosed, ticket_seized: emails.ticketSeized, seizure_notice: emails.seizureNotice }[kind];
     const mail = render(config, { ticket, revir, links: links(ticket, token), ...extra });
     db.prepare("INSERT INTO email_outbox (ticket_id, kind, to_email, subject, body_html, body_text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(ticket.id, kind, ticket.email, mail.subject, mail.html, mail.text, iso(time.now()));
+      .run(ticket.id, kind, extra.to || ticket.email, mail.subject, mail.html, mail.text, iso(time.now()));
   }
 
   // ---------- výstupní tvary (docs/API.md) ----------
@@ -150,7 +152,8 @@ function createService({ db, config, provider, mailer, appUrl }) {
       revir: { id: revir.id, name: revir.name, number: revir.number || "" },
       date: ticket.fishing_date,
       status,
-      late: status === "expired_unreturned" || status === "closed_unreturned" || (status === "expired_returned" && Boolean(ticket.return_late)),
+      late: status === "expired_unreturned" || status === "closed_unreturned" || (status === "expired_returned" && Boolean(ticket.return_late)) || (status === "seized" && time.now() >= w.end),
+      seized: Boolean(ticket.seized_at),
       holder: issued ? { name, memberId: maskMemberId(ticket.member_id) } : null,
       validFrom: iso(w.start),
       validTo: iso(w.end)
@@ -179,6 +182,7 @@ function createService({ db, config, provider, mailer, appUrl }) {
       returnable: isReturnable(ticket),
       returnDeadline: iso(w.deadline),
       closedAt: ticket.closed_at,
+      seizure: ticket.seized_at ? { at: ticket.seized_at, reason: ticket.seized_reason, place: ticket.seized_place || "" } : null,
       catches,
       payment: base.status === "pending_payment" ? paymentInfo(ticket) : null
     };
@@ -314,6 +318,71 @@ function createService({ db, config, provider, mailer, appUrl }) {
     });
   }
 
+  // ---------- porybný (B2) ----------
+  const catchesOf = (ticketId) => db.prepare("SELECT species, length_cm, weight_kg, weight_estimated FROM catches WHERE ticket_id = ? ORDER BY id").all(ticketId)
+    .map((c) => ({ species: c.species, length: c.length_cm, weight: c.weight_kg, weightEstimated: Boolean(c.weight_estimated) }));
+  // Plné údaje pro porybného + místenky téhož člena v týdnu a měsíci dne lovu (podklad pro limity, B3).
+  function wardenView(ticket) {
+    const base = publicTicket(ticket);
+    const week = { from: time.weekStart(ticket.fishing_date), to: time.addDays(time.weekStart(ticket.fishing_date), 6) };
+    const month = { from: `${ticket.fishing_date.slice(0, 8)}01`, to: time.monthEnd(ticket.fishing_date) };
+    const from = week.from < month.from ? week.from : month.from;
+    const to = week.to > month.to ? week.to : month.to;
+    const history = db.prepare("SELECT * FROM tickets WHERE member_id = ? AND status = 'issued' AND fishing_date BETWEEN ? AND ? ORDER BY fishing_date, id").all(ticket.member_id, from, to)
+      .map((t) => ({
+        code: t.code, date: t.fishing_date, revir: revirOf(t).name, status: stateOf(t), current: t.id === ticket.id,
+        inWeek: t.fishing_date >= week.from && t.fishing_date <= week.to, inMonth: t.fishing_date >= month.from && t.fishing_date <= month.to,
+        noCatch: Boolean(t.no_catch), catches: catchesOf(t.id)
+      }));
+    const checks = db.prepare("SELECT warden_name, at, status FROM ticket_checks WHERE ticket_id = ? ORDER BY at DESC LIMIT 20").all(ticket.id)
+      .map((c) => ({ wardenName: c.warden_name, at: c.at, status: c.status }));
+    let seizure = null;
+    if (ticket.seized_at) {
+      const by = ticket.seized_by ? db.prepare("SELECT first_name, last_name FROM users WHERE id = ?").get(ticket.seized_by) : null;
+      seizure = { at: ticket.seized_at, reason: ticket.seized_reason, place: ticket.seized_place || "", wardenName: by ? `${by.first_name} ${by.last_name}` : "" };
+    }
+    return {
+      ...base,
+      holder: undefined,
+      firstName: ticket.first_name, lastName: ticket.last_name, birthDate: ticket.birth_date, memberId: ticket.member_id,
+      returnedAt: ticket.returned_at, noCatch: Boolean(ticket.no_catch), catches: catchesOf(ticket.id),
+      seizable: stateOf(ticket) === "active",
+      seizure, checks, memberHistory: { week, month, tickets: history }
+    };
+  }
+  const wardenName = (user) => `${user.first_name} ${user.last_name}`;
+  // Každé otevření místenky porybným je kontrola; opakované otevření do 10 minut se nezapisuje znovu.
+  function wardenCheck(code, warden) {
+    const ticket = findTicket(code);
+    if (ticket.status !== "issued") throw new ApiError(409, "not_issued", "Místenka nebyla vystavena (nezaplacená nebo zrušená) a neopravňuje k lovu.");
+    const now = time.now();
+    const recent = db.prepare("SELECT 1 FROM ticket_checks WHERE ticket_id = ? AND user_id = ? AND at > ?").get(ticket.id, warden.id, iso(new Date(now.getTime() - 10 * 60_000)));
+    if (!recent) db.prepare("INSERT INTO ticket_checks (ticket_id, user_id, warden_name, at, status) VALUES (?, ?, ?, ?, ?)").run(ticket.id, warden.id, wardenName(warden), iso(now), stateOf(ticket, now));
+    return wardenView(ticket);
+  }
+  function seizeTicket(code, warden, body = {}) {
+    const reason = String(body.reason || "").trim();
+    const place = String(body.place || "").trim();
+    if (reason.length < 3 || reason.length > 500) throw new ApiError(400, "invalid_reason", "Uveďte důvod zadržení (3–500 znaků).");
+    if (place.length > 200) throw new ApiError(400, "invalid_place", "Místo může mít nejvýše 200 znaků.");
+    const ticket = findTicket(code);
+    return transaction(db, () => {
+      const fresh = db.prepare("SELECT * FROM tickets WHERE id = ?").get(ticket.id);
+      const state = stateOf(fresh);
+      if (fresh.seized_at) throw new ApiError(409, "already_seized", "Místenka už byla zadržena.");
+      if (state !== "active") throw new ApiError(409, "not_seizable", "Zadržet lze jen místenku platnou v den lovu.");
+      const now = iso(time.now());
+      db.prepare("UPDATE tickets SET seized_at = ?, seized_by = ?, seized_reason = ?, seized_place = ? WHERE id = ?").run(now, warden.id, reason, place || null, fresh.id);
+      db.prepare("INSERT INTO ticket_checks (ticket_id, user_id, warden_name, at, status) VALUES (?, ?, ?, ?, 'seized')").run(fresh.id, warden.id, wardenName(warden), now);
+      db.prepare("INSERT INTO audit_events (at, actor_user_id, action, target_type, target_id, detail) VALUES (?, ?, 'ticket_seized', 'ticket', ?, ?)").run(now, warden.id, fresh.code, JSON.stringify({ reason, place }));
+      const seized = db.prepare("SELECT * FROM tickets WHERE id = ?").get(fresh.id);
+      // Držitel: e-mail s odkazem na odevzdání. Správce: jen upozornění (nepotvrzuje).
+      enqueueEmail(seized, "ticket_seized", issueToken(seized.id, "email"), { deadline: iso(windowOf(seized).deadline) });
+      if (config.organization.managerEmail) enqueueEmail(seized, "seizure_notice", null, { to: config.organization.managerEmail, wardenName: wardenName(warden) });
+      return wardenView(seized);
+    });
+  }
+
   function checkVoucher(code) {
     const normalized = normalizeCode(code);
     if (!VOUCHER_RE.test(normalized)) throw new ApiError(400, "invalid_voucher", "Kód poukazu musí mít 16 znaků A–Z nebo 0–9.");
@@ -401,7 +470,8 @@ function createService({ db, config, provider, mailer, appUrl }) {
     const candidates = db.prepare("SELECT * FROM tickets WHERE status = 'issued' AND returned_at IS NULL AND reminder_sent_at IS NULL AND fishing_date <= ?").all(time.pragueToday(now));
     let sent = 0;
     for (const ticket of candidates) {
-      if (stateOf(ticket, now) !== "expired_unreturned" || !isReturnable(ticket, now)) continue;
+      const state = stateOf(ticket, now);
+      if (!(state === "expired_unreturned" || (state === "seized" && now >= windowOf(ticket).end)) || !isReturnable(ticket, now)) continue;
       transaction(db, () => {
         enqueueEmail(ticket, "return_reminder", issueToken(ticket.id, "email"), { deadline: iso(windowOf(ticket).deadline) });
         db.prepare("UPDATE tickets SET reminder_sent_at = ? WHERE id = ?").run(iso(now), ticket.id);
@@ -474,7 +544,7 @@ function createService({ db, config, provider, mailer, appUrl }) {
     return { result: report.payments?.results?.[0] || null };
   }
 
-  return { availability, createOrder, getPublicTicket, getOwnerTicket, ticketsForUser, cancelOrder, submitReturn, checkVoucher, createVoucher, runJobs, addJob, simulatePayment, processTransaction, stateOf };
+  return { availability, createOrder, getPublicTicket, getOwnerTicket, ticketsForUser, wardenCheck, seizeTicket, cancelOrder, submitReturn, checkVoucher, createVoucher, runJobs, addJob, simulatePayment, processTransaction, stateOf };
 }
 
 module.exports = { createService, ApiError };

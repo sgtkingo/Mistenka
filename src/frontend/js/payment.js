@@ -54,7 +54,7 @@ function renderIssued() {
   const revir = revirOf(ticket);
   const hours = fishingHours(revir, ticket.date);
   setHeading("Místenka vystavena", "Vaše místenka je připravená", "Hotovo");
-  const statusLabel = { future: "● Platí od dne lovu", active: "● Aktivní", expired_unreturned: "! Neodevzdaná", closed_unreturned: "× Uzavřená, neodevzdaná", expired_returned: "↩ Odevzdaná" }[ticket.status] || ticket.status;
+  const statusLabel = { future: "● Platí od dne lovu", active: "● Aktivní", expired_unreturned: "! Neodevzdaná", closed_unreturned: "× Uzavřená, neodevzdaná", expired_returned: "↩ Odevzdaná", seized: "! Zadržená – odevzdejte" }[ticket.status] || ticket.status;
   qs("#ticketCard").innerHTML = `<div class="ticket-top"><span class="section-kicker">${esc([ticket.revir.name, ticket.revir.number].filter(Boolean).join(" · "))}</span><span class="ticket-status">${esc(statusLabel)}</span></div>
     <div class="ticket-code">${esc(ticket.code)}</div>
     <div class="ticket-details"><span><small>Rybář</small><b>${esc(`${ticket.firstName} ${ticket.lastName}`)}</b></span>${subdistrictLabel(revir) ? `<span><small>${esc(subdistrictTitle(revir))}</small><b>${esc(subdistrictLabel(revir))}</b></span>` : ""}<span><small>Datum lovu</small><b>${esc(czDate(ticket.date, { weekday: true }))}</b></span><span><small>Č. legitimace</small><b>${esc(ticket.memberId)}</b></span></div>
