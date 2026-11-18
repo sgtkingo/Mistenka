@@ -730,6 +730,94 @@ test("limity: porybný je vidí při kontrole, přihlášený člen v účtu", a
   assert.equal(view.blocked, null);
 });
 
+// ---------- provoz: důležité zprávy, sezony, uzavření (B4) ----------
+async function managerAccount() {
+  const manager = await verifiedAccount();
+  await call("POST", "/dev/users/roles", { body: { email: manager.email, roles: ["manager"] } });
+  return manager;
+}
+
+test("důležité zprávy: správa jen pro správce, veřejně nejvýš 3 aktivní pro revír, připnuté první", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const member = await verifiedAccount();
+  assert.equal((await call("GET", "/manage/announcements", { session: member.session })).data.code, "forbidden_role");
+  const { session } = await managerAccount();
+  for (const a of (await call("GET", "/manage/announcements", { session })).data.announcements) await call("DELETE", `/manage/announcements/${a.id}`, { session });
+  const add = (body) => call("POST", "/manage/announcements", { body, session });
+  assert.equal((await add({ title: "" })).data.code, "invalid_title");
+  assert.equal((await add({ title: "X", validFrom: "2026-06-12", validTo: "2026-06-11" })).data.code, "invalid_date");
+  assert.equal((await add({ title: "X", revirId: "neexistuje" })).data.code, "unknown_revir");
+  const created = await add({ title: "Sezona začala", text: "Vítejte u vody", revirId: "revir-a" });
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  await add({ title: "Ryby nasazeny", revirId: "revir-a" });
+  await add({ title: "Údržba systému", revirId: null }); // celá MO
+  await add({ title: "Připnuto", revirId: "revir-a", pinned: true });
+  await add({ title: "Jen revír B", revirId: "revir-b" });
+  await add({ title: "Prošlá", revirId: "revir-a", validTo: "2026-06-09" });
+  await add({ title: "Budoucí", revirId: "revir-a", validFrom: "2026-06-20" });
+
+  const pubA = (await call("GET", "/announcements?revirId=revir-a")).data.announcements;
+  assert.equal(pubA.length, 3, "nejvýš 3 zprávy");
+  assert.equal(pubA[0].title, "Připnuto");
+  assert.deepEqual(pubA.slice(1).map((a) => a.title), ["Údržba systému", "Ryby nasazeny"], "pak nejnovější");
+  const pubB = (await call("GET", "/announcements?revirId=revir-b")).data.announcements.map((a) => a.title);
+  assert.deepEqual(pubB, ["Jen revír B", "Údržba systému"], "zprávy pro celou MO platí i pro revír B");
+
+  const edited = await call("PUT", `/manage/announcements/${created.data.announcement.id}`, { body: { title: "Sezona začala!", revirId: "revir-a", pinned: true }, session });
+  assert.equal(edited.data.announcement.pinned, true);
+  const all = (await call("GET", "/manage/announcements", { session })).data.announcements;
+  assert.equal(all.find((a) => a.title === "Prošlá").active, false);
+  for (const a of all) assert.equal((await call("DELETE", `/manage/announcements/${a.id}`, { session })).status, 200);
+  assert.deepEqual((await call("GET", "/announcements?revirId=revir-a")).data.announcements, []);
+});
+
+test("sezona: mimo sezonu nelze koupit, dny jsou v dostupnosti uzavřené; revír bez sezony je otevřený", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const { session } = await managerAccount();
+  assert.equal((await call("POST", "/manage/seasons", { body: { name: "Sezona 2026", revirId: "revir-a" }, session })).data.code, "invalid_date");
+  const season = await call("POST", "/manage/seasons", { body: { name: "Sezona 2026", revirId: "revir-a", opensOn: "2026-06-12", closesOn: "2026-12-31" }, session });
+  assert.equal(season.status, 201, JSON.stringify(season.data));
+  assert.equal(season.data.season.state, "upcoming");
+  const days = (await call("GET", "/reviry/revir-a/availability")).data.days;
+  assert.equal(days[0].closed, true);
+  assert.equal(days[0].available, 0);
+  assert.match(days[0].closedReason, /Mimo sezonu – otevírá se 12\. 6\. 2026/);
+  assert.equal(days[2].closed, false, "12. 6. je otevřeno");
+  const out = await call("POST", "/orders", { body: orderBody({ date: "2026-06-10" }) });
+  assert.equal(out.status, 409);
+  assert.equal(out.data.code, "out_of_season");
+  assert.equal((await call("POST", "/orders", { body: orderBody({ date: "2026-06-12" }) })).status, 201);
+  assert.equal((await call("POST", "/orders", { body: orderBody({ revirId: "revir-b", date: "2026-06-11" }) })).status, 201, "revír B sezonu nemá → otevřený");
+  // Předčasné uzavření sezony = změna data uzavření.
+  const closed = await call("PUT", `/manage/seasons/${season.data.season.id}`, { body: { name: "Sezona 2026", revirId: "revir-a", opensOn: "2026-06-01", closesOn: "2026-06-10" }, session });
+  assert.equal(closed.data.season.state, "open", "dnes je poslední den");
+  assert.equal((await call("POST", "/orders", { body: orderBody({ date: "2026-06-11" }) })).data.code, "out_of_season");
+  assert.equal((await call("DELETE", `/manage/seasons/${season.data.season.id}`, { session })).status, 200);
+  assert.equal((await call("GET", "/reviry/revir-a/availability")).data.days[0].closed, false);
+});
+
+test("mimořádné uzavření: zablokuje nákup na dny, držitelé dotčených místenek dostanou e-mail", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const { session } = await managerAccount();
+  const holder = await paidTicket({ date: "2026-06-11", email: "uzavreni@example.cz" });
+  const other = await paidTicket({ date: "2026-06-13", email: "mimo-uzavreni@example.cz" });
+  assert.equal((await call("POST", "/manage/closures", { body: { revirId: "revir-a", dateFrom: "2026-06-11", reason: "x" }, session })).data.code, "invalid_reason");
+  const closure = await call("POST", "/manage/closures", { body: { revirId: "revir-a", dateFrom: "2026-06-11", dateTo: "2026-06-12", reason: "Výlov nádrže" }, session });
+  assert.equal(closure.status, 201, JSON.stringify(closure.data));
+  assert.ok(closure.data.affectedTickets.some((t) => t.code === holder.code), "dotčená místenka");
+  assert.ok(!closure.data.affectedTickets.some((t) => t.code === other.code));
+  assert.ok(await lastEmail("uzavreni@example.cz", "closure_notice"));
+  assert.equal(await lastEmail("mimo-uzavreni@example.cz", "closure_notice"), null);
+  const day = (await call("GET", "/reviry/revir-a/availability")).data.days.find((d) => d.date === "2026-06-11");
+  assert.equal(day.closed, true);
+  assert.equal(day.closedReason, "Výlov nádrže");
+  const blocked = await call("POST", "/orders", { body: orderBody({ date: "2026-06-12" }) });
+  assert.equal(blocked.data.code, "revir_closed");
+  assert.ok((await call("GET", "/manage/closures", { session })).data.closures.some((c) => c.id === closure.data.closure.id));
+  assert.equal((await call("DELETE", `/manage/closures/${closure.data.closure.id}`, { session })).status, 200);
+  assert.equal((await call("POST", "/orders", { body: orderBody({ date: "2026-06-12" }) })).status, 201, "po zrušení uzavření lze koupit");
+});
+
 // ---------- průvodce prvním spuštěním a pozvání správce ----------
 // Musí běžet poslední: po založení admina se průvodce zavře.
 test("průvodce prvním spuštěním: admin vznikne jen s jednorázovým odkazem a rovnou s 2FA", async () => {

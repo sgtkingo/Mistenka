@@ -124,7 +124,10 @@ Není součástí API. Frontend ji načítá přímo z [Open-Meteo](https://open
 Veřejná konfigurace: `organization` (`name`, `shortName`, `web`, `privacyUrl`, `contact`), `payment` (`mode`: `fake` | `fio`, `reservationMinutes`), `reviry[]` (včetně `species`), `today` (Praha), `now`, `devMode`. Nikdy neobsahuje číslo účtu, IBAN ani tokeny.
 
 ### `GET /reviry/{id}/availability`
-`{ revirId, today, days: [{ date, capacity, taken, available }] }` pro dnešek až `bookingDaysAhead`. Neznámý revír → `404 unknown_revir`.
+`{ revirId, today, days: [{ date, capacity, taken, available, closed, closedReason }] }` pro dnešek až `bookingDaysAhead`. Uzavřený den (mimo sezonu nebo mimořádně uzavřený, viz Provoz) má `closed: true`, `available: 0` a důvod. Neznámý revír → `404 unknown_revir`.
+
+### `GET /announcements?revirId=`
+Důležité zprávy pro úvodní stránku: `{ announcements: [{ id, revirId, title, text, validFrom, validTo, pinned }] }` – nejvýš 3 aktivní (platné dnes) pro revír nebo celou MO (`revirId: null`), připnuté první, pak nejnovější.
 
 ### `POST /orders`
 Tělo: `{ revirId, date, memberId, firstName, lastName, birthDate, email, declaration: true, voucherCode? }`. Objednávka přihlášeného uživatele se uloží k jeho účtu (bez ohledu na zadané údaje; frontend je předvyplní z účtu).
@@ -135,7 +138,7 @@ Odpověď `201`: `{ token, ticket: <OwnerTicket> }`. U nezaplacené objednávky 
 | --- | --- |
 | 400 | `unknown_revir`, `invalid_date` (mimo dnešek…`bookingDaysAhead`), `invalid_member_id` (8 číslic), `invalid_name`, `invalid_birth_date`, `invalid_email`, `declaration_required`, `invalid_voucher` |
 | 403 | `member_blocked` |
-| 409 | `sold_out`, `voucher_used` |
+| 409 | `sold_out`, `voucher_used`, `out_of_season`, `revir_closed` |
 
 Kapacita, poukaz i vytvoření se provádějí v jedné transakci; poukaz se odepíše jen při úspěšném vytvoření.
 
@@ -255,6 +258,35 @@ Ve WordPressu průvodce není (admin = administrátor webu).
 // StaffUser = User bez birthDate, hasPassword a mfaRequired
 ```
 
+## Provoz (B4)
+
+Správa pro `manager`/`admin` (🛠, jinak `401`/`403 forbidden_role`). `revirId: null` = všechny revíry organizace. Mazání je měkké a zapisuje se do auditu.
+
+**Důležité zprávy** – nahrazují `notice` v konfiguraci (při prvním spuštění se převedou do DB).
+
+| Endpoint | Tělo | Odpověď / chyby |
+| --- | --- | --- |
+| `GET /manage/announcements` | – | `{ announcements: [{ …, revirName, active, createdAt, updatedAt }], maxPublic: 3 }` |
+| `POST /manage/announcements` | `{ title, text?, revirId?, validFrom?, validTo?, pinned? }` | `201 { announcement }`; `400 invalid_title` (1–120), `invalid_text` (≤ 1000), `invalid_date`, `unknown_revir` |
+| `PUT /manage/announcements/{id}` | totéž | `{ announcement }`; `404` |
+| `DELETE /manage/announcements/{id}` | – | `{ deleted: true }` |
+
+**Sezony** – pokud má revír (nebo celá MO) alespoň jednu sezonu, lze kupovat jen místenky na dny uvnitř některé sezony (`409 out_of_season`). Revír bez sezony je otevřený celý rok. Předčasné uzavření = změna `closesOn`.
+
+| Endpoint | Tělo | Odpověď / chyby |
+| --- | --- | --- |
+| `GET /manage/seasons` | – | `{ seasons: [{ id, revirId, revirName, name, opensOn, closesOn, state: "upcoming" \| "open" \| "closed" }] }` |
+| `POST /manage/seasons`, `PUT /manage/seasons/{id}` | `{ name, revirId?, opensOn, closesOn? }` (`closesOn` prázdné = do uzavření) | `201 { season }` / `{ season }`; `400 invalid_name`, `invalid_date` |
+| `DELETE /manage/seasons/{id}` | – | `{ deleted: true }` |
+
+**Mimořádná uzavření** – zablokují nákup na dny `dateFrom`–`dateTo` (`409 revir_closed`, má přednost před sezonou). Držitelé už vystavených neodevzdaných místenek a platných rezervací na tyto dny dostanou e-mail `closure_notice`; vrácení peněz řeší správce ručně.
+
+| Endpoint | Tělo | Odpověď / chyby |
+| --- | --- | --- |
+| `GET /manage/closures` | – | `{ closures: [{ id, revirId, revirName, dateFrom, dateTo, reason, createdAt }] }` |
+| `POST /manage/closures` | `{ dateFrom, dateTo?, revirId?, reason }` (důvod 3–300) | `201 { closure, affectedTickets: [{ code, date, holder, status }] }` |
+| `DELETE /manage/closures/{id}` | – | `{ deleted: true }` |
+
 ## Porybný (B2)
 
 Veřejná kontrola (`GET /tickets/{code}`) zůstává pro každého. Přihlášený uživatel s rolí `warden` navíc (jinak `401 unauthorized` / `403 forbidden_role`; admin bez 2FA `403 mfa_required`):
@@ -356,6 +388,7 @@ V tomto pořadí; Node je spouští v intervalu, WordPress cron hostingu přes `
 | `seizure_notice` | totéž, na `organization.managerEmail` (je-li vyplněn) | `status.html?code=…` |
 | `limit_exceeded` | odevzdání s překročeným limitem, na `organization.managerEmail` | `status.html?code=…` |
 | `member_blocked` | automatická blokace po opakovaném porušení limitů (držiteli) | – |
+| `closure_notice` | mimořádné uzavření revíru na den místenky | `status.html?code=…` |
 | `staff_invite` | admin pozval správce/admina | `account.html#invite=<token>` |
 | `account_deleted` | smazání účtu | – |
 

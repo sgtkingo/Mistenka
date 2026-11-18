@@ -37,7 +37,7 @@ function catchProblem(species, length, fishingDate) {
   return null;
 }
 
-function createService({ db, config, provider, mailer, appUrl }) {
+function createService({ db, config, provider, mailer, appUrl, operations }) {
   // ---------- pomocné ----------
   function makeCode() {
     for (;;) {
@@ -200,7 +200,8 @@ function createService({ db, config, provider, mailer, appUrl }) {
     for (let offset = 0; offset <= revir.bookingDaysAhead; offset++) {
       const date = time.addDays(today, offset);
       const taken = takenSeats(revir.id, date);
-      days.push({ date, capacity: revir.dailyCapacity, taken, available: Math.max(0, revir.dailyCapacity - taken) });
+      const day = operations.dayStatus(revir.id, date);
+      days.push({ date, capacity: revir.dailyCapacity, taken, available: day.open ? Math.max(0, revir.dailyCapacity - taken) : 0, closed: !day.open, closedReason: day.open ? null : day.reason });
     }
     return { revirId: revir.id, today, days };
   }
@@ -225,6 +226,8 @@ function createService({ db, config, provider, mailer, appUrl }) {
     const order = validateOrder(input);
     return transaction(db, () => {
       const { revir } = order;
+      const day = operations.dayStatus(revir.id, order.date);
+      if (!day.open) throw new ApiError(409, day.code, day.code === "revir_closed" ? `Revír je v tento den mimořádně uzavřen: ${day.reason}` : `${day.reason}. Místenku na tento den nelze koupit.`);
       const block = activeBlock(order.memberId);
       if (block) throw new ApiError(403, "member_blocked", `Nákup místenek je pro toto číslo legitimace pozastaven ${block.until ? `do ${block.until.split("-").reverse().map(Number).join(". ")}` : "do odvolání"}. Důvod: ${block.reason}. Kontaktujte správce organizace.`);
       if (takenSeats(revir.id, order.date) >= revir.dailyCapacity) throw new ApiError(409, "sold_out", "Na vybraný den už nejsou volná místa.");

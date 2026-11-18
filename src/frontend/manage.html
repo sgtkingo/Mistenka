@@ -21,10 +21,10 @@
         <span class="section-kicker" data-org-short></span>
         <button class="manage-nav-item active" type="button" data-section="users">Uživatelé a role</button>
         <button class="manage-nav-item" type="button" data-section="limits">Limity a blokace</button>
+        <button class="manage-nav-item" type="button" data-section="announcements">Důležité</button>
+        <button class="manage-nav-item" type="button" data-section="seasons">Sezona a uzavření</button>
         <span class="manage-nav-group">Připravujeme</span>
         <button class="manage-nav-item" type="button" data-section="soon" data-title="Místenky a platby" data-step="B4">Místenky a platby</button>
-        <button class="manage-nav-item" type="button" data-section="soon" data-title="Důležité zprávy" data-step="B4">Důležité</button>
-        <button class="manage-nav-item" type="button" data-section="soon" data-title="Sezona a uzavření" data-step="B4">Sezona</button>
         <button class="manage-nav-item" type="button" data-section="soon" data-title="Nastavení organizace a revírů" data-step="B5">Nastavení</button>
         <button class="manage-nav-item" type="button" data-section="soon" data-title="Zarybnění" data-step="B6">Zarybnění</button>
         <button class="manage-nav-item" type="button" data-section="soon" data-title="Přehledy a uzávěrky" data-step="B6">Přehledy</button>
@@ -65,6 +65,48 @@
         <div id="blockList"></div>
         <h2 class="manage-h2">Překročené limity</h2>
         <div id="violationList"></div>
+      </section>
+
+      <section class="panel-card manage-section hidden" id="section-announcements">
+        <div class="panel-heading"><div><span class="section-kicker">Úvodní stránka</span><h1>Důležité</h1></div></div>
+        <p class="panel-intro">Na úvodní stránce se zobrazí nejvýš 3 aktivní zprávy (připnuté první, pak nejnovější), přepínají se tečkami. Bez data „do“ zpráva visí, dokud ji nesmažete.</p>
+        <details class="invite-box" id="announcementBox">
+          <summary id="announcementSummary">+ Nová zpráva</summary>
+          <form id="announcementForm" novalidate>
+            <input type="hidden" id="annId">
+            <label class="field-label" for="annTitle">Nadpis</label><input id="annTitle" maxlength="120">
+            <label class="field-label" for="annText">Text <span class="optional">(volitelné)</span></label><textarea id="annText" rows="3" maxlength="1000"></textarea>
+            <div class="form-two-col"><div><label class="field-label" for="annRevir">Pro</label><select id="annRevir" data-revir-select></select></div><div><label class="checkbox-label pin-label"><input type="checkbox" id="annPinned"> <span>Připnout nahoru</span></label></div></div>
+            <div class="form-two-col"><div><label class="field-label" for="annFrom">Zobrazit od <span class="optional">(volitelné)</span></label><input id="annFrom" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div><div><label class="field-label" for="annTo">Zobrazit do <span class="optional">(volitelné)</span></label><input id="annTo" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div></div>
+            <button class="primary-button" type="submit" id="annSubmit">Zveřejnit</button> <button class="text-button" type="button" id="annCancel">Zrušit úpravu</button>
+          </form>
+        </details>
+        <div id="announcementList"></div>
+      </section>
+
+      <section class="panel-card manage-section hidden" id="section-seasons">
+        <div class="panel-heading"><div><span class="section-kicker">Provoz revíru</span><h1>Sezona a uzavření</h1></div></div>
+        <p class="panel-intro">Místenky lze kupovat jen na dny v otevřené sezoně. Revír bez nastavené sezony je otevřený celý rok. Mimořádné uzavření zablokuje nákup na zvolené dny a držitelům už prodaných místenek pošle e-mail (vrácení peněz řešíte ručně).</p>
+        <h2 class="manage-h2">Sezony</h2>
+        <details class="invite-box">
+          <summary>+ Otevřít sezonu</summary>
+          <form id="seasonForm" novalidate>
+            <div class="form-two-col"><div><label class="field-label" for="seasonName">Název</label><input id="seasonName" maxlength="80" placeholder="Sezona 2027"></div><div><label class="field-label" for="seasonRevir">Revír</label><select id="seasonRevir" data-revir-select></select></div></div>
+            <div class="form-two-col"><div><label class="field-label" for="seasonFrom">Otevření</label><input id="seasonFrom" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div><div><label class="field-label" for="seasonTo">Uzavření <span class="optional">(prázdné = do uzavření)</span></label><input id="seasonTo" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div></div>
+            <button class="primary-button" type="submit">Uložit sezonu</button>
+          </form>
+        </details>
+        <div id="seasonList"></div>
+        <h2 class="manage-h2">Mimořádná uzavření</h2>
+        <details class="invite-box">
+          <summary>+ Uzavřít revír</summary>
+          <form id="closureForm" novalidate>
+            <div class="form-two-col"><div><label class="field-label" for="closureFrom">Od</label><input id="closureFrom" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div><div><label class="field-label" for="closureTo">Do <span class="optional">(prázdné = jeden den)</span></label><input id="closureTo" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div></div>
+            <div class="form-two-col"><div><label class="field-label" for="closureRevir">Revír</label><select id="closureRevir" data-revir-select></select></div><div><label class="field-label" for="closureReason">Důvod</label><input id="closureReason" maxlength="300" placeholder="např. výlov, povodeň"></div></div>
+            <button class="danger-button" type="submit">Uzavřít</button>
+          </form>
+        </details>
+        <div id="closureList"></div>
       </section>
 
       <section class="panel-card manage-section hidden" id="section-soon">

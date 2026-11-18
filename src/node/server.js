@@ -21,6 +21,7 @@ const { createProvider } = require("./lib/payments");
 const { createFileMailer } = require("./lib/emails");
 const { createService, ApiError } = require("./lib/service");
 const { createAccounts } = require("./lib/accounts");
+const { createOperations } = require("./lib/operations");
 const time = require("./lib/time");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -34,7 +35,8 @@ const config = loadConfig();
 const db = openDatabase(DATA_DIR);
 const provider = createProvider(config);
 const mailer = createFileMailer(path.join(DATA_DIR, "outbox"));
-const service = createService({ db, config, provider, mailer, appUrl: APP_URL });
+const operations = createOperations({ db, config, appUrl: APP_URL });
+const service = createService({ db, config, provider, mailer, appUrl: APP_URL, operations });
 const accounts = createAccounts({ db, config, appUrl: APP_URL });
 service.addJob("accounts", () => accounts.cleanup());
 
@@ -122,6 +124,7 @@ async function handleApi(req, res, url, ip) {
   if ((m = pathname.match(/^\/api\/reviry\/([a-z0-9-]+)\/availability$/)) && method === "GET") {
     return send(res, 200, service.availability(m[1]));
   }
+  if (pathname === "/api/announcements" && method === "GET") return send(res, 200, operations.activeAnnouncements(url.searchParams.get("revirId") || ""));
   if (pathname === "/api/orders" && method === "POST") {
     if (rateLimited(ip, "order", 10, 60_000)) throw new ApiError(429, "rate_limited", "Příliš mnoho objednávek, zkuste to za chvíli.");
     return send(res, 201, service.createOrder(await readBody(req), user));
@@ -200,6 +203,22 @@ async function handleApi(req, res, url, ip) {
   if ((m = pathname.match(/^\/api\/warden\/tickets\/([^/]+)\/seize$/)) && method === "POST") return send(res, 200, service.seizeTicket(m[1], accounts.requireWarden(ctx), await readBody(req)));
 
   // ---------- manažerský portál ----------
+  // Provoz (B4): důležité zprávy, sezony, mimořádná uzavření.
+  const ops = pathname.match(/^\/api\/manage\/(announcements|seasons|closures)(?:\/(\d+))?$/);
+  if (ops) {
+    const actor = accounts.requireManager(ctx);
+    const [, kind, id] = ops;
+    if (method === "GET" && !id) return send(res, 200, { announcements: operations.listAnnouncements, seasons: operations.listSeasons, closures: operations.listClosures }[kind]());
+    if (method === "POST" && !id) {
+      const body = await readBody(req);
+      return send(res, 201, { announcements: () => operations.saveAnnouncement(actor, null, body), seasons: () => operations.saveSeason(actor, null, body), closures: () => operations.createClosure(actor, body) }[kind]());
+    }
+    if (method === "PUT" && id && kind !== "closures") {
+      const body = await readBody(req);
+      return send(res, 200, kind === "announcements" ? operations.saveAnnouncement(actor, id, body) : operations.saveSeason(actor, id, body));
+    }
+    if (method === "DELETE" && id) return send(res, 200, { announcements: operations.deleteAnnouncement, seasons: operations.deleteSeason, closures: operations.deleteClosure }[kind](actor, id));
+  }
   if (pathname === "/api/manage/violations" && method === "GET") { accounts.requireManager(ctx); return send(res, 200, service.listViolations()); }
   if (pathname === "/api/manage/blocks" && method === "GET") { accounts.requireManager(ctx); return send(res, 200, service.listBlocks()); }
   if (pathname === "/api/manage/blocks" && method === "POST") return send(res, 201, service.createBlock(accounts.requireManager(ctx), await readBody(req)));

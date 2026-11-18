@@ -96,6 +96,18 @@ function memberBlocked(config, { ticket, block, limits }) {
   };
 }
 
+// ---------- mimořádné uzavření (B4) ----------
+function closureNotice(config, { ticket, revir, closure, links }) {
+  const range = closure.dateFrom === closure.dateTo ? czDate(closure.dateFrom) : `${czDate(closure.dateFrom)} – ${czDate(closure.dateTo)}`;
+  const contact = [config.organization.contact?.email, config.organization.contact?.phone].filter(Boolean).join(", ");
+  const rows = [["Kód místenky", ticket.code], ["Revír", revir.name], ["Datum lovu", czDate(ticket.fishing_date)], ["Uzavřeno", range], ["Důvod", closure.reason]];
+  return {
+    subject: `Revír ${revir.name} je mimořádně uzavřen – místenka ${ticket.code}`,
+    html: layout(config, "Revír je mimořádně uzavřen", `<p>Na den vaší místenky je revír mimořádně uzavřen. <b>Lovit v tento den nelze.</b></p>${table(rows)}<p>Ohledně vrácení peněz nebo náhradního termínu kontaktujte prosím správce${contact ? `: ${esc(contact)}` : ""}.</p>${button(links.status, "Stav místenky")}`),
+    text: textBlock(["Revír je na den vaší místenky mimořádně uzavřen. Lovit v tento den nelze.", ...rows.map(([k, v]) => `${k}: ${v}`), `Vrácení peněz nebo náhradní termín: kontaktujte správce${contact ? ` (${contact})` : ""}.`])
+  };
+}
+
 // ---------- účty ----------
 const validFor = (minutes) => (minutes >= 120 ? `${Math.round(minutes / 60)} hodin` : `${minutes} minut`);
 function accountMail(config, { subject, title, intro, link, label, minutes, outro }) {
@@ -127,4 +139,4 @@ function createFileMailer(dir) {
   };
 }
 
-module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, createFileMailer, czDate };
+module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, createFileMailer, czDate };

@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 // Sloupce tabulky users (sdílí vytvoření i migrace).
 const USERS_COLUMNS = `
@@ -161,6 +161,42 @@ function openDatabase(dataDir) {
       lifted_by INTEGER
     );
     CREATE INDEX IF NOT EXISTS member_blocks_member ON member_blocks (member_id);
+    -- Provoz (B4). revir_id NULL = platí pro všechny revíry organizace. Mazání je měkké (deleted_at).
+    CREATE TABLE IF NOT EXISTS announcements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      revir_id TEXT,
+      title TEXT NOT NULL,
+      text TEXT NOT NULL DEFAULT '',
+      valid_from TEXT,                         -- YYYY-MM-DD; NULL = hned
+      valid_to TEXT,                           -- YYYY-MM-DD včetně; NULL = do smazání
+      pinned INTEGER NOT NULL DEFAULT 0,
+      created_by INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS seasons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      revir_id TEXT,
+      name TEXT NOT NULL,
+      opens_on TEXT NOT NULL,                  -- YYYY-MM-DD
+      closes_on TEXT,                          -- YYYY-MM-DD včetně; NULL = otevřená do uzavření
+      closed_report_at TEXT,                   -- automatická uzávěrka (B6)
+      created_by INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS closures (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      revir_id TEXT,
+      date_from TEXT NOT NULL,
+      date_to TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      created_by INTEGER,
+      created_at TEXT NOT NULL,
+      deleted_at TEXT
+    );
     CREATE INDEX IF NOT EXISTS tickets_capacity ON tickets (revir_id, fishing_date, status);
     CREATE INDEX IF NOT EXISTS tickets_member ON tickets (member_id, fishing_date);
     -- Přístupové tokeny držitele (prohlížeč, odkazy v e-mailech). Ukládá se jen SHA-256 hash.

@@ -48,11 +48,7 @@ function renderRevir() {
   const days = revir.bookingDaysAhead;
   qs("#buyHint").textContent = days > 0 ? `Rezervujte si místo až ${days} ${plural(days, "den", "dny", "dní")} dopředu` : "Rezervujte si místo na dnešek";
   qs("#permitNote").textContent = revir.permitNote || "Pro lov musíte mít platný rybářský lístek a povolenku. Místenka povolenku nenahrazuje.";
-  if (revir.notice?.title) {
-    qs("#noticeTitle").textContent = revir.notice.title;
-    qs("#noticeText").textContent = revir.notice.text || "";
-    qs("#noticeCard").classList.remove("hidden");
-  }
+  loadAnnouncements();
   qs("#revirSubtitle").textContent = [revir.number, revir.union, revir.kind].filter(Boolean).join(" · ");
   const details = [];
   if (revir.subdistricts) details.push(["⌖", "Podrevíry", esc(revir.subdistricts)]);
@@ -62,6 +58,33 @@ function renderRevir() {
   const rulesHref = revirUrl("rules.html", revir, config);
   qsa(".rules-link").forEach((link) => { link.href = rulesHref; });
   qs("#revirLinks").innerHTML = [revir.cardUrl && `<a class="map-link" href="${esc(revir.cardUrl)}" target="_blank" rel="noreferrer">Otevřít kartu revíru <span>↗</span></a>`, `<a class="map-link" href="${esc(rulesHref)}">Pravidla revíru <span>→</span></a>`].filter(Boolean).join("");
+}
+
+// ---------- důležité zprávy (nejvýš 3, přepínání tečkami) ----------
+let noticeTimer = null;
+async function loadAnnouncements() {
+  let announcements = [];
+  try { ({ announcements } = await api("/announcements", { query: { revirId: revir.id } })); } catch { return; }
+  if (!announcements.length) return;
+  const card = qs("#noticeCard");
+  qs("#noticeSlides").innerHTML = announcements.map((a, i) => `<div class="notice-slide"${i ? " hidden" : ""} role="tabpanel" id="notice-${i}"><h3>${esc(a.title)}</h3>${a.text ? `<p>${esc(a.text)}</p>` : ""}</div>`).join("");
+  const dots = qs("#noticeDots");
+  dots.innerHTML = announcements.length > 1 ? announcements.map((a, i) => `<button type="button" class="notice-dot${i ? "" : " active"}" role="tab" aria-controls="notice-${i}" aria-selected="${i ? "false" : "true"}" aria-label="Zpráva ${i + 1}: ${esc(a.title)}" data-index="${i}"></button>`).join("") : "";
+  let current = 0;
+  const showSlide = (index) => {
+    current = index;
+    qsa(".notice-slide", card).forEach((slide, i) => { slide.hidden = i !== index; });
+    qsa(".notice-dot", card).forEach((dot, i) => { dot.classList.toggle("active", i === index); dot.setAttribute("aria-selected", String(i === index)); });
+  };
+  const rotate = () => {
+    window.clearInterval(noticeTimer);
+    if (announcements.length > 1) noticeTimer = window.setInterval(() => showSlide((current + 1) % announcements.length), 8000);
+  };
+  qsa(".notice-dot", card).forEach((dot) => dot.addEventListener("click", () => { showSlide(Number(dot.dataset.index)); rotate(); }));
+  card.addEventListener("mouseenter", () => window.clearInterval(noticeTimer));
+  card.addEventListener("mouseleave", rotate);
+  card.classList.remove("hidden");
+  rotate();
 }
 
 function renderContact() {
@@ -79,9 +102,11 @@ async function renderDates() {
     grid.innerHTML = days.map((day) => {
       const info = dayInfo(day.date, today);
       const soldOut = day.available <= 0;
-      return `<button class="date-option${day.date === selectedDate ? " selected" : ""}${soldOut ? " sold-out" : ""}" type="button" data-date="${esc(day.date)}"${soldOut ? " disabled" : ""}><span class="date-weather hidden"></span><b>${esc(info.label)}</b><span>${esc(info.short)}</span><i>${soldOut ? "obsazeno" : `${day.available} ${plural(day.available, "místo", "místa", "míst")}`}</i></button>`;
+      const label = day.closed ? "uzavřeno" : soldOut ? "obsazeno" : `${day.available} ${plural(day.available, "místo", "místa", "míst")}`;
+      return `<button class="date-option${day.date === selectedDate ? " selected" : ""}${soldOut ? " sold-out" : ""}${day.closed ? " closed-day" : ""}" type="button" data-date="${esc(day.date)}"${soldOut ? " disabled" : ""}${day.closed ? ` title="${esc(day.closedReason)}"` : ""}><span class="date-weather hidden"></span><b>${esc(info.label)}</b><span>${esc(info.short)}</span><i>${esc(label)}</i></button>`;
     }).join("");
-    qs("#availabilityNote").textContent = firstFree ? "● Dostupná místa" : "Všechny dny jsou obsazené";
+    const closedDay = days.find((day) => day.closed);
+    qs("#availabilityNote").textContent = firstFree ? (closedDay ? `● Dostupná místa · ${closedDay.closedReason}` : "● Dostupná místa") : closedDay && days.every((day) => day.closed) ? closedDay.closedReason : "Všechny dny jsou obsazené nebo uzavřené";
     applyWeather();
     qsa(".date-option:not([disabled])").forEach((option) => option.addEventListener("click", () => {
       qsa(".date-option").forEach((item) => item.classList.remove("selected"));

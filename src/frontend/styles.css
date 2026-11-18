@@ -82,3 +82,11 @@
 /* ---------- limity úlovků (B3) ---------- */
 .limits-box{border:1px solid #cfe5f8;background:#f6fbff;border-radius:8px;padding:12px 14px;margin:14px 0;font-size:13px}.limits-box strong{display:block;margin-bottom:6px}.limits-box ul{list-style:none;margin:0 0 6px;padding:0}.limits-box li{display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px solid rgba(0,0,0,.05)}.limits-box li b{white-space:nowrap}.limits-box li.full b{color:#946100}.limits-box li.over b{color:#b52f27}.limits-box small{color:var(--muted);font-size:11px}
 .limits-exceeded{border-color:#f0c4c0;background:#fff6f5}.returned-state .limits-box{text-align:left;max-width:520px;margin:14px auto}.manage-h2{font-size:17px;margin:26px 0 10px}
+
+/* ---------- provoz (B4) ---------- */
+.notice-body{flex:1;min-width:0}.notice-slide h3{margin:6px 0 4px}.notice-slide p{margin:0}.notice-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}.notice-footer .rules-link{margin:0}
+.notice-dots{display:flex;gap:6px}.notice-dot{width:9px;height:9px;border-radius:50%;border:0;padding:0;background:rgba(0,0,0,.18)}.notice-dot.active{background:#c97a00;width:22px;border-radius:5px}
+.date-option.closed-day i{color:#b52f27}
+.manage-section textarea{width:100%;border:1px solid #ddd;border-radius:4px;padding:11px 12px;font:inherit;margin-bottom:16px}.pin-label{margin-top:30px;font-size:13px}
+.ann-item{display:flex;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding:12px 0;font-size:13px}.ann-item p{margin:4px 0}.ann-item.inactive{opacity:.6}.ann-actions{display:flex;gap:12px;align-items:flex-start}.ann-actions .text-button{margin:0}
+.row-actions{display:flex;gap:10px;align-items:center;justify-content:flex-end}.row-actions .text-button{margin:0}
