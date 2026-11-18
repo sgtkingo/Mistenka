@@ -102,19 +102,20 @@ function createReports({ db, config, appUrl }) {
     if (!/^\d{4}$/.test(String(year || ""))) throw new ApiError(400, "invalid_year", "Zadejte rok.");
     const rows = db.prepare("SELECT * FROM stocking_budgets WHERE year = ?").all(String(year));
     const spent = (revirId, planned) => db.prepare(`SELECT COALESCE(SUM(cost_halere), 0) AS s FROM stocking_events WHERE deleted_at IS NULL AND planned = ? AND substr(date, 1, 4) = ? AND (? IS NULL OR revir_id = ?)`).get(planned, String(year), revirId, revirId).s;
-    const scopes = [null, ...config.reviry.map((r) => r.id)];
-    return {
-      year: String(year),
-      budgets: scopes.map((revirId) => {
-        const row = rows.find((b) => (b.revir_id || null) === revirId);
-        return { revirId, revir: revirName(revirId), amountHalere: row ? row.amount_halere : null, note: row?.note || "", spentHalere: spent(revirId, 0), plannedHalere: spent(revirId, 1) };
-      })
-    };
+    const budgets = config.reviry.map((r) => {
+      const row = rows.find((b) => b.revir_id === r.id);
+      return { revirId: r.id, revir: r.name, amountHalere: row ? row.amount_halere : null, note: row?.note || "", spentHalere: spent(r.id, 0), plannedHalere: spent(r.id, 1), total: false };
+    });
+    // Celá MO = kontrolní součet revírů (nedá se nastavit samostatně).
+    const amounts = budgets.filter((b) => b.amountHalere !== null);
+    const sum = (key) => budgets.reduce((total, b) => total + b[key], 0);
+    budgets.push({ revirId: null, revir: "Všechny revíry", amountHalere: amounts.length ? amounts.reduce((total, b) => total + b.amountHalere, 0) : null, note: "", spentHalere: sum("spentHalere"), plannedHalere: sum("plannedHalere"), total: true });
+    return { year: String(year), budgets };
   }
   function setBudget(actor, body = {}) {
     const year = String(body.year || "");
     if (!/^\d{4}$/.test(year)) throw new ApiError(400, "invalid_year", "Zadejte rok.");
-    const revirId = validRevir(body.revirId);
+    const revirId = validRevir(body.revirId, { required: true }); // rozpočet MO je součtem revírů
     const amount = optionalNumber(body.amountCzk, "Rozpočet");
     const note = String(body.note || "").trim().slice(0, 300);
     transaction(db, () => {

@@ -1042,6 +1042,11 @@ test("zarybnění: záznamy a plán, validace, rozpočet roku", async () => {
   assert.equal(row.amountHalere, 5000000);
   assert.equal(row.spentHalere, 1500000, "skutečné náklady");
   assert.equal(row.plannedHalere, 450000, "plánované náklady");
+  const total = budget.data.budgets.find((b) => b.total);
+  assert.equal(total.revirId, null);
+  assert.equal(total.amountHalere, 5000000, "celá MO = součet revírů");
+  assert.equal(budget.data.budgets.at(-1).total, true, "součet je poslední řádek");
+  assert.equal((await call("PUT", "/manage/stocking/budget", { body: { year: "2026", revirId: null, amountCzk: 1 }, session })).data.code, "unknown_revir", "rozpočet MO nejde nastavit samostatně");
   // Realizace plánu = úprava záznamu (planned: false).
   const done = await call("PUT", `/manage/stocking/${plan.data.stocking.id}`, { body: { revirId: "revir-a", date: "2026-08-02", species: "amur", kg: 28, costCzk: 4200, planned: false }, session });
   assert.equal(done.data.stocking.planned, false);

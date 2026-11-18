@@ -78,15 +78,18 @@
     } catch (error) { qs("#stockActual").innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
   }
   function renderBudget(budget) {
-    qs("#budgetBox").innerHTML = `<h2 class="manage-h2">Rozpočet ${esc(budget.year)}</h2><table class="data-table"><thead><tr><th>Pro</th><th>Rozpočet (Kč)</th><th>Nasazeno</th><th>Plán</th><th>Zbývá</th><th></th></tr></thead><tbody>${budget.budgets.map((b) => {
-      const left = b.amountHalere === null ? null : b.amountHalere - b.spentHalere - b.plannedHalere;
-      return `<tr><td data-label="Pro">${esc(b.revir)}</td><td data-label="Rozpočet"><input class="budget-input" data-revir="${esc(b.revirId || "")}" type="number" min="0" step="100" value="${b.amountHalere === null ? "" : b.amountHalere / 100}" placeholder="—"></td>
-        <td data-label="Nasazeno">${esc(czk(b.spentHalere))}</td><td data-label="Plán">${esc(czk(b.plannedHalere))}</td><td data-label="Zbývá">${left === null ? "—" : `<b class="${left < 0 ? "over-budget" : ""}">${esc(czk(left))}</b>`}</td>
-        <td><button class="text-button save-budget" type="button" data-revir="${esc(b.revirId || "")}">Uložit</button></td></tr>`;
-    }).join("")}</tbody></table>`;
+    const left = (b) => (b.amountHalere === null ? null : b.amountHalere - b.spentHalere - b.plannedHalere);
+    const leftCell = (b) => (left(b) === null ? "—" : `<b class="${left(b) < 0 ? "over-budget" : ""}">${esc(czk(left(b)))}</b>`);
+    const rows = budget.budgets.filter((b) => !b.total);
+    const total = budget.budgets.find((b) => b.total);
+    qs("#budgetBox").innerHTML = `<h2 class="manage-h2">Rozpočet ${esc(budget.year)}</h2><table class="data-table budget-table"><thead><tr><th>Revír</th><th>Rozpočet (Kč)</th><th>Nasazeno</th><th>Plán</th><th>Zbývá</th><th></th></tr></thead><tbody>${rows.map((b) => `
+      <tr><td data-label="Revír">${esc(b.revir)}</td><td data-label="Rozpočet"><input class="budget-input" data-revir="${esc(b.revirId)}" type="number" min="0" step="100" value="${b.amountHalere === null ? "" : b.amountHalere / 100}" placeholder="—"></td>
+        <td data-label="Nasazeno">${esc(czk(b.spentHalere))}</td><td data-label="Plán">${esc(czk(b.plannedHalere))}</td><td data-label="Zbývá">${leftCell(b)}</td>
+        <td><button class="text-button save-budget" type="button" data-revir="${esc(b.revirId)}">Uložit</button></td></tr>`).join("")}</tbody>
+      ${total ? `<tfoot><tr class="total-row"><td data-label="Celkem">${esc(total.revir)} <small class="muted-inline">(součet)</small></td><td data-label="Rozpočet">${total.amountHalere === null ? "—" : esc(czk(total.amountHalere))}</td><td data-label="Nasazeno">${esc(czk(total.spentHalere))}</td><td data-label="Plán">${esc(czk(total.plannedHalere))}</td><td data-label="Zbývá">${leftCell(total)}</td><td></td></tr></tfoot>` : ""}</table>`;
     qsa(".save-budget").forEach((b) => b.addEventListener("click", async () => {
       const input = qs(`.budget-input[data-revir="${b.dataset.revir}"]`);
-      try { renderBudget(await api("/manage/stocking/budget", { method: "PUT", body: { year: budget.year, revirId: b.dataset.revir || null, amountCzk: input.value === "" ? null : Number(input.value) } })); showToast("Rozpočet uložen."); } catch (error) { showToast(error.message); }
+      try { renderBudget(await api("/manage/stocking/budget", { method: "PUT", body: { year: budget.year, revirId: b.dataset.revir, amountCzk: input.value === "" ? null : Number(input.value) } })); showToast("Rozpočet uložen."); } catch (error) { showToast(error.message); }
     }));
   }
   function editStocking(s) {

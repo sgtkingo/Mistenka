@@ -347,8 +347,8 @@ Pro `manager`/`admin` (🛠).
 | `GET /manage/stocking` | `?year=&revirId=&planned=0\|1` | `{ stocking: [{ id, revirId, revir, subdistrict, date, planned, speciesId, species, ageClass, kg, pieces, costHalere, supplier, note, … }], ageClasses }` |
 | `POST /manage/stocking`, `PUT /manage/stocking/{id}` | `{ revirId, date, species, subdistrict?, ageClass?, kg?, pieces?, costCzk?, supplier?, note?, planned? }` (kg nebo kusy povinné) | `201 { stocking }` / `{ stocking }`; `400 unknown_revir`, `invalid_date`, `invalid_species`, `invalid_amount`, `invalid_number`, `invalid_subdistrict` |
 | `DELETE /manage/stocking/{id}` | – | `{ deleted: true }` |
-| `GET /manage/stocking/budget?year=` | – | `{ year, budgets: [{ revirId (null = MO), revir, amountHalere, note, spentHalere, plannedHalere }] }` |
-| `PUT /manage/stocking/budget` | `{ year, revirId?, amountCzk (null = smazat), note? }` | jako GET |
+| `GET /manage/stocking/budget?year=` | – | `{ year, budgets: [{ revirId, revir, amountHalere, note, spentHalere, plannedHalere, total }] }` – poslední řádek `total: true` (`revirId: null`) je součet revírů |
+| `PUT /manage/stocking/budget` | `{ year, revirId, amountCzk (null = smazat), note? }` – jen pro revír (`400 unknown_revir` bez revíru) | jako GET |
 
 **Přehledy** – `GET /manage/stats?from=&to=&revirId=` (den lovu / den zarybnění v období):
 
