@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 // Sloupce tabulky users (sdílí vytvoření i migrace).
 const USERS_COLUMNS = `
@@ -57,6 +57,15 @@ function openDatabase(dataDir) {
   // Migrace 2 -> 3: místenka může patřit k účtu.
   if (ticketColumns.length && !ticketColumns.includes("user_id")) db.exec("ALTER TABLE tickets ADD COLUMN user_id INTEGER REFERENCES users(id)");
   migrateUsersNullable(db);
+  // Migrace 7 -> 8: zrušení správcem, řešení plateb, správa poukazů (B4).
+  const addColumns = (table, columns) => {
+    const existing = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+    if (!existing.length) return; // tabulka vznikne níže už s novými sloupci
+    for (const [column, definition] of columns) if (!existing.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  };
+  addColumns("tickets", [["cancel_reason", "TEXT"], ["cancelled_by", "INTEGER"]]);
+  addColumns("bank_transactions", [["resolution", "TEXT"], ["resolution_note", "TEXT"], ["resolved_at", "TEXT"], ["resolved_by", "INTEGER"]]);
+  addColumns("vouchers", [["created_at", "TEXT"], ["created_by", "INTEGER"], ["note", "TEXT"], ["voided_at", "TEXT"]]);
   // Migrace 4 -> 5: zadržení místenky porybným.
   for (const [column, definition] of [["seized_at", "TEXT"], ["seized_by", "INTEGER"], ["seized_reason", "TEXT"], ["seized_place", "TEXT"]]) {
     if (ticketColumns.length && !ticketColumns.includes(column)) db.exec(`ALTER TABLE tickets ADD COLUMN ${column} ${definition}`);
@@ -121,7 +130,9 @@ function openDatabase(dataDir) {
       seized_at TEXT,                          -- zadržení porybným (B2): lov končí, odevzdat je nutné i tak
       seized_by INTEGER,                       -- id porybného (bez FK – účet může být smazán)
       seized_reason TEXT,
-      seized_place TEXT
+      seized_place TEXT,
+      cancel_reason TEXT,                      -- zrušení správcem (B4)
+      cancelled_by INTEGER
     );
     -- Kontroly místenek porybným (obdoba zápisu stráže do povolenky).
     CREATE TABLE IF NOT EXISTS ticket_checks (
@@ -218,7 +229,11 @@ function openDatabase(dataDir) {
       code TEXT PRIMARY KEY,
       revir_id TEXT,                           -- NULL = platí pro všechny revíry
       used_at TEXT,
-      ticket_code TEXT
+      ticket_code TEXT,
+      created_at TEXT,
+      created_by INTEGER,
+      note TEXT,
+      voided_at TEXT                           -- zneplatněný správcem
     );
     CREATE TABLE IF NOT EXISTS bank_transactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -235,6 +250,10 @@ function openDatabase(dataDir) {
       result TEXT NOT NULL,                    -- matched | unmatched | amount_mismatch | duplicate_payment | late | ignored
       note TEXT,
       created_at TEXT NOT NULL,
+      resolution TEXT,                         -- ruční řešení: assigned | refunded | ignored
+      resolution_note TEXT,
+      resolved_at TEXT,
+      resolved_by INTEGER,
       UNIQUE (provider, transaction_id)
     );
     CREATE TABLE IF NOT EXISTS email_outbox (

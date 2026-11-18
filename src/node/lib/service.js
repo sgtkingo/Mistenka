@@ -121,7 +121,7 @@ function createService({ db, config, provider, mailer, appUrl, operations }) {
   }
   function enqueueEmail(ticket, kind, token, extra = {}) {
     const revir = revirOf(ticket);
-    const render = { payment_instructions: emails.paymentInstructions, ticket_issued: emails.ticketIssued, return_reminder: emails.returnReminder, ticket_closed: emails.ticketClosed, ticket_seized: emails.ticketSeized, seizure_notice: emails.seizureNotice, limit_exceeded: emails.limitExceeded, member_blocked: emails.memberBlocked }[kind];
+    const render = { payment_instructions: emails.paymentInstructions, ticket_issued: emails.ticketIssued, return_reminder: emails.returnReminder, ticket_closed: emails.ticketClosed, ticket_seized: emails.ticketSeized, seizure_notice: emails.seizureNotice, limit_exceeded: emails.limitExceeded, member_blocked: emails.memberBlocked, ticket_cancelled: emails.ticketCancelled }[kind];
     const mail = render(config, { ticket, revir, links: links(ticket, token), ...extra });
     db.prepare("INSERT INTO email_outbox (ticket_id, kind, to_email, subject, body_html, body_text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(ticket.id, kind, extra.to || ticket.email, mail.subject, mail.html, mail.text, iso(time.now()));
@@ -234,6 +234,7 @@ function createService({ db, config, provider, mailer, appUrl, operations }) {
       if (order.voucherCode) {
         const voucher = db.prepare("SELECT * FROM vouchers WHERE code = ?").get(order.voucherCode);
         if (!voucher || (voucher.revir_id && voucher.revir_id !== revir.id)) throw new ApiError(400, "invalid_voucher", "Poukaz není platný.");
+        if (voucher.voided_at) throw new ApiError(400, "invalid_voucher", "Poukaz není platný.");
         if (voucher.used_at) throw new ApiError(409, "voucher_used", "Poukaz už byl použit.");
       }
       const now = time.now();
@@ -511,7 +512,7 @@ function createService({ db, config, provider, mailer, appUrl, operations }) {
     const normalized = normalizeCode(code);
     if (!VOUCHER_RE.test(normalized)) throw new ApiError(400, "invalid_voucher", "Kód poukazu musí mít 16 znaků A–Z nebo 0–9.");
     const voucher = db.prepare("SELECT * FROM vouchers WHERE code = ?").get(normalized);
-    return { code: normalized, valid: Boolean(voucher && !voucher.used_at), usedAt: voucher?.used_at || null, revirId: voucher?.revir_id || null };
+    return { code: normalized, valid: Boolean(voucher && !voucher.used_at && !voucher.voided_at), usedAt: voucher?.used_at || null, revirId: voucher?.revir_id || null };
   }
 
   // Vytvoření poukazu (zatím jen vývojový endpoint, později administrace).
@@ -522,6 +523,158 @@ function createService({ db, config, provider, mailer, appUrl, operations }) {
     if (db.prepare("SELECT 1 FROM vouchers WHERE code = ?").get(normalized)) throw new ApiError(409, "voucher_exists", "Poukaz už existuje.");
     db.prepare("INSERT INTO vouchers (code, revir_id) VALUES (?, ?)").run(normalized, revirId);
     return checkVoucher(normalized);
+  }
+
+  // ---------- správa místenek, plateb a poukazů (B4) ----------
+  const audit = (actor, action, targetType, targetId, detail = null) => db.prepare("INSERT INTO audit_events (at, actor_user_id, action, target_type, target_id, detail) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(iso(time.now()), actor?.id ?? null, action, targetType, String(targetId), detail ? JSON.stringify(detail) : null);
+  const TICKET_FILTER_STATES = ["pending_payment", "payment_expired", "cancelled", "future", "active", "expired_unreturned", "closed_unreturned", "expired_returned", "seized"];
+  function manageRow(t) {
+    const status = stateOf(t);
+    const catchCount = db.prepare("SELECT COUNT(*) AS n FROM catches WHERE ticket_id = ?").get(t.id).n;
+    return {
+      code: t.code, date: t.fishing_date, revirId: t.revir_id, revir: revirOf(t).name, firstName: t.first_name, lastName: t.last_name, memberId: t.member_id, email: t.email,
+      status, late: publicTicket(t).late, seized: Boolean(t.seized_at), priceHalere: t.price_halere, amountDueHalere: t.amount_due_halere, voucherUsed: Boolean(t.voucher_code),
+      catchCount, noCatch: Boolean(t.no_catch), createdAt: t.created_at, paidAt: t.paid_at, returnedAt: t.returned_at, account: Boolean(t.user_id)
+    };
+  }
+  // Filtry: status (stav v API), revirId, from/to (den lovu), q (kód, jméno, číslo legitimace, e-mail).
+  function searchTickets(filters = {}) {
+    const where = [];
+    const params = [];
+    if (filters.revirId) { where.push("revir_id = ?"); params.push(String(filters.revirId)); }
+    if (filters.from) { if (!time.isIsoDate(filters.from)) throw new ApiError(400, "invalid_date", "Neplatné datum od."); where.push("fishing_date >= ?"); params.push(filters.from); }
+    if (filters.to) { if (!time.isIsoDate(filters.to)) throw new ApiError(400, "invalid_date", "Neplatné datum do."); where.push("fishing_date <= ?"); params.push(filters.to); }
+    const q = String(filters.q || "").trim().toLowerCase();
+    if (q) {
+      where.push("(lower(code) = ? OR member_id LIKE ? OR lower(first_name || ' ' || last_name) LIKE ? OR lower(email) LIKE ? OR variable_symbol = ?)");
+      params.push(q, `%${q.replace(/\s+/g, "")}%`, `%${q}%`, `%${q}%`, q);
+    }
+    if (filters.status && !TICKET_FILTER_STATES.includes(filters.status)) throw new ApiError(400, "invalid_status", "Neznámý stav.");
+    const rows = db.prepare(`SELECT * FROM tickets ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY fishing_date DESC, id DESC LIMIT 5000`).all(...params)
+      .filter((t) => !filters.status || stateOf(t) === filters.status);
+    return rows;
+  }
+  function listTickets(filters = {}) {
+    const rows = searchTickets(filters);
+    const limit = Math.min(Math.max(Number(filters.limit) || 100, 1), 500);
+    const offset = Math.max(Number(filters.offset) || 0, 0);
+    return { total: rows.length, tickets: rows.slice(offset, offset + limit).map(manageRow) };
+  }
+  function ticketsCsv(filters = {}) {
+    const cell = (value) => { const text = String(value ?? ""); return /[;"\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; };
+    const header = ["Kód", "Revír", "Datum lovu", "Jméno", "Příjmení", "Č. legitimace", "E-mail", "Stav", "Opožděně", "Zadržena", "Cena Kč", "Zaplaceno Kč", "Poukaz", "Úlovky", "Bez úlovku", "Vytvořeno", "Zaplaceno", "Odevzdáno"];
+    const lines = searchTickets(filters).map((t) => {
+      const r = manageRow(t);
+      const catches = db.prepare("SELECT species, length_cm, weight_kg FROM catches WHERE ticket_id = ? ORDER BY id").all(t.id).map((c) => `${c.species} ${c.length_cm} cm${c.weight_kg ? ` ${c.weight_kg} kg` : ""}`).join(", ");
+      return [r.code, r.revir, r.date, r.firstName, r.lastName, r.memberId, r.email, r.status, r.late ? "ano" : "", r.seized ? "ano" : "", (r.priceHalere / 100).toFixed(2).replace(".", ","), (t.paid_at ? r.amountDueHalere / 100 : 0).toFixed(2).replace(".", ","), r.voucherUsed ? "ano" : "", catches, r.noCatch ? "ano" : "", r.createdAt, r.paidAt || "", r.returnedAt || ""].map(cell).join(";");
+    });
+    return "\uFEFF" + [header.join(";"), ...lines].join("\r\n") + "\r\n"; // BOM + středník: Excel v češtině
+  }
+  function ticketDetail(code) {
+    const ticket = findTicket(code);
+    const payments = db.prepare("SELECT * FROM bank_transactions WHERE ticket_id = ? ORDER BY id").all(ticket.id).map(paymentShape);
+    const checks = db.prepare("SELECT warden_name, at, status FROM ticket_checks WHERE ticket_id = ? ORDER BY at DESC").all(ticket.id).map((c) => ({ wardenName: c.warden_name, at: c.at, status: c.status }));
+    const violations = db.prepare("SELECT label, period, period_from, period_to, count, max_count FROM limit_violations WHERE ticket_id = ? ORDER BY id").all(ticket.id)
+      .map((v) => ({ label: v.label, period: v.period, from: v.period_from, to: v.period_to, count: v.count, maxCount: v.max_count }));
+    const sentEmails = db.prepare("SELECT kind, to_email, subject, created_at, sent_at, error FROM email_outbox WHERE ticket_id = ? ORDER BY id").all(ticket.id)
+      .map((e) => ({ kind: e.kind, to: e.to_email, subject: e.subject, createdAt: e.created_at, sentAt: e.sent_at, error: e.error }));
+    const cancellation = ticket.cancelled_at ? { at: ticket.cancelled_at, reason: ticket.cancel_reason || "zrušeno držitelem před zaplacením", byManager: Boolean(ticket.cancelled_by) } : null;
+    return { ticket: { ...ownerTicket(ticket), variableSymbol: ticket.variable_symbol, account: Boolean(ticket.user_id) }, payments, checks, violations, emails: sentEmails, cancellation, cancellable: ["pending_payment", "payment_expired", "future", "active", "expired_unreturned", "seized"].includes(stateOf(ticket)) };
+  }
+  // Zrušení správcem: vystavená neodevzdaná místenka nebo objednávka. Peníze se nevracejí automaticky.
+  function cancelByManager(actor, code, body = {}) {
+    const reason = String(body.reason || "").trim();
+    if (reason.length < 3 || reason.length > 300) throw new ApiError(400, "invalid_reason", "Uveďte důvod zrušení (3–300 znaků).");
+    const ticket = findTicket(code);
+    return transaction(db, () => {
+      const fresh = db.prepare("SELECT * FROM tickets WHERE id = ?").get(ticket.id);
+      const state = stateOf(fresh);
+      if (!["pending_payment", "payment_expired", "future", "active", "expired_unreturned", "seized"].includes(state)) throw new ApiError(409, "not_cancellable", "Zrušit nelze odevzdanou, uzavřenou ani už zrušenou místenku.");
+      const now = iso(time.now());
+      db.prepare("UPDATE tickets SET status = 'cancelled', cancelled_at = ?, cancel_reason = ?, cancelled_by = ?, reserved_until = NULL WHERE id = ?").run(now, reason, actor.id, fresh.id);
+      const cancelled = db.prepare("SELECT * FROM tickets WHERE id = ?").get(fresh.id);
+      if (fresh.status === "issued") enqueueEmail(cancelled, "ticket_cancelled", null);
+      audit(actor, "ticket_cancelled", "ticket", fresh.code, { reason, previous: state, paid: Boolean(fresh.paid_at) });
+      return ticketDetail(fresh.code);
+    });
+  }
+
+  const OPEN_RESULTS = ["unmatched", "amount_mismatch", "duplicate_payment", "late"];
+  function paymentShape(p) {
+    const ticket = p.ticket_id ? db.prepare("SELECT code, first_name, last_name, status FROM tickets WHERE id = ?").get(p.ticket_id) : null;
+    return {
+      id: p.id, provider: p.provider, transactionId: p.transaction_id, bookedAt: p.booked_at, amountHalere: p.amount_halere, currency: p.currency, variableSymbol: p.variable_symbol,
+      counterAccount: p.counter_account, counterName: p.counter_name, message: p.message, result: p.result, note: p.note, createdAt: p.created_at,
+      ticket: ticket ? { code: ticket.code, holder: `${ticket.first_name} ${ticket.last_name}` } : null,
+      needsAction: OPEN_RESULTS.includes(p.result) && !p.resolved_at,
+      resolution: p.resolved_at ? { action: p.resolution, note: p.resolution_note, at: p.resolved_at } : null
+    };
+  }
+  // Fronta plateb: state=open (k vyřešení, výchozí) | all.
+  function listPayments({ state = "open" } = {}) {
+    const rows = state === "all"
+      ? db.prepare("SELECT * FROM bank_transactions ORDER BY id DESC LIMIT 500").all()
+      : db.prepare(`SELECT * FROM bank_transactions WHERE resolved_at IS NULL AND result IN (${OPEN_RESULTS.map(() => "?").join(",")}) ORDER BY id`).all(...OPEN_RESULTS);
+    return { payments: rows.map(paymentShape) };
+  }
+  // Ruční vyřešení: assign = vystavit místenku k objednávce (správce přebírá odpovědnost za částku i kapacitu),
+  // refunded = peníze vráceny v bankovnictví, ignored = bez akce (např. jiná platba na účet).
+  function resolvePayment(actor, id, body = {}) {
+    const action = String(body.action || "");
+    if (!["assign", "refunded", "ignored"].includes(action)) throw new ApiError(400, "invalid_action", "Akce musí být assign, refunded nebo ignored.");
+    const note = String(body.note || "").trim().slice(0, 300);
+    return transaction(db, () => {
+      const payment = db.prepare("SELECT * FROM bank_transactions WHERE id = ?").get(Number(id));
+      if (!payment) throw new ApiError(404, "not_found", "Platba neexistuje.");
+      if (payment.resolved_at || !OPEN_RESULTS.includes(payment.result)) throw new ApiError(409, "already_resolved", "Platba už je vyřešená.");
+      let ticketId = payment.ticket_id;
+      if (action === "assign") {
+        const ticket = body.ticketCode ? findTicket(body.ticketCode) : ticketId ? db.prepare("SELECT * FROM tickets WHERE id = ?").get(ticketId) : null;
+        if (!ticket) throw new ApiError(400, "ticket_required", "Zadejte kód místenky, ke které platba patří.");
+        if (ticket.status === "issued" || ticket.paid_at) throw new ApiError(409, "already_paid", "Místenka už je zaplacená – platbu vraťte.");
+        if (!["pending_payment", "payment_expired", "cancelled"].includes(ticket.status)) throw new ApiError(409, "not_assignable", "K této místence nelze platbu přiřadit.");
+        issuePaid(ticket);
+        ticketId = ticket.id;
+      }
+      db.prepare("UPDATE bank_transactions SET resolution = ?, resolution_note = ?, resolved_at = ?, resolved_by = ?, ticket_id = ? WHERE id = ?").run(action === "assign" ? "assigned" : action, note || null, iso(time.now()), actor.id, ticketId, payment.id);
+      audit(actor, "payment_resolved", "payment", payment.id, { action, note, ticketId });
+      return { payment: paymentShape(db.prepare("SELECT * FROM bank_transactions WHERE id = ?").get(payment.id)) };
+    });
+  }
+
+  const voucherShape = (v) => ({ code: v.code, revirId: v.revir_id, revir: v.revir_id ? getRevir(config, v.revir_id)?.name || v.revir_id : "Všechny revíry", note: v.note || "", createdAt: v.created_at, usedAt: v.used_at, ticketCode: v.ticket_code, voidedAt: v.voided_at,
+    state: v.voided_at ? "voided" : v.used_at ? "used" : "valid" });
+  function listVouchers() {
+    return { vouchers: db.prepare("SELECT * FROM vouchers ORDER BY (used_at IS NULL AND voided_at IS NULL) DESC, COALESCE(created_at, '') DESC, code LIMIT 1000").all().map(voucherShape) };
+  }
+  function generateVouchers(actor, body = {}) {
+    const count = Number(body.count ?? 1);
+    if (!Number.isInteger(count) || count < 1 || count > 50) throw new ApiError(400, "invalid_count", "Počet poukazů 1–50.");
+    const revirId = body.revirId ? String(body.revirId) : null;
+    if (revirId && !getRevir(config, revirId)) throw new ApiError(400, "unknown_revir", "Revír neexistuje.");
+    const note = String(body.note || "").trim().slice(0, 200);
+    return transaction(db, () => {
+      const now = iso(time.now());
+      const codes = [];
+      while (codes.length < count) {
+        const code = Array.from({ length: 16 }, () => CODE_ALPHABET[crypto.randomInt(CODE_ALPHABET.length)]).join("");
+        if (db.prepare("SELECT 1 FROM vouchers WHERE code = ?").get(code)) continue;
+        db.prepare("INSERT INTO vouchers (code, revir_id, created_at, created_by, note) VALUES (?, ?, ?, ?, ?)").run(code, revirId, now, actor.id, note || null);
+        codes.push(code);
+      }
+      audit(actor, "vouchers_created", "voucher", codes.length, { revirId, note, codes });
+      return { vouchers: codes.map((code) => voucherShape(db.prepare("SELECT * FROM vouchers WHERE code = ?").get(code))) };
+    });
+  }
+  function voidVoucher(actor, code) {
+    const normalized = normalizeCode(code);
+    const voucher = db.prepare("SELECT * FROM vouchers WHERE code = ?").get(normalized);
+    if (!voucher) throw new ApiError(404, "not_found", "Poukaz neexistuje.");
+    if (voucher.used_at || voucher.voided_at) throw new ApiError(409, "not_voidable", "Použitý nebo už zneplatněný poukaz nelze zneplatnit.");
+    db.prepare("UPDATE vouchers SET voided_at = ? WHERE code = ?").run(iso(time.now()), normalized);
+    audit(actor, "voucher_voided", "voucher", normalized);
+    return { voucher: voucherShape(db.prepare("SELECT * FROM vouchers WHERE code = ?").get(normalized)) };
   }
 
   // ---------- platby ----------
@@ -668,7 +821,7 @@ function createService({ db, config, provider, mailer, appUrl, operations }) {
     return { result: report.payments?.results?.[0] || null };
   }
 
-  return { availability, createOrder, getPublicTicket, getOwnerTicket, ticketsForUser, wardenCheck, seizeTicket, listViolations, listBlocks, createBlock, liftBlock, limitsForMember, cancelOrder, submitReturn, checkVoucher, createVoucher, runJobs, addJob, simulatePayment, processTransaction, stateOf };
+  return { availability, createOrder, getPublicTicket, getOwnerTicket, ticketsForUser, wardenCheck, seizeTicket, listTickets, ticketsCsv, ticketDetail, cancelByManager, listPayments, resolvePayment, listVouchers, generateVouchers, voidVoucher, listViolations, listBlocks, createBlock, liftBlock, limitsForMember, cancelOrder, submitReturn, checkVoucher, createVoucher, runJobs, addJob, simulatePayment, processTransaction, stateOf };
 }
 
 module.exports = { createService, ApiError };

@@ -219,6 +219,22 @@ async function handleApi(req, res, url, ip) {
     }
     if (method === "DELETE" && id) return send(res, 200, { announcements: operations.deleteAnnouncement, seasons: operations.deleteSeason, closures: operations.deleteClosure }[kind](actor, id));
   }
+  // Místenky, platby, poukazy (B4).
+  const filters = () => Object.fromEntries(["status", "revirId", "from", "to", "q", "limit", "offset"].map((key) => [key, url.searchParams.get(key) || ""]));
+  if (pathname === "/api/manage/tickets" && method === "GET") { accounts.requireManager(ctx); return send(res, 200, service.listTickets(filters())); }
+  if (pathname === "/api/manage/tickets.csv" && method === "GET") {
+    accounts.requireManager(ctx);
+    const csv = service.ticketsCsv(filters());
+    res.writeHead(200, { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="mistenky-${time.pragueToday()}.csv"`, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+    return res.end(csv);
+  }
+  if ((m = pathname.match(/^\/api\/manage\/tickets\/([^/]+)$/)) && method === "GET") { accounts.requireManager(ctx); return send(res, 200, service.ticketDetail(m[1])); }
+  if ((m = pathname.match(/^\/api\/manage\/tickets\/([^/]+)\/cancel$/)) && method === "POST") return send(res, 200, service.cancelByManager(accounts.requireManager(ctx), m[1], await readBody(req)));
+  if (pathname === "/api/manage/payments" && method === "GET") { accounts.requireManager(ctx); return send(res, 200, service.listPayments({ state: url.searchParams.get("state") || "open" })); }
+  if ((m = pathname.match(/^\/api\/manage\/payments\/(\d+)\/resolve$/)) && method === "POST") return send(res, 200, service.resolvePayment(accounts.requireManager(ctx), m[1], await readBody(req)));
+  if (pathname === "/api/manage/vouchers" && method === "GET") { accounts.requireManager(ctx); return send(res, 200, service.listVouchers()); }
+  if (pathname === "/api/manage/vouchers" && method === "POST") return send(res, 201, service.generateVouchers(accounts.requireManager(ctx), await readBody(req)));
+  if ((m = pathname.match(/^\/api\/manage\/vouchers\/([^/]+)\/void$/)) && method === "POST") return send(res, 200, service.voidVoucher(accounts.requireManager(ctx), m[1]));
   if (pathname === "/api/manage/violations" && method === "GET") { accounts.requireManager(ctx); return send(res, 200, service.listViolations()); }
   if (pathname === "/api/manage/blocks" && method === "GET") { accounts.requireManager(ctx); return send(res, 200, service.listBlocks()); }
   if (pathname === "/api/manage/blocks" && method === "POST") return send(res, 201, service.createBlock(accounts.requireManager(ctx), await readBody(req)));

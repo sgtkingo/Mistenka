@@ -109,7 +109,7 @@ Vše nejdřív v Node verzi. WordPress (WP uživatelé s vlastními rolemi, při
 - **Překročení nikdy neblokuje odevzdání ani nákup.** Rybář dostane upozornění, správce e-mail na kontaktní adresu správce (nová položka organizace, nastavitelná v portálu), porybný upozornění při kontrole. Stejně se bude chovat i denní limit (dnes `400 daily_limit` → upozornění). Lovné míry a hájení dál odevzdání blokují (taková ryba se nesmí přisvojit).
 - Správce může člena ručně zablokovat (nákup místenek) a nastavit automatické pravidlo, např. „po 2 porušeních v sezoně blokace na N dní / do konce sezony“.
 
-**B4. Manažerský portál: provoz** – *důležité zprávy, sezony a mimořádná uzavření hotovo v Node verzi 18. 11. 2026; zbývá seznam místenek, platby, poukazy, export.*
+**B4. Manažerský portál: provoz** – *hotovo v Node verzi 18. 11. 2026 (35 sdílených testů API).*
 - Seznam místenek s filtry a detailem, zrušení, fronta nespárovaných plateb, zadržené místenky, porušení limitů, blokace členů, poukazy, export CSV.
 - **„Důležité“:** zprávy pro MO nebo konkrétní revír, volitelně platnost od–do, jinak do smazání. Na úvodní stránce nejvýš 3 aktivní (přepínání tečkami). Nahradí `notice` v konfiguraci.
 - Sezona: otevření a uzavření, mimořádné uzavření jednotlivých dní.

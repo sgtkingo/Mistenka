@@ -1,5 +1,5 @@
 // Manažerský portál (správce a admin). Zatím sekce Uživatelé a role (B1); další sekce podle docs/PLAN.md.
-const { qs, qsa, esc, api, loadConfig, showToast, applyBranding, initUserMenu, hasRole, isStaff, ROLE_LABELS, czDate, parseCzDate } = window.Mistenka;
+const { qs, qsa, esc, api, loadConfig, showToast, applyBranding, initUserMenu, hasRole, isStaff, ROLE_LABELS, czDate, parseCzDate, czk, czDateTime, ticketState, limitsHtml } = window.Mistenka;
 
 let me = null;
 let config = null;
@@ -15,7 +15,11 @@ qsa(".manage-nav-item").forEach((item) => item.addEventListener("click", () => {
   qsa(".manage-nav-item").forEach((other) => other.classList.toggle("active", other === item));
   const section = item.dataset.section;
   qsa(".manage-section").forEach((el) => el.classList.toggle("hidden", el.id !== `section-${section}`));
-  if (section !== "soon") history.replaceState(null, "", section === "users" ? location.pathname : `#${section}`);
+  if (section !== "soon") history.replaceState(null, "", section === "tickets" ? location.pathname : `#${section}`);
+  if (section === "tickets") loadTickets();
+  if (section === "payments") loadPayments();
+  if (section === "vouchers") loadVouchers();
+  if (section === "users") loadUsers();
   if (section === "limits") loadLimits();
   if (section === "announcements") loadAnnouncements();
   if (section === "seasons") loadSeasons();
@@ -149,6 +153,151 @@ function fillRevirSelects() {
   });
 }
 
+// ---------- místenky ----------
+const ticketQuery = { offset: 0 };
+function currentFilters() {
+  return { q: qs("#fQuery").value.trim(), status: qs("#fStatus").value, revirId: qs("#fRevir").value, from: dateField("fFrom", "Od") || "", to: dateField("fTo", "Do") || "" };
+}
+const queryString = (params) => Object.entries(params).filter(([, v]) => v !== "" && v !== null && v !== undefined).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+async function loadTickets(append = false) {
+  const table = qs("#ticketTable");
+  let filters;
+  try { filters = currentFilters(); } catch (error) { return showToast(error.message); }
+  if (!append) ticketQuery.offset = 0;
+  // Export CSV se stejnými filtry (prefix API může obsahovat "?").
+  const base = (window.MISTENKA_ENV && window.MISTENKA_ENV.apiBase) || "/api";
+  const qsFilters = queryString(filters);
+  qs("#csvLink").href = `${base}/manage/tickets.csv${qsFilters ? (base.includes("?") ? "&" : "?") + qsFilters : ""}`;
+  try {
+    const { total, tickets } = await api("/manage/tickets", { query: Object.fromEntries(Object.entries({ ...filters, limit: 100, offset: ticketQuery.offset }).filter(([, v]) => v !== "")) });
+    const rows = tickets.map((t) => {
+      const state = ticketState(t);
+      return `<tr class="clickable" data-code="${esc(t.code)}"><td data-label="Den">${esc(czDate(t.date, { year: false }))}</td><td data-label="Kód"><b>${esc(t.code)}</b></td>
+        <td data-label="Rybář">${esc(`${t.firstName} ${t.lastName}`)}<br><small class="muted-inline">${esc(t.memberId)}${t.account ? " · účet" : ""}</small></td>
+        <td data-label="Revír">${esc(t.revir)}</td><td data-label="Stav"><span class="badge badge-${esc(state.tone)}">${esc(state.label)}</span>${t.seized && t.status !== "seized" ? ' <span class="badge badge-bad">zadržena</span>' : ""}</td>
+        <td data-label="Úlovky">${t.status === "expired_returned" ? (t.noCatch ? "bez úlovku" : esc(t.catchCount)) : ""}</td><td data-label="Cena">${t.voucherUsed ? "poukaz" : esc(czk(t.priceHalere))}</td></tr>`;
+    }).join("");
+    if (append) qs("#ticketTable tbody").insertAdjacentHTML("beforeend", rows);
+    else table.innerHTML = total ? `<table class="data-table"><thead><tr><th>Den</th><th>Kód</th><th>Rybář</th><th>Revír</th><th>Stav</th><th>Úlovky</th><th>Cena</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">Žádné místenky neodpovídají filtru.</p>';
+    ticketQuery.offset += tickets.length;
+    qs("#ticketTotal").textContent = `Nalezeno ${total} · zobrazeno ${ticketQuery.offset}`;
+    qs("#moreTickets").classList.toggle("hidden", ticketQuery.offset >= total);
+    qsa("tr.clickable", table).forEach((row) => { if (!row.dataset.bound) { row.dataset.bound = "1"; row.addEventListener("click", () => openTicket(row.dataset.code)); } });
+  } catch (error) { table.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
+}
+qs("#ticketFilters").addEventListener("submit", (event) => { event.preventDefault(); loadTickets(); });
+qs("#moreTickets").addEventListener("click", () => loadTickets(true));
+
+const RESULT_LABELS = { matched: "spárováno", amount_mismatch: "jiná částka", duplicate_payment: "duplicitní platba", late: "po vypršení / zrušená", unmatched: "nespárováno", ignored: "odchozí" };
+const RESOLUTION_LABELS = { assigned: "přiřazeno k místence", refunded: "vráceno", ignored: "bez akce" };
+async function openTicket(code) {
+  const dialog = qs("#ticketDialog");
+  const body = qs("#ticketDialogBody");
+  body.innerHTML = '<p class="muted">Načítám…</p>';
+  if (!dialog.open) dialog.showModal();
+  try {
+    const d = await api(`/manage/tickets/${encodeURIComponent(code)}`);
+    const t = d.ticket;
+    const state = ticketState(t);
+    const catches = t.catches.length ? t.catches.map((c) => `${esc(c.species)} ${esc(c.length)} cm${c.weight ? ` · ${esc(c.weight)} kg${c.weightEstimated ? " (odhad)" : ""}` : ""}`).join("<br>") : t.noCatch ? "bez úlovku" : "—";
+    body.innerHTML = `
+      <div class="dialog-head"><div><span class="section-kicker">Místenka</span><h2>${esc(t.code)} <span class="badge badge-${esc(state.tone)}">${esc(state.label)}</span></h2></div><button class="text-button" type="button" id="closeDialog">Zavřít ✕</button></div>
+      <dl class="summary-list">
+        <div><dt>Rybář</dt><dd>${esc(`${t.firstName} ${t.lastName}`)}${t.account ? " (účet)" : ""}</dd></div>
+        <div><dt>Č. legitimace · narozen</dt><dd>${esc(t.memberId)} · ${esc(czDate(t.birthDate))}</dd></div>
+        <div><dt>E-mail</dt><dd>${esc(t.email)}</dd></div>
+        <div><dt>Revír · den lovu</dt><dd>${esc(t.revir.name)} · ${esc(czDate(t.date, { weekday: true }))}</dd></div>
+        <div><dt>Cena</dt><dd>${esc(czk(t.priceHalere))}${t.voucherUsed ? " · poukaz" : ""}${t.variableSymbol ? ` · VS ${esc(t.variableSymbol)}` : ""}</dd></div>
+        <div><dt>Vytvořeno · vystaveno</dt><dd>${esc(czDateTime(t.createdAt))}${t.issuedAt ? ` · ${esc(czDateTime(t.issuedAt))}` : ""}</dd></div>
+        ${t.returnedAt ? `<div><dt>Odevzdáno</dt><dd>${esc(czDateTime(t.returnedAt))}${t.late ? " · opožděně" : ""}</dd></div>` : ""}
+        <div><dt>Úlovky</dt><dd>${catches}</dd></div>
+      </dl>
+      ${t.seizure ? `<div class="status-error"><b>Zadrženo ${esc(czDateTime(t.seizure.at))}</b><br>${esc(t.seizure.reason)}${t.seizure.place ? ` · ${esc(t.seizure.place)}` : ""}</div>` : ""}
+      ${d.cancellation ? `<div class="status-error"><b>Zrušeno ${esc(czDateTime(d.cancellation.at))}</b>${d.cancellation.byManager ? " správcem" : ""}<br>${esc(d.cancellation.reason)}</div>` : ""}
+      ${limitsHtml(t.limits, { title: "Limity úlovků" })}
+      ${d.violations.length ? `<p class="field-help">Zapsané překročení: ${d.violations.map((v) => `${esc(v.label)} ${esc(v.count)}/${esc(v.maxCount)}`).join(", ")}</p>` : ""}
+      <h3>Platby</h3>${d.payments.length ? `<ul class="plain-list">${d.payments.map((p) => `<li>${esc(czDateTime(p.createdAt))} · ${esc(czk(p.amountHalere))} · ${esc(RESULT_LABELS[p.result] || p.result)}${p.resolution ? ` → ${esc(RESOLUTION_LABELS[p.resolution.action])}` : ""}</li>`).join("")}</ul>` : '<p class="muted">Žádné.</p>'}
+      <h3>Kontroly porybným</h3>${d.checks.length ? `<ul class="plain-list">${d.checks.map((c) => `<li>${esc(czDateTime(c.at))} · ${esc(c.wardenName)}${c.status === "seized" ? " · zadržení" : ""}</li>`).join("")}</ul>` : '<p class="muted">Žádné.</p>'}
+      <h3>E-maily</h3><ul class="plain-list">${d.emails.map((e) => `<li>${esc(czDateTime(e.createdAt))} · ${esc(e.subject)}${e.sentAt ? "" : e.error ? " · <b>chyba</b>" : " · čeká"}</li>`).join("") || "<li>—</li>"}</ul>
+      ${d.cancellable ? `<details class="seize-box"><summary>Zrušit místenku</summary><p class="field-help">Místenka přestane platit a uvolní místo. ${t.payment === null && !t.voucherUsed ? "Peníze se nevracejí automaticky – vraťte je v bankovnictví. " : ""}Držitel vystavené místenky dostane e-mail.</p>
+        <label class="field-label" for="cancelReason">Důvod</label><input id="cancelReason" maxlength="300"><button class="danger-button" type="button" id="cancelTicket">Zrušit místenku</button></details>` : ""}`;
+    qs("#closeDialog").addEventListener("click", () => dialog.close());
+    qs("#cancelTicket")?.addEventListener("click", async (event) => {
+      const reason = qs("#cancelReason").value.trim();
+      if (reason.length < 3) return showToast("Uveďte důvod zrušení.");
+      if (!window.confirm(`Opravdu zrušit místenku ${t.code}?`)) return;
+      event.currentTarget.disabled = true;
+      try { await api(`/manage/tickets/${t.code}/cancel`, { method: "POST", body: { reason } }); showToast("Místenka zrušena."); openTicket(t.code); loadTickets(); }
+      catch (error) { showToast(error.message); event.currentTarget.disabled = false; }
+    });
+  } catch (error) { body.innerHTML = `<p class="status-error">${esc(error.message)}</p><button class="text-button" type="button" onclick="this.closest('dialog').close()">Zavřít</button>`; }
+}
+qs("#ticketDialog").addEventListener("click", (event) => { if (event.target.id === "ticketDialog") event.target.close(); });
+
+// ---------- platby ----------
+async function loadPayments() {
+  const list = qs("#paymentList");
+  try {
+    const all = qs("#showAllPayments").checked;
+    const { payments } = await api("/manage/payments", { query: { state: all ? "all" : "open" } });
+    if (!all) updatePaymentCount(payments.length);
+    list.innerHTML = payments.length ? payments.map((p) => `
+      <div class="payment-item${p.needsAction ? " needs-action" : ""}">
+        <div><b>${esc(czk(p.amountHalere))}</b> ${p.currency !== "CZK" ? esc(p.currency) : ""} · VS ${esc(p.variableSymbol || "—")} · <span class="badge badge-${p.needsAction ? "warn" : p.result === "matched" ? "ok" : "off"}">${esc(RESULT_LABELS[p.result] || p.result)}</span>
+          <br><small class="muted-inline">${esc(czDateTime(p.createdAt))} · ${esc(p.counterName || "")} ${esc(p.counterAccount || "")}${p.message ? ` · „${esc(p.message)}“` : ""}${p.note ? ` · ${esc(p.note)}` : ""}</small>
+          ${p.ticket ? `<br><button class="text-button inline-link" type="button" data-open="${esc(p.ticket.code)}">Místenka ${esc(p.ticket.code)} · ${esc(p.ticket.holder)}</button>` : ""}
+          ${p.resolution ? `<br><small>Vyřešeno: ${esc(RESOLUTION_LABELS[p.resolution.action])}${p.resolution.note ? ` – ${esc(p.resolution.note)}` : ""} (${esc(czDateTime(p.resolution.at))})</small>` : ""}</div>
+        ${p.needsAction ? `<form class="resolve-form" data-id="${p.id}">
+          <input name="ticketCode" class="code-input" maxlength="6" placeholder="Kód místenky" value="${esc(p.ticket?.code || "")}">
+          <input name="note" maxlength="300" placeholder="Poznámka">
+          <div class="resolve-actions"><button class="primary-button" type="submit" value="assign">Přiřadit a vystavit</button><button class="secondary-button" type="submit" value="refunded">Vráceno</button><button class="text-button" type="submit" value="ignored">Bez akce</button></div>
+        </form>` : ""}
+      </div>`).join("") : `<p class="muted">${all ? "Žádné platby." : "Nic k vyřešení. 👍"}</p>`;
+    qsa("[data-open]", list).forEach((b) => b.addEventListener("click", () => openTicket(b.dataset.open)));
+    qsa(".resolve-form", list).forEach((form) => form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const action = event.submitter.value;
+      const body = { action, note: form.note.value.trim(), ticketCode: form.ticketCode.value.trim().toUpperCase() || undefined };
+      if (action === "assign" && !window.confirm(`Přiřadit platbu k místence ${body.ticketCode || ""} a vystavit ji? Odpovídáte za částku i volné místo.`)) return;
+      event.submitter.disabled = true;
+      try { await api(`/manage/payments/${form.dataset.id}/resolve`, { method: "POST", body }); showToast("Platba vyřešena."); loadPayments(); }
+      catch (error) { showToast(error.message); event.submitter.disabled = false; }
+    }));
+  } catch (error) { list.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
+}
+function updatePaymentCount(n) {
+  qs("#paymentCount").textContent = n;
+  qs("#paymentCount").classList.toggle("hidden", !n);
+}
+qs("#showAllPayments").addEventListener("change", loadPayments);
+
+// ---------- poukazy ----------
+const VOUCHER_STATES = { valid: ["Platný", "ok"], used: ["Použitý", "off"], voided: ["Zneplatněný", "bad"] };
+async function loadVouchers() {
+  const list = qs("#voucherList");
+  try {
+    const { vouchers } = await api("/manage/vouchers");
+    list.innerHTML = vouchers.length ? `<table class="data-table"><thead><tr><th>Kód</th><th>Platí pro</th><th>Poznámka</th><th>Stav</th><th></th></tr></thead><tbody>${vouchers.map((v) => {
+      const [label, tone] = VOUCHER_STATES[v.state];
+      return `<tr><td data-label="Kód"><code class="voucher-code">${esc(v.code)}</code></td><td data-label="Platí pro">${esc(v.revir)}</td><td data-label="Poznámka">${esc(v.note)}</td>
+        <td data-label="Stav"><span class="badge badge-${tone}">${label}</span>${v.ticketCode ? ` <button class="text-button inline-link" type="button" data-open="${esc(v.ticketCode)}">${esc(v.ticketCode)}</button>` : ""}</td>
+        <td>${v.state === "valid" ? `<button class="text-button void-voucher" type="button" data-code="${esc(v.code)}">Zneplatnit</button>` : ""}</td></tr>`;
+    }).join("")}</tbody></table>` : '<p class="muted">Žádné poukazy.</p>';
+    qsa("[data-open]", list).forEach((b) => b.addEventListener("click", () => openTicket(b.dataset.open)));
+    qsa(".void-voucher", list).forEach((b) => b.addEventListener("click", async () => {
+      if (!window.confirm(`Zneplatnit poukaz ${b.dataset.code}?`)) return;
+      try { await api(`/manage/vouchers/${b.dataset.code}/void`, { method: "POST" }); loadVouchers(); } catch (error) { showToast(error.message); }
+    }));
+  } catch (error) { list.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
+}
+qs("#voucherForm").addEventListener("submit", (event) => submitForm(event, async () => {
+  const { vouchers } = await api("/manage/vouchers", { method: "POST", body: { count: Number(qs("#vCount").value), revirId: qs("#vRevir").value || null, note: qs("#vNote").value.trim() } });
+  qs("#newVouchers").innerHTML = `<div class="info-box"><b>Nové poukazy</b> (zkopírujte a předejte): <br>${vouchers.map((v) => `<code class="voucher-code">${esc(v.code)}</code>`).join(" ")}</div>`;
+  qs("#voucherForm").reset();
+  fillRevirSelects();
+  loadVouchers();
+}));
+
 // ---------- důležité zprávy ----------
 let announcements = [];
 async function loadAnnouncements() {
@@ -249,7 +398,8 @@ qs("#closureForm").addEventListener("submit", (event) => submitForm(event, async
   qs("#rolesHelp").textContent = hasRole(me, "admin")
     ? "Jako admin jmenujete porybné, správce i další adminy. Posledního admina nelze odebrat. Role lze dát jen účtu s ověřeným e-mailem."
     : "Jako správce můžete jmenovat a odvolávat porybné. Správce a adminy jmenuje admin.";
-  loadUsers();
+  loadTickets();
+  api("/manage/payments").then(({ payments }) => updatePaymentCount(payments.length)).catch(() => {});
   // Odkaz přímo na sekci: manage.html#seasons
   const target = qs(`.manage-nav-item[data-section="${CSS.escape(location.hash.slice(1))}"]`);
   if (target && !target.classList.contains("hidden")) target.click();

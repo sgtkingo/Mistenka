@@ -287,6 +287,27 @@ Správa pro `manager`/`admin` (🛠, jinak `401`/`403 forbidden_role`). `revirId
 | `POST /manage/closures` | `{ dateFrom, dateTo?, revirId?, reason }` (důvod 3–300) | `201 { closure, affectedTickets: [{ code, date, holder, status }] }` |
 | `DELETE /manage/closures/{id}` | – | `{ deleted: true }` |
 
+**Místenky, platby a poukazy**
+
+| Endpoint | Tělo / parametry | Odpověď / chyby |
+| --- | --- | --- |
+| `GET /manage/tickets` | `?q=&status=&revirId=&from=&to=&limit=100&offset=0` – `q` hledá kód, číslo legitimace, jméno, e-mail, VS; `status` = stav v API; `from`/`to` = den lovu | `{ total, tickets: [{ code, date, revirId, revir, firstName, lastName, memberId, email, status, late, seized, priceHalere, amountDueHalere, voucherUsed, catchCount, noCatch, createdAt, paidAt, returnedAt, account }] }`; `400 invalid_status`, `invalid_date` |
+| `GET /manage/tickets.csv` | stejné filtry | `text/csv` UTF-8 s BOM, oddělovač `;` (Excel v češtině) |
+| `GET /manage/tickets/{code}` | – | `{ ticket: <OwnerTicket> + variableSymbol, account, payments: [<Payment>], checks, violations, emails: [{ kind, to, subject, createdAt, sentAt, error }], cancellation, cancellable }` |
+| `POST /manage/tickets/{code}/cancel` | `{ reason }` (3–300) | detail jako výše; zruší objednávku nebo vystavenou neodevzdanou místenku (i zadrženou), uvolní místo, držitel vystavené dostane e-mail `ticket_cancelled`. Peníze se nevracejí automaticky. `409 not_cancellable` |
+| `GET /manage/payments` | `?state=open` (k vyřešení, výchozí) \| `all` | `{ payments: [<Payment>] }` |
+| `POST /manage/payments/{id}/resolve` | `{ action: "assign" \| "refunded" \| "ignored", note?, ticketCode? }` | `{ payment }`. `assign` vystaví místenku k objednávce (`ticketCode`, jinak ta podle VS) bez kontroly částky a kapacity – rozhoduje správce. `400 invalid_action`, `ticket_required`; `409 already_resolved`, `already_paid`, `not_assignable` |
+| `GET /manage/vouchers` | – | `{ vouchers: [{ code, revirId, revir, note, createdAt, usedAt, ticketCode, voidedAt, state: "valid" \| "used" \| "voided" }] }` |
+| `POST /manage/vouchers` | `{ count: 1–50, revirId?, note? }` | `201 { vouchers }`; `400 invalid_count`, `unknown_revir` |
+| `POST /manage/vouchers/{code}/void` | – | `{ voucher }`; zneplatněný poukaz je neplatný (`GET /vouchers` → `valid: false`, objednávka → `400 invalid_voucher`); `409 not_voidable` |
+
+```jsonc
+// Payment
+{ "id": 12, "provider": "fio", "transactionId": "…", "bookedAt": "…", "amountHalere": 15000, "currency": "CZK", "variableSymbol": "7583019737",
+  "counterAccount": "…", "counterName": "…", "message": "…", "result": "amount_mismatch", "note": "očekáváno 20000 haléřů CZK", "createdAt": "…",
+  "ticket": { "code": "D4KM3R", "holder": "Eva Štiková" }, "needsAction": true, "resolution": null /* { action, note, at } */ }
+```
+
 ## Porybný (B2)
 
 Veřejná kontrola (`GET /tickets/{code}`) zůstává pro každého. Přihlášený uživatel s rolí `warden` navíc (jinak `401 unauthorized` / `403 forbidden_role`; admin bez 2FA `403 mfa_required`):
@@ -388,6 +409,7 @@ V tomto pořadí; Node je spouští v intervalu, WordPress cron hostingu přes `
 | `seizure_notice` | totéž, na `organization.managerEmail` (je-li vyplněn) | `status.html?code=…` |
 | `limit_exceeded` | odevzdání s překročeným limitem, na `organization.managerEmail` | `status.html?code=…` |
 | `member_blocked` | automatická blokace po opakovaném porušení limitů (držiteli) | – |
+| `ticket_cancelled` | správce zrušil vystavenou místenku | – |
 | `closure_notice` | mimořádné uzavření revíru na den místenky | `status.html?code=…` |
 | `staff_invite` | admin pozval správce/admina | `account.html#invite=<token>` |
 | `account_deleted` | smazání účtu | – |

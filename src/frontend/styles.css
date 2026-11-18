@@ -90,3 +90,15 @@
 .manage-section textarea{width:100%;border:1px solid #ddd;border-radius:4px;padding:11px 12px;font:inherit;margin-bottom:16px}.pin-label{margin-top:30px;font-size:13px}
 .ann-item{display:flex;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding:12px 0;font-size:13px}.ann-item p{margin:4px 0}.ann-item.inactive{opacity:.6}.ann-actions{display:flex;gap:12px;align-items:flex-start}.ann-actions .text-button{margin:0}
 .row-actions{display:flex;gap:10px;align-items:center;justify-content:flex-end}.row-actions .text-button{margin:0}
+
+/* ---------- místenky, platby, poukazy (B4) ---------- */
+.ticket-filters{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr auto;gap:8px;margin-bottom:8px}.ticket-filters input,.ticket-filters select{margin-bottom:0!important;width:100%;border:1px solid #ddd;border-radius:4px;padding:9px 10px;font:inherit;font-size:13px;background:#fff}
+tr.clickable{cursor:pointer}tr.clickable:hover td{background:#f6fbff}#csvLink{text-decoration:none}#moreTickets{margin-top:14px}
+.nav-count{display:inline-block;min-width:18px;padding:0 6px;border-radius:9px;background:#c2372d;color:#fff;font-size:11px;font-weight:700;text-align:center;margin-left:4px}
+.ticket-dialog{border:0;border-radius:12px;padding:0;width:min(720px,calc(100vw - 32px));max-height:calc(100vh - 48px);box-shadow:0 20px 60px rgba(0,0,0,.25)}.ticket-dialog::backdrop{background:rgba(20,20,20,.45)}
+#ticketDialogBody{padding:24px 28px}.dialog-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}.dialog-head h2{margin:6px 0 0;font-size:24px;display:flex;align-items:center;gap:10px}.dialog-head .text-button{margin:0}
+#ticketDialogBody h3{font-size:14px;margin:18px 0 6px}#ticketDialogBody .status-error{margin-top:12px}.plain-list{margin:0;padding-left:18px;font-size:12px;color:var(--muted)}
+.payment-item{border-bottom:1px solid var(--line);padding:14px 0;font-size:13px;display:grid;grid-template-columns:1fr;gap:10px}.payment-item.needs-action{border-left:3px solid #e0a100;padding-left:12px}
+.resolve-form{display:grid;grid-template-columns:140px 1fr;gap:8px}.resolve-form input{margin-bottom:0!important}.resolve-actions{grid-column:1/-1;display:flex;gap:10px;align-items:center}.resolve-actions .text-button{margin:0}
+.inline-link{margin:4px 0 0!important;padding:0}.voucher-code{font-size:12px;letter-spacing:.06em;background:var(--warm);padding:2px 6px;border-radius:4px}
+@media(max-width:800px){.ticket-filters{grid-template-columns:1fr 1fr}.ticket-filters input[type=search]{grid-column:1/-1}.resolve-form{grid-template-columns:1fr}}

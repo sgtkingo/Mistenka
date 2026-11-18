@@ -19,19 +19,57 @@
     <div class="manage-layout hidden" id="portal">
       <nav class="manage-nav" aria-label="Sekce správy">
         <span class="section-kicker" data-org-short></span>
-        <button class="manage-nav-item active" type="button" data-section="users">Uživatelé a role</button>
+        <button class="manage-nav-item active" type="button" data-section="tickets">Místenky</button>
+        <button class="manage-nav-item" type="button" data-section="payments">Platby <span class="nav-count hidden" id="paymentCount"></span></button>
+        <button class="manage-nav-item" type="button" data-section="vouchers">Poukazy</button>
+        <button class="manage-nav-item" type="button" data-section="users">Uživatelé a role</button>
         <button class="manage-nav-item" type="button" data-section="limits">Limity a blokace</button>
         <button class="manage-nav-item" type="button" data-section="announcements">Důležité</button>
         <button class="manage-nav-item" type="button" data-section="seasons">Sezona a uzavření</button>
         <span class="manage-nav-group">Připravujeme</span>
-        <button class="manage-nav-item" type="button" data-section="soon" data-title="Místenky a platby" data-step="B4">Místenky a platby</button>
         <button class="manage-nav-item" type="button" data-section="soon" data-title="Nastavení organizace a revírů" data-step="B5">Nastavení</button>
         <button class="manage-nav-item" type="button" data-section="soon" data-title="Zarybnění" data-step="B6">Zarybnění</button>
         <button class="manage-nav-item" type="button" data-section="soon" data-title="Přehledy a uzávěrky" data-step="B6">Přehledy</button>
         <button class="manage-nav-item admin-only hidden" type="button" data-section="soon" data-title="Zálohy" data-step="B7">Zálohy</button>
       </nav>
 
-      <section class="panel-card manage-section" id="section-users">
+      <section class="panel-card manage-section" id="section-tickets">
+        <div class="panel-heading"><div><span class="section-kicker">Provoz</span><h1>Místenky</h1></div><a class="secondary-button" id="csvLink" href="#" download>↓ Export CSV</a></div>
+        <form class="ticket-filters" id="ticketFilters">
+          <input id="fQuery" type="search" placeholder="Kód, jméno, číslo legitimace, e-mail, VS" maxlength="100">
+          <select id="fStatus"><option value="">Všechny stavy</option><option value="active">Aktivní</option><option value="future">Budoucí</option><option value="pending_payment">Čeká na platbu</option><option value="expired_unreturned">K odevzdání</option><option value="seized">Zadržené</option><option value="expired_returned">Odevzdané</option><option value="closed_unreturned">Neodevzdané</option><option value="payment_expired">Nezaplacené</option><option value="cancelled">Zrušené</option></select>
+          <select id="fRevir" data-revir-select></select>
+          <input id="fFrom" class="date-input" inputmode="numeric" maxlength="10" placeholder="od dd.mm.rrrr">
+          <input id="fTo" class="date-input" inputmode="numeric" maxlength="10" placeholder="do dd.mm.rrrr">
+          <button class="primary-button" type="submit">Filtrovat</button>
+        </form>
+        <p class="field-help" id="ticketTotal"></p>
+        <div id="ticketTable"></div>
+        <button class="secondary-button hidden" type="button" id="moreTickets">Načíst další</button>
+      </section>
+
+      <section class="panel-card manage-section hidden" id="section-payments">
+        <div class="panel-heading"><div><span class="section-kicker">Provoz</span><h1>Platby</h1></div><label class="checkbox-label"><input type="checkbox" id="showAllPayments"> <span>Zobrazit všechny platby</span></label></div>
+        <p class="panel-intro">Platby, které se nepodařilo automaticky spárovat (chybný VS, jiná částka, duplicita, platba po vypršení rezervace). Vrácení peněz proveďte v bankovnictví a zde ho jen zaznamenejte.</p>
+        <div id="paymentList"></div>
+      </section>
+
+      <section class="panel-card manage-section hidden" id="section-vouchers">
+        <div class="panel-heading"><div><span class="section-kicker">Provoz</span><h1>Dárkové poukazy</h1></div></div>
+        <p class="panel-intro">Poukaz má 16 znaků a jde použít jen jednou místo platby. Nepoužitý poukaz můžete zneplatnit.</p>
+        <details class="invite-box">
+          <summary>+ Vytvořit poukazy</summary>
+          <form id="voucherForm" novalidate>
+            <div class="form-two-col"><div><label class="field-label" for="vCount">Počet</label><input id="vCount" type="number" min="1" max="50" value="1"></div><div><label class="field-label" for="vRevir">Platí pro</label><select id="vRevir" data-revir-select></select></div></div>
+            <label class="field-label" for="vNote">Poznámka <span class="optional">(komu, proč)</span></label><input id="vNote" maxlength="200">
+            <button class="primary-button" type="submit">Vytvořit</button>
+          </form>
+        </details>
+        <div id="newVouchers"></div>
+        <div id="voucherList"></div>
+      </section>
+
+      <section class="panel-card manage-section hidden" id="section-users">
         <div class="panel-heading"><div><span class="section-kicker">Uživatelé</span><h1>Uživatelé a role</h1></div></div>
         <p class="panel-intro" id="rolesHelp"></p>
         <details class="invite-box admin-only hidden" id="inviteBox">
@@ -115,6 +153,7 @@
       </section>
     </div>
   </main>
+  <dialog class="ticket-dialog" id="ticketDialog"><div id="ticketDialogBody"></div></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="js/env.js"></script>
   <script src="js/common.js"></script>

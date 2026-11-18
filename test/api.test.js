@@ -818,6 +818,99 @@ test("mimořádné uzavření: zablokuje nákup na dny, držitelé dotčených m
   assert.equal((await call("POST", "/orders", { body: orderBody({ date: "2026-06-12" }) })).status, 201, "po zrušení uzavření lze koupit");
 });
 
+test("správa místenek: seznam s filtry, detail, export CSV jen pro správce", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const member = await verifiedAccount();
+  assert.equal((await call("GET", "/manage/tickets", { session: member.session })).data.code, "forbidden_role");
+  const { session } = await managerAccount();
+  const t = await paidTicket({ memberId: "73000001", lastName: "Hledaný", email: "hledany@example.cz" });
+  const byQ = await call("GET", "/manage/tickets?q=hledaný", { session });
+  assert.equal(byQ.status, 200, JSON.stringify(byQ.data));
+  assert.ok(byQ.data.tickets.some((x) => x.code === t.code));
+  assert.ok((await call("GET", `/manage/tickets?q=${t.code.toLowerCase()}`, { session })).data.tickets.length === 1, "hledání podle kódu");
+  assert.ok((await call("GET", "/manage/tickets?q=73000001", { session })).data.tickets.every((x) => x.memberId === "73000001"));
+  const active = (await call("GET", "/manage/tickets?status=active&from=2026-06-10&to=2026-06-10&limit=500", { session })).data;
+  assert.ok(active.total > 0 && active.tickets.every((x) => x.status === "active" && x.date === "2026-06-10"));
+  assert.equal((await call("GET", "/manage/tickets?status=nesmysl", { session })).data.code, "invalid_status");
+
+  const detail = (await call("GET", `/manage/tickets/${t.code}`, { session })).data;
+  assert.equal(detail.ticket.lastName, "Hledaný");
+  assert.equal(detail.payments[0].result, "matched");
+  assert.ok(detail.emails.some((e) => e.kind === "ticket_issued"));
+  assert.equal(detail.cancellable, true);
+
+  const csv = await fetch(url("/manage/tickets.csv?q=hledaný"), { headers: { Cookie: session.cookie } });
+  assert.equal(csv.status, 200);
+  assert.match(csv.headers.get("content-type"), /text\/csv/);
+  const bytes = Buffer.from(await csv.arrayBuffer());
+  assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf], "BOM pro Excel");
+  const text = bytes.toString("utf8");
+  assert.ok(text.includes("Kód;Revír;Datum lovu"), "hlavička se středníky");
+  assert.ok(text.includes(`${t.code};`));
+  assert.equal((await fetch(url("/manage/tickets.csv"))).status, 401, "bez přihlášení nic");
+});
+
+test("zrušení místenky správcem: uvolní místo, držitel dostane e-mail; odevzdanou zrušit nelze", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const { session } = await managerAccount();
+  const t = await paidTicket({ date: "2026-06-11", email: "zrusena@example.cz" });
+  assert.equal((await call("POST", `/manage/tickets/${t.code}/cancel`, { body: { reason: "" }, session })).data.code, "invalid_reason");
+  const cancelled = await call("POST", `/manage/tickets/${t.code}/cancel`, { body: { reason: "Duplicitní nákup, peníze vráceny" }, session });
+  assert.equal(cancelled.status, 200, JSON.stringify(cancelled.data));
+  assert.equal(cancelled.data.ticket.status, "cancelled");
+  assert.equal(cancelled.data.cancellation.reason, "Duplicitní nákup, peníze vráceny");
+  assert.equal(cancelled.data.cancellable, false);
+  assert.equal((await call("GET", `/tickets/${t.code}`)).data.status, "cancelled", "veřejná kontrola: neplatí");
+  assert.ok(await lastEmail("zrusena@example.cz", "ticket_cancelled"));
+  const returned = await paidTicket();
+  await call("POST", `/tickets/${returned.code}/return`, { body: { noCatch: true }, token: returned.token });
+  assert.equal((await call("POST", `/manage/tickets/${returned.code}/cancel`, { body: { reason: "Pokus o zrušení" }, session })).data.code, "not_cancellable");
+});
+
+test("fronta plateb: nespárované platby k vyřešení, přiřazení platby vystaví místenku", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const { session } = await managerAccount();
+  const { token, ticket } = await order({ email: "spatna-castka@example.cz" });
+  assert.equal((await pay({ variableSymbol: ticket.payment.variableSymbol, amountHalere: 19000 })).data.result, "amount_mismatch");
+  assert.equal((await pay({ variableSymbol: "999", amountHalere: 5000 })).data.result, "unmatched");
+  const open = (await call("GET", "/manage/payments", { session })).data.payments;
+  const mismatch = open.find((p) => p.ticket?.code === ticket.code);
+  const unmatched = open.find((p) => p.variableSymbol === "999");
+  assert.ok(mismatch && mismatch.needsAction && unmatched);
+  assert.equal((await call("POST", `/manage/payments/${mismatch.id}/resolve`, { body: { action: "smazat" }, session })).data.code, "invalid_action");
+  const assigned = await call("POST", `/manage/payments/${mismatch.id}/resolve`, { body: { action: "assign", note: "Doplatek 10 Kč dorovná na místě" }, session });
+  assert.equal(assigned.status, 200, JSON.stringify(assigned.data));
+  assert.equal(assigned.data.payment.resolution.action, "assigned");
+  assert.equal((await call("GET", `/orders/${ticket.code}`, { token })).data.status, "active", "místenka vystavena");
+  assert.ok(await lastEmail("spatna-castka@example.cz", "ticket_issued"));
+  assert.equal((await call("POST", `/manage/payments/${unmatched.id}/resolve`, { body: { action: "assign" }, session })).data.code, "ticket_required");
+  assert.equal((await call("POST", `/manage/payments/${unmatched.id}/resolve`, { body: { action: "refunded", note: "Vráceno 11. 6." }, session })).status, 200);
+  assert.equal((await call("POST", `/manage/payments/${unmatched.id}/resolve`, { body: { action: "ignored" }, session })).data.code, "already_resolved");
+  const after = (await call("GET", "/manage/payments", { session })).data.payments.map((p) => p.id);
+  assert.ok(!after.includes(mismatch.id) && !after.includes(unmatched.id), "vyřešené z fronty zmizí");
+  assert.ok((await call("GET", "/manage/payments?state=all", { session })).data.payments.some((p) => p.id === unmatched.id));
+});
+
+test("poukazy: správce je vygeneruje a může zneplatnit nepoužitý", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const member = await verifiedAccount();
+  assert.equal((await call("POST", "/manage/vouchers", { body: { count: 1 }, session: member.session })).data.code, "forbidden_role");
+  const { session } = await managerAccount();
+  assert.equal((await call("POST", "/manage/vouchers", { body: { count: 51 }, session })).data.code, "invalid_count");
+  const created = await call("POST", "/manage/vouchers", { body: { count: 3, revirId: "revir-a", note: "Dětské rybářské závody" }, session });
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  const codes = created.data.vouchers.map((v) => v.code);
+  assert.equal(codes.length, 3);
+  assert.ok(codes.every((c) => /^[A-Z0-9]{16}$/.test(c)));
+  const listed = (await call("GET", "/manage/vouchers", { session })).data.vouchers;
+  assert.equal(listed.find((v) => v.code === codes[0]).note, "Dětské rybářské závody");
+  assert.equal((await call("POST", `/manage/vouchers/${codes[0]}/void`, { session })).data.voucher.state, "voided");
+  assert.equal((await call("GET", `/vouchers/${codes[0]}`)).data.valid, false);
+  assert.equal((await call("POST", "/orders", { body: orderBody({ voucherCode: codes[0] }) })).data.code, "invalid_voucher");
+  await order({ voucherCode: codes[1] });
+  assert.equal((await call("POST", `/manage/vouchers/${codes[1]}/void`, { session })).data.code, "not_voidable", "použitý poukaz nejde zneplatnit");
+});
+
 // ---------- průvodce prvním spuštěním a pozvání správce ----------
 // Musí běžet poslední: po založení admina se průvodce zavře.
 test("průvodce prvním spuštěním: admin vznikne jen s jednorázovým odkazem a rovnou s 2FA", async () => {

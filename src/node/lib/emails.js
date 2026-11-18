@@ -96,6 +96,17 @@ function memberBlocked(config, { ticket, block, limits }) {
   };
 }
 
+// ---------- zrušení správcem (B4) ----------
+function ticketCancelled(config, { ticket, revir }) {
+  const contact = [config.organization.contact?.email, config.organization.contact?.phone].filter(Boolean).join(", ");
+  const rows = [["Kód místenky", ticket.code], ["Revír", revir.name], ["Datum lovu", czDate(ticket.fishing_date)], ["Důvod", ticket.cancel_reason]];
+  return {
+    subject: `Místenka ${ticket.code} byla zrušena`,
+    html: layout(config, "Místenka byla zrušena", `<p>Správce organizace vaši místenku zrušil. <b>Místenka neplatí a neopravňuje k lovu.</b></p>${table(rows)}<p>Pokud máte nárok na vrácení peněz, vyřídí ho správce převodem${contact ? `; kontakt: ${esc(contact)}` : ""}.</p>`),
+    text: textBlock(["Správce organizace vaši místenku zrušil. Místenka neplatí a neopravňuje k lovu.", ...rows.map(([k, v]) => `${k}: ${v}`), `Vrácení peněz vyřídí správce${contact ? ` (${contact})` : ""}.`])
+  };
+}
+
 // ---------- mimořádné uzavření (B4) ----------
 function closureNotice(config, { ticket, revir, closure, links }) {
   const range = closure.dateFrom === closure.dateTo ? czDate(closure.dateFrom) : `${czDate(closure.dateFrom)} – ${czDate(closure.dateTo)}`;
@@ -139,4 +150,4 @@ function createFileMailer(dir) {
   };
 }
 
-module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, createFileMailer, czDate };
+module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, ticketCancelled, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, createFileMailer, czDate };
