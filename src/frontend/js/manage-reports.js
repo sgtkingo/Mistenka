@@ -1,6 +1,23 @@
 // Manažerský portál – Zarybnění a Přehledy (B6).
 (function () {
   const { qs, qsa, esc, api, showToast, czDate, czk, czDateTime, parseCzDate, loadConfig, attachSpeciesSuggest } = window.Mistenka;
+  const charts = window.MistenkaCharts;
+  // Formáty hodnot pro grafy: plná hodnota v tooltipu, zkrácená na ose.
+  const fmtCount = (v, axis) => (axis ? String(Math.round(v)) : `${Math.round(v)} ks`);
+  const fmtKg = (v, axis) => (axis ? `${Math.round(v * 10) / 10}` : `${(Math.round(v * 100) / 100).toLocaleString("cs-CZ")} kg`);
+  const fmtKc = (halere, axis) => (axis ? (halere >= 100000 ? `${(halere / 100000).toLocaleString("cs-CZ", { maximumFractionDigits: 1 })} tis.` : `${Math.round(halere / 100)}`) : czk(halere));
+  // Nejvýš 8 položek, zbytek do „Ostatní“ (jedna řada, žádné barvy navíc).
+  function topWithOther(rows, valueOf, labelOf, limit = 8) {
+    const sorted = [...rows].sort((a, b) => valueOf(b) - valueOf(a));
+    const top = sorted.slice(0, limit).map((r) => ({ label: labelOf(r), value: valueOf(r) }));
+    const rest = sorted.slice(limit).reduce((sum, r) => sum + valueOf(r), 0);
+    if (rest > 0) top.push({ label: "Ostatní", value: rest });
+    return top;
+  }
+  function balanceChart(el, balance, title) {
+    const rows = [...balance].sort((a, b) => Math.max(b.caughtKg, b.stockedKg) - Math.max(a.caughtKg, a.stockedKg)).slice(0, 8).filter((b) => b.caughtKg || b.stockedKg);
+    charts.grouped(el, { title, categories: rows.map((b) => b.species), series: [{ name: "Nasazeno", values: rows.map((b) => b.stockedKg) }, { name: "Uloveno", values: rows.map((b) => b.caughtKg) }], format: fmtKg, emptyText: "Zatím bez úlovků s hmotností a bez zarybnění." });
+  }
   let config = null;
   const short = (iso) => (iso ? `${Number(iso.slice(8))}. ${Number(iso.slice(5, 7))}. ${iso.slice(0, 4)}` : "");
   const MONTHS = ["leden", "únor", "březen", "duben", "květen", "červen", "červenec", "srpen", "září", "říjen", "listopad", "prosinec"];
@@ -33,10 +50,11 @@
             <label class="checkbox-label settings-check"><input type="checkbox" id="stPlanned"> <span>Jen plán (zatím nenasazeno)</span></label>
             <div class="resolve-actions"><button class="primary-button" type="submit" id="stSubmit">Uložit</button><button class="text-button" type="button" id="stCancel">Zrušit úpravu</button></div>
           </form></details>
+        <div class="viz-root viz-grid-2"><div class="viz-card" id="chartBudget"></div><div class="viz-card" id="chartStocked"></div></div>
         <div id="budgetBox"></div>
         <h2 class="manage-h2">Nasazeno</h2><div id="stockActual"></div>
         <h2 class="manage-h2">Plán zarybnění</h2><div id="stockPlan"></div>
-        <h2 class="manage-h2">Uloveno vs. nasazeno <small class="muted-inline">(podklad pro plán, za zvolený rok)</small></h2><div id="stockBalance"></div>`;
+        <h2 class="manage-h2">Uloveno vs. nasazeno <small class="muted-inline">(podklad pro plán, za zvolený rok)</small></h2><div class="viz-root"><div class="viz-card" id="chartStockBalance"></div></div><div id="stockBalance"></div>`;
       const now = new Date().getFullYear();
       qs("#stockYear").innerHTML = [now + 1, now, now - 1, now - 2].map((y) => `<option${String(y) === year ? " selected" : ""}>${y}</option>`).join("");
       qs("#stockYear").addEventListener("change", (e) => { year = e.target.value; refreshStocking(); });
@@ -76,6 +94,9 @@
       }));
       renderBudget(budget);
       qs("#stockBalance").innerHTML = balanceTable(stats.balance);
+      charts.budget(qs("#chartBudget"), { title: `Čerpání rozpočtu ${year}`, rows: budget.budgets.filter((b) => !b.total).map((b) => ({ label: b.revir, spent: b.spentHalere, planned: b.plannedHalere, budget: b.amountHalere })), format: fmtKc });
+      charts.bars(qs("#chartStocked"), { title: `Nasazeno ${year} podle druhů (kg)`, orientation: "horizontal", items: topWithOther(stats.stocking.bySpecies, (s) => s.kg, (s) => s.species), format: fmtKg, emptyText: "Zatím žádné zarybnění." });
+      balanceChart(qs("#chartStockBalance"), stats.balance, "Uloveno vs. nasazeno (kg)");
     } catch (error) { qs("#stockActual").innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
   }
   function renderBudget(budget) {
@@ -135,9 +156,18 @@
     const tiles = [["Prodané místenky", sum.sold], ["Rybářů", sum.anglers], ["Tržby", czk(sum.revenueHalere)], ["Odevzdané", `${sum.returned}${sum.returnedLate ? ` (${sum.returnedLate} opožděně)` : ""}`], ["Neodevzdané", sum.unreturned], ["Úlovky", `${s.catches.total} ks · ${kg(s.catches.weightKg)}`], ["Zarybnění", czk(s.stocking.costHalere)], ["Poukazy · zadržené", `${sum.vouchers} · ${sum.seized}`]];
     return `<div class="report-head"><div><span class="section-kicker">${esc(s.revir)}</span><h2>${esc(title || `${short(s.from)} – ${short(s.to)}`)}</h2><small class="muted-inline">Období ${esc(short(s.from))} – ${esc(short(s.to))} · vytvořeno ${esc(czDateTime(s.generatedAt))}</small></div><button class="secondary-button no-print" type="button" onclick="window.print()">⎙ Tisk / PDF</button></div>
       <div class="kpi-grid">${tiles.map(([label, value]) => `<div class="kpi"><small>${esc(label)}</small><b>${esc(value)}</b></div>`).join("")}</div>
+      <div class="viz-root viz-grid-2"><div class="viz-card" data-chart="tickets"></div><div class="viz-card" data-chart="money"></div><div class="viz-card" data-chart="species"></div><div class="viz-card" data-chart="balance"></div></div>
       <h3>Úlovky podle druhů</h3>${s.catches.bySpecies.length ? `<table class="data-table"><thead><tr><th>Druh</th><th>Kusů</th><th>Hmotnost</th><th>Prům. délka</th><th>Max. délka</th></tr></thead><tbody>${s.catches.bySpecies.map((c) => `<tr><td data-label="Druh"><b>${esc(c.species)}</b></td><td data-label="Kusů">${esc(c.count)}</td><td data-label="Hmotnost">${esc(kg(c.weightKg))}${c.weighed < c.count ? ` <small class="muted-inline">(${esc(c.weighed)}/${esc(c.count)} vážených)</small>` : ""}</td><td data-label="Prům. délka">${esc(c.avgLength)} cm</td><td data-label="Max. délka">${esc(c.maxLength)} cm</td></tr>`).join("")}</tbody></table>` : '<p class="muted">Žádné úlovky.</p>'}
       <h3>Uloveno vs. nasazeno</h3>${balanceTable(s.balance)}
       <h3>Po měsících</h3>${s.byMonth.length ? `<table class="data-table"><thead><tr><th>Měsíc</th><th>Místenky</th><th>Úlovky</th><th>Tržby</th><th>Zarybnění</th></tr></thead><tbody>${s.byMonth.map((m) => `<tr><td data-label="Měsíc">${esc(monthName(m.month))}</td><td data-label="Místenky">${esc(m.tickets)}</td><td data-label="Úlovky">${esc(m.catches)}</td><td data-label="Tržby">${esc(czk(m.revenueHalere))}</td><td data-label="Zarybnění">${esc(czk(m.stockingHalere))}</td></tr>`).join("")}</tbody></table>` : '<p class="muted">Žádná data.</p>'}`;
+  }
+  function renderStatsCharts(s, root) {
+    const el = (name) => qs(`[data-chart="${name}"]`, root);
+    const months = s.byMonth;
+    charts.bars(el("tickets"), { title: "Prodané místenky po měsících", items: months.map((m) => ({ label: monthName(m.month), short: `${Number(m.month.slice(5, 7))}/${m.month.slice(2, 4)}`, value: m.tickets })), format: fmtCount });
+    charts.grouped(el("money"), { title: "Tržby a zarybnění po měsících (Kč)", categories: months.map((m) => monthName(m.month)), series: [{ name: "Tržby", values: months.map((m) => m.revenueHalere) }, { name: "Zarybnění", values: months.map((m) => m.stockingHalere) }], format: fmtKc });
+    charts.bars(el("species"), { title: "Úlovky podle druhů (ks)", orientation: "horizontal", items: topWithOther(s.catches.bySpecies, (c) => c.count, (c) => c.species), format: fmtCount, emptyText: "Žádné úlovky." });
+    balanceChart(el("balance"), s.balance, "Uloveno vs. nasazeno (kg)");
   }
   async function loadReports(reportId) {
     await ensureConfig();
@@ -169,6 +199,7 @@
     try {
       const s = await api("/manage/stats", { query: Object.fromEntries(Object.entries({ from: dateInput("sFrom", "Od"), to: dateInput("sTo", "Do"), revirId: qs("#sRevir").value }).filter(([, v]) => v)) });
       qs("#statsOut").innerHTML = statsHtml(s);
+      renderStatsCharts(s, qs("#statsOut"));
     } catch (error) { qs("#statsOut").innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
   }
   async function listReports() {
@@ -183,6 +214,7 @@
     try {
       const report = await api(`/manage/reports/${id}`);
       qs("#statsOut").innerHTML = `<div class="info-box no-print">Uložená uzávěrka – data ze dne vytvoření. <button class="text-button inline-link" type="button" id="backToStats">Zpět na aktuální přehled</button></div>${statsHtml(report.data, report.name)}`;
+      renderStatsCharts(report.data, qs("#statsOut"));
       qs("#backToStats").addEventListener("click", showStats);
       history.replaceState(null, "", `#reports/${id}`);
       qs("#statsOut").scrollIntoView({ behavior: "smooth", block: "start" });

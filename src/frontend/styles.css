@@ -131,3 +131,16 @@ tr.clickable{cursor:pointer}tr.clickable:hover td{background:#f6fbff}#csvLink{te
 
 /* Povinná pole: hvězdička za popiskem (třída req), legenda pod formulářem. */
 .field-label.req::after{content:" *";color:var(--blue)}.req-legend{font-size:11px;color:var(--muted);margin:2px 0 10px}
+
+/* ---------- grafy (paleta: dataviz reference, sloty 1–2, ověřeno validátorem) ---------- */
+.viz-root{--surface-1:#fcfcfb;--text-primary:#0b0b0b;--text-secondary:#52514e;--grid:#e6e4e0;--series-1:#2a78d6;--series-2:#eb6834}
+.viz-grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:16px 0}.viz-card{border:1px solid var(--line);border-radius:10px;padding:14px 14px 8px;background:var(--surface-1);min-width:0}
+.viz-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-size:13px;color:var(--text-primary)}.viz-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--text-secondary)}
+.viz-legend i,.viz-swatch{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.viz-card svg{display:block;max-width:100%;overflow:visible}.viz-grid{stroke:var(--grid);stroke-width:1}.viz-base{stroke:#bdbab4;stroke-width:1}.viz-axis{font-size:10px;fill:var(--text-secondary)}
+.viz-label{font-size:11px;fill:var(--text-primary)}.viz-value{font-size:10px;fill:var(--text-secondary)}.viz-hit{fill:transparent}g[data-tip]:hover .viz-hit{fill:rgba(0,0,0,.035)}
+.viz-target{stroke:var(--text-primary);stroke-width:2}.viz-target.over{stroke-dasharray:3 2}
+.viz-tip{position:fixed;z-index:1000;display:none;pointer-events:none;background:#fff;border:1px solid #d9d6d0;border-radius:6px;padding:7px 9px;font-size:12px;line-height:1.45;color:#0b0b0b;box-shadow:0 6px 18px rgba(0,0,0,.14);max-width:260px}
+@media(max-width:900px){.viz-grid-2{grid-template-columns:1fr}}
+@media print{.viz-grid-2{grid-template-columns:1fr 1fr}.viz-card{break-inside:avoid}}
+.viz-grid-2{align-items:start}
