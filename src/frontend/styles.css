@@ -169,3 +169,11 @@ input[type=checkbox],input[type=radio]{width:auto!important;margin:0!important;p
 /* Tisk portálu (uzávěrky): globální pravidlo tisku místenky skrývá vše – v portálu ho přebít. */
 @media print{.manage-body *{visibility:visible}.manage-page{padding:0;max-width:none}.manage-body .manage-section.hidden,.manage-body .hidden{display:none!important}.report-head .no-print{display:none!important}.data-table{font-size:11px}.viz-tip{display:none!important}}
 @media print{.viz-legend i,.viz-swatch,.kpi-pos,.kpi-neg,.badge{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+
+/* ---------- čtečka QR kódu ---------- */
+.qr-input-wrap{display:flex;align-items:stretch;gap:6px;flex:1;max-width:260px}.qr-input-wrap .code-input{flex:1;min-width:0;margin-bottom:0}
+.qr-scan-button{flex:none;display:grid;place-items:center;width:44px;border:1px solid #b9d8f2;border-radius:4px;background:#fff;color:var(--blue);padding:0}.qr-scan-button:hover{background:#f2f8fd}.qr-scan-button svg{width:22px;height:22px;fill:currentColor}
+.qr-scan-overlay{position:fixed;inset:0;z-index:2000;background:rgba(10,10,10,.72);display:grid;place-items:center;padding:16px}
+.qr-scan-box{background:#fff;border-radius:12px;padding:16px;width:min(420px,100%);text-align:center}.qr-scan-box p{margin:12px 0;font-size:14px}
+.qr-scan-video{position:relative;border-radius:8px;overflow:hidden;background:#000;aspect-ratio:1}.qr-scan-video video{width:100%;height:100%;object-fit:cover;display:block}
+.qr-scan-frame{position:absolute;inset:18%;border:3px solid rgba(255,255,255,.9);border-radius:12px;box-shadow:0 0 0 999px rgba(0,0,0,.25)}

@@ -202,6 +202,81 @@
     const total = size + margin * 2;
     return `<svg class="qr-svg" viewBox="0 0 ${total} ${total}" role="img" aria-label="${esc(label || "QR kód")}" shape-rendering="crispEdges"><rect width="${total}" height="${total}" fill="#fff"/><path d="${path}" fill="#000"/></svg>`;
   }
+  // ---------- čtečka QR kódu místenky (vestavěné BarcodeDetector + kamera) ----------
+  // Podpora: Chrome/Edge na Androidu, Chrome na Windows/macOS. Bez podpory (Safari, Firefox) se tlačítko
+  // nezobrazí – QR kód místenky obsahuje odkaz na kontrolu, takže ho stačí načíst fotoaparátem telefonu.
+  const qrScanSupported = () => "BarcodeDetector" in window && Boolean(navigator.mediaDevices?.getUserMedia) && window.isSecureContext;
+  // Z textu QR vytáhne kód místenky: odkaz …status.html?code=KÓD, nebo samotný kód.
+  function codeFromQr(text) {
+    const value = String(text || "").trim();
+    try {
+      const fromUrl = new URL(value).searchParams.get("code");
+      if (fromUrl && /^[A-Z0-9]{6}$/i.test(fromUrl)) return fromUrl.toUpperCase();
+    } catch { /* není odkaz */ }
+    return /^[A-Z0-9]{6}$/i.test(value) ? value.toUpperCase() : "";
+  }
+  const CAMERA_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 4 7.2 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.2L15 4H9Zm3 4.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9Zm0 2a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z"/></svg>';
+  async function scanQr() {
+    const overlay = document.createElement("div");
+    overlay.className = "qr-scan-overlay";
+    overlay.innerHTML = `<div class="qr-scan-box" role="dialog" aria-label="Načíst QR kód místenky"><div class="qr-scan-video"><video playsinline muted></video><span class="qr-scan-frame"></span></div>
+      <p>Namiřte kameru na QR kód místenky.</p><button type="button" class="secondary-button">Zrušit</button></div>`;
+    document.body.append(overlay);
+    const video = overlay.querySelector("video");
+    let stream = null;
+    let stopped = false;
+    const stop = () => { stopped = true; stream?.getTracks().forEach((t) => t.stop()); overlay.remove(); };
+    return new Promise((resolve) => {
+      const finish = (code) => { stop(); resolve(code); };
+      overlay.querySelector("button").addEventListener("click", () => finish(""));
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) finish(""); });
+      (async () => {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+          if (stopped) return stream.getTracks().forEach((t) => t.stop());
+          video.srcObject = stream;
+          await video.play();
+          const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+          const tick = async () => {
+            if (stopped) return;
+            try {
+              for (const result of await detector.detect(video)) {
+                const code = codeFromQr(result.rawValue);
+                if (code) return finish(code);
+              }
+            } catch { /* snímek ještě není připravený */ }
+            setTimeout(tick, 200);
+          };
+          tick();
+        } catch (error) {
+          finish("");
+          showToast(error.name === "NotAllowedError" ? "Přístup ke kameře byl zamítnut. Povolte ho v prohlížeči, nebo kód opište." : "Kameru se nepodařilo spustit. Kód opište ručně.");
+        }
+      })();
+    });
+  }
+  // Přidá ikonu kamery k poli s kódem místenky; po načtení vyplní kód a zavolá onCode(code).
+  function attachQrScanner(input, onCode) {
+    if (!input || !qrScanSupported()) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "qr-scan-button";
+    button.title = "Načíst QR kód kamerou";
+    button.setAttribute("aria-label", "Načíst QR kód místenky kamerou");
+    button.innerHTML = CAMERA_ICON;
+    const wrap = document.createElement("span");
+    wrap.className = "qr-input-wrap";
+    input.before(wrap);
+    wrap.append(input, button);
+    button.addEventListener("click", async () => {
+      const code = await scanQr();
+      if (!code) return;
+      input.value = code;
+      input.dispatchEvent(new Event("input"));
+      onCode(code);
+    });
+  }
+
   const ticketCheckUrl = (code) => new URL(`status.html?code=${encodeURIComponent(code)}`, location.href).href;
 
   function showToast(message) {
@@ -298,5 +373,5 @@
     qsa("[data-privacy]").forEach((el) => { el.href = org.privacyUrl || "privacy.html"; el.hidden = false; });
   }
 
-  window.Mistenka = { qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest };
+  window.Mistenka = { qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest, attachQrScanner, codeFromQr };
 })();

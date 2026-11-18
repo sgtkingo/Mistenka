@@ -110,4 +110,5 @@ qs("#nextCheck").addEventListener("click", () => {
   window.location.href = `status.html?code=${encodeURIComponent(nextCode)}`;
 });
 qs("#nextCode").addEventListener("keydown", (event) => { if (event.key === "Enter") qs("#nextCheck").click(); });
+window.Mistenka.attachQrScanner(qs("#nextCode"), () => qs("#nextCheck").click());
 loadStatus();

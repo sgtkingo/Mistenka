@@ -285,6 +285,9 @@ qs("#checkButton").addEventListener("click", () => {
   window.location.href = `status.html?code=${encodeURIComponent(code)}`;
 });
 qs("#checkCode").addEventListener("keydown", (event) => { if (event.key === "Enter") qs("#checkButton").click(); });
+// Načtení QR kódu místenky kamerou: kontrola rovnou otevře stav, vrácení doplní kód a přejde na legitimaci.
+window.Mistenka.attachQrScanner(qs("#checkCode"), () => qs("#checkButton").click());
+window.Mistenka.attachQrScanner(qs("#returnCode"), () => qs("#returnMemberId").focus());
 
 // ---------- přihlášený uživatel ----------
 // Předvyplní formulář z účtu (číslo legitimace se i tak ověří) a upozorní na aktuální místenku.
