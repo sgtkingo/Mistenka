@@ -237,6 +237,42 @@
     const exceeded = list.some((l) => l.exceeded);
     return `<div class="limits-box${exceeded ? " limits-exceeded" : ""}"><strong>${esc(title)}</strong><ul>${list.map((l) => `<li class="${l.exceeded ? "over" : l.count >= l.maxCount ? "full" : ""}"><span>${esc(limitPeriod(l))}: ${esc(l.label)}</span><b>${esc(l.count)} / ${esc(l.maxCount)} ks${l.exceeded ? " · překročeno" : l.count >= l.maxCount ? " · vyčerpáno" : ""}</b></li>`).join("")}</ul><small>Podle místenek v Místence. Limity platí na všech revírech svazu dohromady – úlovky z jiných revírů zde nevidíme.</small></div>`;
   }
+  // Našeptávač druhů ryb (vlastní, nativní <datalist> se v prohlížečích vykresluje nespolehlivě).
+  // input musí být v obalu s position:relative (.fish-field); getSpecies() vrací seznam druhů z pravidel revíru.
+  function attachSpeciesSuggest(input, getSpecies, onChoose = () => {}) {
+    const box = document.createElement("div");
+    box.className = "fish-suggestions";
+    box.setAttribute("role", "listbox");
+    input.after(box);
+    input.setAttribute("autocomplete", "off");
+    let active = -1;
+    const hide = () => { box.classList.remove("visible"); active = -1; };
+    const choose = (name) => { input.value = name; hide(); onChoose(name); };
+    const render = () => {
+      const query = input.value.trim().toLowerCase();
+      const matches = (getSpecies() || []).filter((s) => !query || s.name.toLowerCase().includes(query) || (s.aliases || []).some((a) => a.toLowerCase().includes(query)));
+      box.innerHTML = matches.map((s) => `<button type="button" role="option" data-name="${esc(s.name)}">${esc(s.name)}</button>`).join("");
+      box.classList.toggle("visible", matches.length > 0);
+      active = -1;
+      qsa("button", box).forEach((button) => button.addEventListener("mousedown", (event) => { event.preventDefault(); choose(button.dataset.name); }));
+    };
+    input.addEventListener("focus", render);
+    input.addEventListener("input", render);
+    input.addEventListener("blur", () => window.setTimeout(hide, 120));
+    input.addEventListener("keydown", (event) => {
+      const buttons = qsa("button", box);
+      if (!box.classList.contains("visible") || !buttons.length) return;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        active = event.key === "ArrowDown" ? (active + 1) % buttons.length : (active - 1 + buttons.length) % buttons.length;
+        buttons.forEach((button, index) => button.classList.toggle("active", index === active));
+        buttons[active].scrollIntoView({ block: "nearest" });
+      } else if (event.key === "Enter" && active >= 0) {
+        event.preventDefault();
+        choose(buttons[active].dataset.name);
+      } else if (event.key === "Escape") hide();
+    });
+  }
   const ROLE_LABELS = { member: "Uživatel", warden: "Porybný", manager: "Správce", admin: "Admin" };
 
   // Odkaz na účet v hlavičce ([data-account-link]) a do správy ([data-manage-link]).
@@ -262,5 +298,5 @@
     qsa("[data-privacy]").forEach((el) => { el.href = org.privacyUrl || "privacy.html"; el.hidden = false; });
   }
 
-  window.Mistenka = { qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml };
+  window.Mistenka = { qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest };
 })();

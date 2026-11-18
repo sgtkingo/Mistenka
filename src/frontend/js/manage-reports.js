@@ -1,6 +1,6 @@
 // Manažerský portál – Zarybnění a Přehledy (B6).
 (function () {
-  const { qs, qsa, esc, api, showToast, czDate, czk, czDateTime, parseCzDate, loadConfig } = window.Mistenka;
+  const { qs, qsa, esc, api, showToast, czDate, czk, czDateTime, parseCzDate, loadConfig, attachSpeciesSuggest } = window.Mistenka;
   let config = null;
   const short = (iso) => (iso ? `${Number(iso.slice(8))}. ${Number(iso.slice(5, 7))}. ${iso.slice(0, 4)}` : "");
   const MONTHS = ["leden", "únor", "březen", "duben", "květen", "červen", "červenec", "srpen", "září", "říjen", "listopad", "prosinec"];
@@ -27,7 +27,7 @@
         <details class="invite-box" id="stockBox"><summary id="stockSummary">+ Zapsat zarybnění nebo plán</summary>
           <form id="stockForm" novalidate><input type="hidden" id="stId">
             <div class="form-three-col"><div><label class="field-label" for="stRevir">Revír</label><select id="stRevir">${revirOptions(false)}</select></div><div><label class="field-label" for="stSub">Podrevír</label><select id="stSub"></select></div><div><label class="field-label" for="stDate">Datum (u plánu předpokládané)</label><input id="stDate" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div></div>
-            <div class="form-four-col"><div><label class="field-label" for="stSpecies">Druh</label><input id="stSpecies" list="speciesList" autocomplete="off"><datalist id="speciesList"></datalist></div><div><label class="field-label" for="stAge">Věková kategorie</label><select id="stAge"></select></div><div><label class="field-label" for="stKg">Hmotnost (kg)</label><input id="stKg" type="number" min="0" step="0.1"></div><div><label class="field-label" for="stPieces">Počet kusů</label><input id="stPieces" type="number" min="0" step="1"></div></div>
+            <div class="form-four-col"><div><label class="field-label" for="stSpecies">Druh</label><div class="fish-field"><input id="stSpecies" autocomplete="off" placeholder="např. kapr"></div></div><div><label class="field-label" for="stAge">Věková kategorie</label><select id="stAge"></select></div><div><label class="field-label" for="stKg">Hmotnost (kg)</label><input id="stKg" type="number" min="0" step="0.1"></div><div><label class="field-label" for="stPieces">Počet kusů</label><input id="stPieces" type="number" min="0" step="1"></div></div>
             <div class="form-three-col"><div><label class="field-label" for="stCost">Cena (Kč)</label><input id="stCost" type="number" min="0" step="1"></div><div><label class="field-label" for="stSupplier">Dodavatel</label><input id="stSupplier" maxlength="120"></div><div><label class="field-label" for="stNote">Poznámka</label><input id="stNote" maxlength="500"></div></div>
             <label class="checkbox-label settings-check"><input type="checkbox" id="stPlanned"> <span>Jen plán (zatím nenasazeno)</span></label>
             <div class="resolve-actions"><button class="primary-button" type="submit" id="stSubmit">Uložit</button><button class="text-button" type="button" id="stCancel">Zrušit úpravu</button></div>
@@ -43,6 +43,7 @@
       qs("#stRevir").addEventListener("change", fillRevirFields);
       qs("#stCancel").addEventListener("click", () => editStocking(null));
       qs("#stockForm").addEventListener("submit", saveStocking);
+      attachSpeciesSuggest(qs("#stSpecies"), () => (config.reviry.find((r) => r.id === qs("#stRevir").value) || config.reviry[0]).fishRules?.species);
       fillRevirFields();
     }
     refreshStocking();
@@ -50,7 +51,6 @@
   function fillRevirFields() {
     const revir = config.reviry.find((r) => r.id === qs("#stRevir").value) || config.reviry[0];
     qs("#stSub").innerHTML = `<option value="">Celý revír</option>${(revir.subdistrictList || []).map((s) => `<option value="${esc(s.number)}">${esc(s.number)} – ${esc(s.name)}</option>`).join("")}`;
-    qs("#speciesList").innerHTML = (revir.fishRules?.species || []).map((s) => `<option value="${esc(s.name)}">`).join("");
   }
   async function refreshStocking() {
     const revirId = qs("#stockRevir").value;
