@@ -102,16 +102,27 @@ async function loadPenaltyRules() {
     const pp = penaltyOrg.penaltyPolicy || {};
     const late = pp.lateReturn || {};
     const seizure = pp.seizure || {};
-    const row = (key, label, help, count, days, extra = "") => `<tr><td data-label="Porušení"><b>${label}</b><br><small class="muted-inline">${help}</small>${extra}</td>
-      <td data-label="Po kolika případech"><input class="penalty-input" id="${key}Count" type="number" min="0" max="50" value="${esc(count ?? 0)}"></td>
-      <td data-label="Blokace na dní"><input class="penalty-input" id="${key}Days" type="number" min="1" max="3650" value="${esc(days ?? "")}" placeholder="do konce roku"></td></tr>`;
-    box.innerHTML = `<table class="data-table penalty-table"><thead><tr><th>Porušení</th><th>Blokovat po … případech v roce</th><th>Blokace na dní</th></tr></thead><tbody>
+    // Přepínač zapnuto/vypnuto; vypnuté pravidlo se uloží s počtem 0, pole se zašedí.
+    const row = (key, label, help, count, days, extra = "") => {
+      const on = count > 0;
+      return `<tr class="penalty-row${on ? "" : " off"}" data-key="${key}"><td data-label="Porušení"><b>${label}</b><br><small class="muted-inline">${help}</small>${extra}</td>
+      <td data-label="Pravidlo"><label class="switch"><input type="checkbox" class="penalty-on" id="${key}On"${on ? " checked" : ""}><span class="switch-track" aria-hidden="true"></span><span class="switch-text">${on ? "Zapnuto" : "Vypnuto"}</span></label></td>
+      <td data-label="Blokovat po"><div class="input-suffix"><input class="penalty-input" id="${key}Count" type="number" min="1" max="50" value="${esc(on ? count : 2)}"${on ? "" : " disabled"}><span>případech</span></div></td>
+      <td data-label="Blokace"><div class="input-suffix"><input class="penalty-input" id="${key}Days" type="number" min="1" max="3650" value="${esc(days ?? "")}" placeholder="do konce roku"${on ? "" : " disabled"}><span>dní</span></div></td></tr>`;
+    };
+    box.innerHTML = `<table class="data-table penalty-table"><thead><tr><th>Porušení</th><th>Pravidlo</th><th>Blokovat po (za rok)</th><th>Délka blokace</th></tr></thead><tbody>
       ${row("limits", "Překročení limitů úlovků", "místenky s překročeným denním, týdenním nebo měsíčním limitem", lp.violationsBeforeBlock, lp.blockDays)}
       ${row("late", "Pozdní odevzdání", "odevzdání po skončení dne lovu", late.count, late.blockDays, `<label class="checkbox-label penalty-check"><input type="checkbox" id="lateUnreturned"${late.includeUnreturned !== false ? " checked" : ""}> <span>počítat i neodevzdané (uzavřené po lhůtě)</span></label>`)}
       ${row("seizure", "Zadržení porybným", "místenka zadržená rybářskou stráží", seizure.count, seizure.blockDays)}
       </tbody></table>
-      <p class="field-help">0 = pravidlo vypnuto. Počítá se kalendářní rok podle dne lovu; po dosažení počtu se nákup místenek automaticky pozastaví (prázdné dny = do konce roku). Držitel dostane e-mail, blokaci vidíte níže a můžete ji zrušit. Odevzdání místenek blokace nikdy nebrání.</p>
+      <p class="field-help">Počítá se kalendářní rok podle dne lovu. Po dosažení počtu se nákup místenek automaticky pozastaví; bez délky blokace platí do konce roku. Držitel dostane e-mail, blokaci vidíte níže a můžete ji zrušit. Odevzdání místenek blokace nikdy nebrání.</p>
       <button class="primary-button" type="submit">Uložit pravidla</button>`;
+    qsa(".penalty-on", box).forEach((toggle) => toggle.addEventListener("change", () => {
+      const tr = toggle.closest("tr");
+      tr.classList.toggle("off", !toggle.checked);
+      qs(".switch-text", tr).textContent = toggle.checked ? "Zapnuto" : "Vypnuto";
+      qsa(".penalty-input", tr).forEach((input) => { input.disabled = !toggle.checked; });
+    }));
   } catch (error) { box.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
 }
 qs("#penaltyForm").addEventListener("submit", (event) => submitForm(event, async () => {
@@ -122,11 +133,19 @@ qs("#penaltyForm").addEventListener("submit", (event) => submitForm(event, async
     if (!Number.isInteger(n) || n < 0) throw new Error(`${label}: zadejte celé číslo.`);
     return n;
   };
+  // Vypnuté pravidlo = počet 0 (tak ho chápe server); u zapnutého je počet aspoň 1.
+  const count = (key, label) => {
+    if (!qs(`#${key}On`).checked) return 0;
+    const n = int(`${key}Count`, `${label} – počet`);
+    if (n < 1) throw new Error(`${label}: počet případů musí být aspoň 1, nebo pravidlo vypněte.`);
+    return n;
+  };
+  const days = (key, label) => (qs(`#${key}On`).checked ? int(`${key}Days`, `${label} – délka blokace`, true) : null);
   const data = structuredClone(penaltyOrg);
-  data.limitPolicy = { violationsBeforeBlock: int("limitsCount", "Limity – počet"), blockDays: int("limitsDays", "Limity – dny", true) };
+  data.limitPolicy = { violationsBeforeBlock: count("limits", "Limity úlovků"), blockDays: days("limits", "Limity úlovků") };
   data.penaltyPolicy = {
-    lateReturn: { count: int("lateCount", "Pozdní odevzdání – počet"), blockDays: int("lateDays", "Pozdní odevzdání – dny", true), includeUnreturned: qs("#lateUnreturned").checked },
-    seizure: { count: int("seizureCount", "Zadržení – počet"), blockDays: int("seizureDays", "Zadržení – dny", true) }
+    lateReturn: { count: count("late", "Pozdní odevzdání"), blockDays: days("late", "Pozdní odevzdání"), includeUnreturned: qs("#lateUnreturned").checked },
+    seizure: { count: count("seizure", "Zadržení"), blockDays: days("seizure", "Zadržení") }
   };
   await api("/manage/settings/organization", { method: "PUT", body: { data, note: "Pravidla při porušení" } });
   showToast("Pravidla uložena.");
