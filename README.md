@@ -48,6 +48,10 @@ npm run user -- roles vas@email.cz admin  # ruční přidělení role
 
 Organizaci, revíry (cena, kapacita, podrevíry, doba lovu, pravidla), ryby a limity mění správce v manažerském portálu (Nastavení), platební údaje jen admin. Změny se ukládají jako verze do databáze a mají přednost před konfiguračním souborem, který zůstává výchozími hodnotami. Admin si může platnou konfiguraci stáhnout (export JSON).
 
+## Zálohy
+
+Během sezony se databáze zálohuje jednou denně (drží se poslední dvě), po každé uzávěrce sezony vznikne trvalá záloha. Zálohy jsou v `data/backups/`; admin je v portálu stahuje, maže a může zálohovat ručně. Obnova: zastavte server a nahraďte `data/mistenka.sqlite` staženou zálohou.
+
 ## Jiná MO nebo jiný revír
 
 1. Zkopírujte `config/organization.json` a upravte `organization`, `payment`, `email` a seznam `reviry`.

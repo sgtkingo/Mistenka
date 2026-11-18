@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 
 // Sloupce tabulky users (sdílí vytvoření i migrace).
 const USERS_COLUMNS = `
@@ -173,6 +173,17 @@ function openDatabase(dataDir) {
       note TEXT,
       updated_by INTEGER,
       updated_at TEXT NOT NULL
+    );
+    -- Zálohy databáze (B7): daily (drží se 2) | season (trvalá, po uzávěrce) | manual.
+    CREATE TABLE IF NOT EXISTS backups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL,
+      file TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      note TEXT,
+      report_id INTEGER,
+      created_by INTEGER,
+      created_at TEXT NOT NULL
     );
     -- Uzávěrky: automatické po skončení sezony a ruční za libovolné období. data = statistika (JSON).
     CREATE TABLE IF NOT EXISTS season_reports (

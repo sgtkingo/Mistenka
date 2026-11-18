@@ -357,6 +357,19 @@ function createAccounts({ db, config, appUrl }) {
     return user;
   }
 
+  function requireAdmin(ctx) {
+    const user = requireManager(ctx);
+    if (!hasRole(user, "admin")) throw new ApiError(403, "forbidden_role", "Tuto část spravuje jen admin.");
+    return user;
+  }
+  // Audit změn (jen admin): role, platby, nastavení, zálohy, zadržení, blokace …
+  function listAudit(ctx, { limit = 200, action = "" } = {}) {
+    requireAdmin(ctx);
+    const rows = db.prepare(`SELECT a.*, u.first_name, u.last_name FROM audit_events a LEFT JOIN users u ON u.id = a.actor_user_id
+      WHERE (? = '' OR a.action = ?) ORDER BY a.id DESC LIMIT ?`).all(String(action), String(action), Math.min(Math.max(Number(limit) || 200, 1), 1000));
+    return { events: rows.map((r) => ({ id: r.id, at: r.at, action: r.action, actor: r.first_name ? `${r.first_name} ${r.last_name}` : r.actor_user_id ? `#${r.actor_user_id}` : "systém", targetType: r.target_type, targetId: r.target_id, detail: r.detail ? JSON.parse(r.detail) : null })) };
+  }
+
   function listUsers(ctx, { q = "" } = {}) {
     requireManager(ctx);
     const term = `%${String(q).trim().toLowerCase().slice(0, 100)}%`;
@@ -482,7 +495,7 @@ function createAccounts({ db, config, appUrl }) {
   return {
     resolveSession, register, verifyEmail, login, requestMagicLink, magicLogin, requestPasswordReset, resetPassword, logout,
     me, updateProfile, confirmEmailChange, changePassword, deleteAccount, twoFactorSetup, twoFactorEnable, twoFactorDisable,
-    listUsers, setRoles, inviteStaff, requireWarden, requireManager, forceRoles, cleanup, requireUser,
+    listUsers, setRoles, inviteStaff, requireWarden, requireManager, requireAdmin, listAudit, forceRoles, cleanup, requireUser,
     setupStatus, createSetupToken, setupTwoFactor, completeSetup
   };
 }

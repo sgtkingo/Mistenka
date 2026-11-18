@@ -1087,6 +1087,51 @@ test("uzávěrky: ruční za období; automatická po skončení sezony s e-mail
   await setClock("2026-06-10T08:00:00Z");
 });
 
+// ---------- zálohy a audit (B7) ----------
+test("zálohy: jen admin; ruční záloha jde stáhnout; denní se drží 2; po uzávěrce sezony trvalá; audit", async () => {
+  await setClock("2026-09-01T08:00:00Z");
+  const manager = await managerAccount();
+  assert.equal((await call("GET", "/manage/backups", { session: manager.session })).data.code, "forbidden_role", "správce zálohy nespravuje");
+  assert.equal((await call("GET", "/manage/audit", { session: manager.session })).data.code, "forbidden_role");
+  const admin = await verifiedAccount();
+  await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: ["admin"] } });
+  await enableTwoFactor(admin.session, Date.parse("2026-09-01T08:00:30Z"));
+  const session = admin.session;
+
+  const manual = await call("POST", "/manage/backups", { body: { note: "Před úpravou ceníku" }, session });
+  assert.equal(manual.status, 201, JSON.stringify(manual.data));
+  assert.equal(manual.data.backup.kind, "manual");
+  assert.ok(manual.data.backup.sizeBytes > 0);
+  const download = await fetch(url(`/manage/backups/${manual.data.backup.id}/download`), { headers: { Cookie: session.cookie } });
+  assert.equal(download.status, 200);
+  assert.equal(Buffer.from(await download.arrayBuffer()).subarray(0, 15).toString(), "SQLite format 3", "platná databáze SQLite");
+  assert.equal((await fetch(url(`/manage/backups/${manual.data.backup.id}/download`), { headers: { Cookie: manager.session.cookie } })).status, 403);
+
+  // Denní zálohy: každý den jedna, drží se poslední dvě (bez nastavené sezony = celý rok v sezoně).
+  for (const day of ["2026-09-02", "2026-09-03", "2026-09-04"]) await setClock(`${day}T06:00:00Z`);
+  const daily = (await call("GET", "/manage/backups", { session })).data.backups.filter((b) => b.kind === "daily");
+  assert.equal(daily.length, 2, "drží se poslední a aktuální denní záloha");
+  assert.ok(daily[0].createdAt.startsWith("2026-09-04") && daily.every((b) => b.exists));
+
+  // Mimo sezonu se denní záloha nedělá.
+  await setClock("2026-09-04T08:00:00Z");
+  const season = await call("POST", "/manage/seasons", { body: { name: "Podzim", opensOn: "2026-09-01", closesOn: "2026-09-04" }, session });
+  await setClock("2026-09-05T06:00:00Z"); // konec sezony → uzávěrka → trvalá záloha
+  const after = (await call("GET", "/manage/backups", { session })).data.backups;
+  const seasonBackup = after.find((b) => b.kind === "season");
+  assert.ok(seasonBackup, "záloha po uzávěrce sezony");
+  assert.match(seasonBackup.note, /Podzim/);
+  assert.ok(!after.some((b) => b.kind === "daily" && b.createdAt.startsWith("2026-09-05")), "mimo sezonu bez denní zálohy");
+
+  assert.equal((await call("DELETE", `/manage/backups/${manual.data.backup.id}`, { session })).status, 200);
+  assert.ok(!(await call("GET", "/manage/backups", { session })).data.backups.some((b) => b.id === manual.data.backup.id));
+  const audit = (await call("GET", "/manage/audit?limit=50", { session })).data.events;
+  assert.ok(audit.some((e) => e.action === "backup_deleted") && audit.some((e) => e.action === "season_created"), "audit změn");
+  await call("DELETE", `/manage/seasons/${season.data.season.id}`, { session });
+  await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: [] } }); // průvodce na konci čeká, že admin neexistuje
+  await setClock("2026-06-10T08:00:00Z");
+});
+
 // ---------- průvodce prvním spuštěním a pozvání správce ----------
 // Musí běžet poslední: po založení admina se průvodce zavře.
 test("průvodce prvním spuštěním: admin vznikne jen s jednorázovým odkazem a rovnou s 2FA", async () => {

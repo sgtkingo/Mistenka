@@ -15,8 +15,10 @@ qsa(".manage-nav-item").forEach((item) => item.addEventListener("click", () => {
   qsa(".manage-nav-item").forEach((other) => other.classList.toggle("active", other === item));
   const section = item.dataset.section;
   qsa(".manage-section").forEach((el) => el.classList.toggle("hidden", el.id !== `section-${section}`));
-  if (section !== "soon" && location.hash.slice(1).split("/")[0] !== section) history.replaceState(null, "", section === "tickets" ? location.pathname : `#${section}`);
+  if (location.hash.slice(1).split("/")[0] !== section) history.replaceState(null, "", section === "tickets" ? location.pathname : `#${section}`);
   if (section === "tickets") loadTickets();
+  if (section === "backups") loadBackups();
+  if (section === "audit") loadAudit();
   if (section === "stocking") window.MistenkaReports.loadStocking();
   if (section === "reports") window.MistenkaReports.loadReports(location.hash.startsWith("#reports/") ? location.hash.split("/")[1] : "");
   if (section === "settings") window.MistenkaSettings.load(decodeURIComponent(location.hash.split("/")[1] || ""));
@@ -26,10 +28,6 @@ qsa(".manage-nav-item").forEach((item) => item.addEventListener("click", () => {
   if (section === "limits") loadLimits();
   if (section === "announcements") loadAnnouncements();
   if (section === "seasons") loadSeasons();
-  if (section === "soon") {
-    qs("#soonTitle").textContent = item.dataset.title;
-    qs("#soonStep").textContent = `Krok ${item.dataset.step}`;
-  }
 }));
 
 // ---------- uživatelé a role ----------
@@ -388,6 +386,47 @@ qs("#closureForm").addEventListener("submit", (event) => submitForm(event, async
   showToast(n ? `Revír uzavřen. ${n} dotčených místenek dostalo e-mail – vrácení peněz vyřiďte ručně.` : "Revír uzavřen. Žádná prodaná místenka se ho netýká.");
   loadSeasons();
 }));
+
+// ---------- zálohy a audit (jen admin) ----------
+const KIND_LABELS = { daily: ["denní", "info"], season: ["po uzávěrce", "ok"], manual: ["ruční", "off"] };
+const size = (bytes) => (bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} kB`);
+async function loadBackups() {
+  const list = qs("#backupList");
+  try {
+    const { backups, totalBytes } = await api("/manage/backups");
+    const base = (window.MISTENKA_ENV && window.MISTENKA_ENV.apiBase) || "/api";
+    list.innerHTML = backups.length ? `<p class="field-help">Celkem ${backups.length} záloh, ${size(totalBytes)}.</p><table class="data-table"><thead><tr><th>Vytvořeno</th><th>Typ</th><th>Poznámka</th><th>Velikost</th><th></th></tr></thead><tbody>${backups.map((b) => {
+      const [label, tone] = KIND_LABELS[b.kind] || [b.kind, "off"];
+      return `<tr><td data-label="Vytvořeno">${esc(czDateTime(b.createdAt))}</td><td data-label="Typ"><span class="badge badge-${tone}">${label}</span></td><td data-label="Poznámka">${esc(b.note)}</td><td data-label="Velikost">${esc(size(b.sizeBytes))}${b.exists ? "" : ' <b class="over-budget">soubor chybí</b>'}</td>
+        <td class="row-actions">${b.exists ? `<a class="text-link" href="${esc(`${base}/manage/backups/${b.id}/download`)}" download>Stáhnout</a>` : ""}<button class="text-button delete-backup" type="button" data-id="${b.id}">Smazat</button></td></tr>`;
+    }).join("")}</tbody></table>` : '<p class="muted">Zatím žádné zálohy.</p>';
+    qsa(".delete-backup", list).forEach((b) => b.addEventListener("click", async () => {
+      if (!window.confirm("Smazat zálohu? Nelze vrátit.")) return;
+      try { await api(`/manage/backups/${b.dataset.id}`, { method: "DELETE" }); loadBackups(); } catch (error) { showToast(error.message); }
+    }));
+  } catch (error) { list.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
+}
+qs("#createBackup").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  const note = window.prompt("Poznámka k záloze (volitelné):", "");
+  if (note === null) return;
+  button.disabled = true;
+  try { await api("/manage/backups", { method: "POST", body: { note } }); showToast("Záloha vytvořena."); loadBackups(); } catch (error) { showToast(error.message); } finally { button.disabled = false; }
+});
+const ACTION_LABELS = { roles_changed: "změna rolí", roles_forced: "role (příkazová řádka)", staff_invited: "pozvání do správy", admin_setup: "založení admina", settings_changed: "nastavení", ticket_seized: "zadržení místenky", ticket_cancelled: "zrušení místenky",
+  payment_resolved: "vyřešení platby", member_blocked: "blokace člena", member_blocked_auto: "automatická blokace", member_unblocked: "zrušení blokace", backup_created: "záloha", backup_deleted: "smazání zálohy", season_created: "sezona", season_updated: "úprava sezony", season_deleted: "smazání sezony",
+  closure_created: "uzavření revíru", closure_deleted: "zrušení uzavření", announcement_created: "nová zpráva", announcement_updated: "úprava zprávy", announcement_deleted: "smazání zprávy", vouchers_created: "nové poukazy", voucher_voided: "zneplatnění poukazu",
+  stocking_created: "zarybnění", stocking_updated: "úprava zarybnění", stocking_deleted: "smazání zarybnění", stocking_budget_set: "rozpočet zarybnění", report_created: "uzávěrka", season_report_created: "uzávěrka sezony",
+  account_verified: "ověření účtu", account_deleted: "smazání účtu", password_reset: "obnova hesla", password_changed: "změna hesla", email_changed: "změna e-mailu", two_factor_enabled: "zapnutí 2FA", two_factor_disabled: "vypnutí 2FA" };
+async function loadAudit() {
+  const list = qs("#auditList");
+  try {
+    const { events } = await api("/manage/audit", { query: { limit: 300 } });
+    list.innerHTML = events.length ? `<table class="data-table"><thead><tr><th>Kdy</th><th>Kdo</th><th>Akce</th><th>Cíl</th><th>Podrobnosti</th></tr></thead><tbody>${events.map((e) => `
+      <tr><td data-label="Kdy">${esc(czDateTime(e.at))}</td><td data-label="Kdo">${esc(e.actor)}</td><td data-label="Akce">${esc(ACTION_LABELS[e.action] || e.action)}</td><td data-label="Cíl">${esc([e.targetType, e.targetId].filter(Boolean).join(" "))}</td>
+      <td data-label="Podrobnosti"><small class="muted-inline">${e.detail ? esc(JSON.stringify(e.detail).slice(0, 160)) : ""}</small></td></tr>`).join("")}</tbody></table>` : '<p class="muted">Žádné záznamy.</p>';
+  } catch (error) { list.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
+}
 
 // ---------- start ----------
 (async function init() {

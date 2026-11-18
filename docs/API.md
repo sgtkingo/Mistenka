@@ -371,6 +371,23 @@ Hmotnost úlovků se sčítá jen z vyplněných nebo dopočtených hodnot (`wei
 | `POST /manage/reports` | `{ from, to, revirId?, name? }` | `201` uzávěrka s `data` (tvar jako `/manage/stats`) |
 | `GET /manage/reports/{id}` | – | uzávěrka s `data` |
 
+## Zálohy a audit (B7)
+
+Jen `admin` (jinak `403 forbidden_role`; bez 2FA `403 mfa_required`).
+
+- **Denní záloha** během sezony (dnes je otevřená některá sezona, nebo žádná sezona není nastavená): plánovaná úloha jednou za den (Praha); drží se **poslední a aktuální** (2), starší se smažou.
+- **Po každé uzávěrce sezony** jedna trvalá záloha (`kind: "season"`, poznámka = název uzávěrky).
+- **Ruční** záloha admina, trvalá do smazání.
+- Node: konzistentní kopie SQLite (`VACUUM INTO`) do `DATA_DIR/backups/`. WordPress: export tabulek pluginu do chráněného adresáře mimo veřejný přístup, stejná pravidla. Obnova se z webu nedělá: zastavit server a nahradit soubor databáze zálohou.
+
+| Endpoint | Tělo | Odpověď |
+| --- | --- | --- |
+| `GET /manage/backups` | – | `{ backups: [{ id, kind: "daily" \| "season" \| "manual", file, sizeBytes, note, reportId, createdAt, exists }], dailyKeep: 2, totalBytes }` |
+| `POST /manage/backups` | `{ note? }` | `201 { backup }` |
+| `GET /manage/backups/{id}/download` | – | soubor zálohy (`application/vnd.sqlite3`) |
+| `DELETE /manage/backups/{id}` | – | `{ deleted: true }` |
+| `GET /manage/audit?limit=200&action=` | – | `{ events: [{ id, at, action, actor, targetType, targetId, detail }] }` – změny rolí, nastavení, plateb, zadržení, blokace, zálohy … |
+
 ## Porybný (B2)
 
 Veřejná kontrola (`GET /tickets/{code}`) zůstává pro každého. Přihlášený uživatel s rolí `warden` navíc (jinak `401 unauthorized` / `403 forbidden_role`; admin bez 2FA `403 mfa_required`):
@@ -451,8 +468,9 @@ V tomto pořadí; Node je spouští v intervalu, WordPress cron hostingu přes `
 3. připomínky odevzdání (jednou, po skončení dne lovu, dokud běží lhůta),
 4. uzavření neodevzdaných místenek po lhůtě `lateReturnDays` (stav `closed_unreturned`, bez úlovku) + e-mail držiteli,
 5. úklid účtů: smazání neověřených účtů starších 48 h, prošlých relací a odkazů,
-6. automatické uzávěrky skončených sezon,
-7. odeslání fronty e-mailů.
+6. automatické uzávěrky skončených sezon (+ trvalá záloha),
+7. denní záloha během sezony,
+8. odeslání fronty e-mailů.
 
 `POST /jobs/run` vyžaduje hlavičku `X-Mistenka-Cron-Key` s tajným klíčem z konfigurace serveru; bez něj `404`.
 

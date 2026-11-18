@@ -24,6 +24,7 @@ const { createAccounts } = require("./lib/accounts");
 const { createOperations } = require("./lib/operations");
 const { createSettings } = require("./lib/settings");
 const { createReports } = require("./lib/reports");
+const { createBackups } = require("./lib/backups");
 const time = require("./lib/time");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -42,7 +43,10 @@ const operations = createOperations({ db, config, appUrl: APP_URL });
 const service = createService({ db, config, provider, mailer, appUrl: APP_URL, operations, settings });
 const accounts = createAccounts({ db, config, appUrl: APP_URL });
 const reports = createReports({ db, config, appUrl: APP_URL });
+const backups = createBackups({ db, dataDir: DATA_DIR });
+reports.onSeasonReport((report) => backups.afterSeasonReport(report)); // trvalá záloha po každé uzávěrce
 service.addJob("seasons", () => reports.closeSeasons()); // automatická uzávěrka po skončení sezony
+service.addJob("backups", () => backups.daily()); // denní záloha během sezony (drží se 2)
 service.addJob("accounts", () => accounts.cleanup());
 
 // ---------- omezení počtu požadavků (v paměti, na IP) ----------
@@ -243,6 +247,18 @@ async function handleApi(req, res, url, ip) {
       return send(res, 200, settings.exportAll(), { "Content-Disposition": `attachment; filename="mistenka-nastaveni-${time.pragueToday()}.json"` });
     }
   }
+
+  // Zálohy a audit (B7) – jen admin.
+  if (pathname === "/api/manage/backups" && method === "GET") { accounts.requireAdmin(ctx); return send(res, 200, backups.list()); }
+  if (pathname === "/api/manage/backups" && method === "POST") return send(res, 201, backups.manual(accounts.requireAdmin(ctx), await readBody(req)));
+  if ((m = pathname.match(/^\/api\/manage\/backups\/(\d+)\/download$/)) && method === "GET") {
+    accounts.requireAdmin(ctx);
+    const backup = backups.filePath(m[1]);
+    res.writeHead(200, { "Content-Type": "application/vnd.sqlite3", "Content-Length": backup.size, "Content-Disposition": `attachment; filename="${backup.file}"`, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+    return fs.createReadStream(backup.full).pipe(res);
+  }
+  if ((m = pathname.match(/^\/api\/manage\/backups\/(\d+)$/)) && method === "DELETE") return send(res, 200, backups.remove(accounts.requireAdmin(ctx), m[1]));
+  if (pathname === "/api/manage/audit" && method === "GET") return send(res, 200, accounts.listAudit(ctx, { limit: url.searchParams.get("limit"), action: url.searchParams.get("action") || "" }));
 
   // Zarybnění, přehledy, uzávěrky (B6).
   if (pathname.startsWith("/api/manage/stocking") || pathname.startsWith("/api/manage/stats") || pathname.startsWith("/api/manage/reports")) {

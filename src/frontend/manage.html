@@ -29,8 +29,9 @@
         <button class="manage-nav-item" type="button" data-section="settings">Nastavení</button>
         <button class="manage-nav-item" type="button" data-section="stocking">Zarybnění</button>
         <button class="manage-nav-item" type="button" data-section="reports">Přehledy a uzávěrky</button>
-        <span class="manage-nav-group">Připravujeme</span>
-        <button class="manage-nav-item admin-only hidden" type="button" data-section="soon" data-title="Zálohy" data-step="B7">Zálohy</button>
+        <span class="manage-nav-group admin-only hidden">Admin</span>
+        <button class="manage-nav-item admin-only hidden" type="button" data-section="backups">Zálohy</button>
+        <button class="manage-nav-item admin-only hidden" type="button" data-section="audit">Audit změn</button>
       </nav>
 
       <section class="panel-card manage-section" id="section-tickets">
@@ -165,9 +166,16 @@
         <div id="reportsPanel"></div>
       </section>
 
-      <section class="panel-card manage-section hidden" id="section-soon">
-        <div class="panel-heading"><div><span class="section-kicker" id="soonStep"></span><h1 id="soonTitle"></h1></div></div>
-        <p class="muted">Tato sekce přibude v dalším kroku podle plánu (docs/PLAN.md).</p>
+      <section class="panel-card manage-section hidden" id="section-backups">
+        <div class="panel-heading"><div><span class="section-kicker">Admin</span><h1>Zálohy</h1></div><button class="primary-button" type="button" id="createBackup">Zálohovat nyní</button></div>
+        <p class="panel-intro">Automaticky: denní záloha během sezony (drží se poslední a aktuální) a trvalá záloha po každé uzávěrce sezony. Obnova: zastavte server a nahraďte soubor databáze staženou zálohou.</p>
+        <div id="backupList"></div>
+      </section>
+
+      <section class="panel-card manage-section hidden" id="section-audit">
+        <div class="panel-heading"><div><span class="section-kicker">Admin</span><h1>Audit změn</h1></div></div>
+        <p class="panel-intro">Posledních 300 změn: role, nastavení, platby, zadržení, blokace, zálohy …</p>
+        <div id="auditList"></div>
       </section>
     </div>
   </main>

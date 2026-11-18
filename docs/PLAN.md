@@ -123,7 +123,7 @@ Vše nejdřív v Node verzi. WordPress (WP uživatelé s vlastními rolemi, při
 - Přehledy (sčoty): úlovky po druzích a obdobích, tržby, poukazy.
 - **Automatická uzávěrka po ukončení sezony** (úlovky, tržby, zarybnění, docházka), uložená a exportovatelná.
 
-**B7. Provoz a zálohy**
+**B7. Provoz a zálohy** – *zálohy a audit hotovo v Node verzi 18. 11. 2026 (42 sdílených testů API); zbývá retence osobních údajů a informace o zpracování na webu (podle rozhodnutí organizace).*
 - Automatická záloha DB jednou denně během sezony; drží se poslední a aktuální. Po každé uzávěrce sezony jedna trvalá záloha. Spravovat, stahovat a mazat zálohy smí jen admin.
 - Audit změn stavů a rolí, retenční lhůty osobních údajů, informace o zpracování osobních údajů na webu.
 
