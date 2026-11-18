@@ -62,8 +62,9 @@
         <details class="invite-box">
           <summary>+ Vytvořit poukazy</summary>
           <form id="voucherForm" novalidate>
-            <div class="form-two-col"><div><label class="field-label" for="vCount">Počet</label><input id="vCount" type="number" min="1" max="50" value="1"></div><div><label class="field-label" for="vRevir">Platí pro</label><select id="vRevir" data-revir-select></select></div></div>
+            <div class="form-two-col"><div><label class="field-label req" for="vCount">Počet</label><input id="vCount" type="number" min="1" max="50" value="1"></div><div><label class="field-label" for="vRevir">Platí pro</label><select id="vRevir" data-revir-select></select></div></div>
             <label class="field-label" for="vNote">Poznámka <span class="optional">(komu, proč)</span></label><input id="vNote" maxlength="200">
+            <p class="req-legend"><span class="required">*</span> povinné údaje</p>
             <button class="primary-button" type="submit">Vytvořit</button>
           </form>
         </details>
@@ -78,8 +79,9 @@
           <summary>+ Pozvat správce nebo admina</summary>
           <form id="inviteForm" novalidate>
             <p class="field-help">Vznikne účet jen pro správu (bez čísla legitimace). Pozvaný dostane e-mail s odkazem na nastavení hesla (platí 72 hodin). Existujícímu uživateli roli přidělte v seznamu níže.</p>
-            <div class="form-two-col"><div><label class="field-label" for="invFirstName">Jméno</label><input id="invFirstName" maxlength="100"></div><div><label class="field-label" for="invLastName">Příjmení</label><input id="invLastName" maxlength="100"></div></div>
-            <div class="form-two-col"><div><label class="field-label" for="invEmail">E-mail</label><input id="invEmail" type="email" maxlength="200"></div><div><label class="field-label" for="invRole">Role</label><select id="invRole"><option value="manager">Správce</option><option value="admin">Admin</option></select></div></div>
+            <div class="form-two-col"><div><label class="field-label req" for="invFirstName">Jméno</label><input id="invFirstName" maxlength="100"></div><div><label class="field-label req" for="invLastName">Příjmení</label><input id="invLastName" maxlength="100"></div></div>
+            <div class="form-two-col"><div><label class="field-label req" for="invEmail">E-mail</label><input id="invEmail" type="email" maxlength="200"></div><div><label class="field-label req" for="invRole">Role</label><select id="invRole"><option value="manager">Správce</option><option value="admin">Admin</option></select></div></div>
+            <p class="req-legend"><span class="required">*</span> povinné údaje</p>
             <button class="primary-button" type="submit">Poslat pozvánku</button>
           </form>
         </details>
@@ -97,8 +99,9 @@
         <details class="invite-box">
           <summary>+ Zablokovat člena</summary>
           <form id="blockForm" novalidate>
-            <div class="form-two-col"><div><label class="field-label" for="blockMemberId">Číslo členské legitimace</label><input id="blockMemberId" inputmode="numeric" maxlength="10"></div><div><label class="field-label" for="blockUntil">Do <span class="optional">(d.m.rrrr, prázdné = do zrušení)</span></label><input id="blockUntil" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div></div>
-            <label class="field-label" for="blockReason">Důvod</label><input id="blockReason" maxlength="500">
+            <div class="form-two-col"><div><label class="field-label req" for="blockMemberId">Číslo členské legitimace</label><input id="blockMemberId" inputmode="numeric" maxlength="10"></div><div><label class="field-label" for="blockUntil">Do <span class="optional">(d.m.rrrr, prázdné = do zrušení)</span></label><input id="blockUntil" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div></div>
+            <label class="field-label req" for="blockReason">Důvod</label><input id="blockReason" maxlength="500">
+            <p class="req-legend"><span class="required">*</span> povinné údaje</p>
             <button class="primary-button" type="submit">Zablokovat</button>
           </form>
         </details>
@@ -114,11 +117,12 @@
           <summary id="announcementSummary">+ Nová zpráva</summary>
           <form id="announcementForm" novalidate>
             <input type="hidden" id="annId">
-            <label class="field-label" for="annTitle">Nadpis</label><input id="annTitle" maxlength="120">
+            <label class="field-label req" for="annTitle">Nadpis</label><input id="annTitle" maxlength="120">
             <label class="field-label" for="annText">Text <span class="optional">(volitelné)</span></label><textarea id="annText" rows="3" maxlength="1000"></textarea>
             <div class="form-two-col"><div><label class="field-label" for="annRevir">Pro</label><select id="annRevir" data-revir-select></select></div><div><label class="checkbox-label pin-label"><input type="checkbox" id="annPinned"> <span>Připnout nahoru</span></label></div></div>
             <div class="form-two-col"><div><label class="field-label" for="annFrom">Zobrazit od <span class="optional">(volitelné)</span></label><input id="annFrom" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div><div><label class="field-label" for="annTo">Zobrazit do <span class="optional">(volitelné)</span></label><input id="annTo" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div></div>
-            <button class="primary-button" type="submit" id="annSubmit">Zveřejnit</button> <button class="text-button" type="button" id="annCancel">Zrušit úpravu</button>
+            <button class="primary-button" type="submit" id="annSubmit">Zveřejnit</button> <p class="req-legend"><span class="required">*</span> povinné údaje</p>
+            <button class="text-button" type="button" id="annCancel">Zrušit úpravu</button>
           </form>
         </details>
         <div id="announcementList"></div>
@@ -129,9 +133,10 @@
         <p class="panel-intro">Místenky lze kupovat jen na dny v otevřené sezoně. Revír bez nastavené sezony je otevřený celý rok. Uzavřením se zablokuje nákup na další dny; už vystavené místenky platí dál.</p>
         <button class="primary-button big-button" type="button" id="openSeasonButton">+ Otevřít sezonu</button>
         <form id="seasonForm" class="season-open-form hidden" novalidate>
-          <div class="form-two-col"><div><label class="field-label" for="seasonRevir">Revír</label><select id="seasonRevir" data-revir-select></select></div><div><label class="field-label" for="seasonName">Název <span class="optional">(nepovinný, jinak „Sezona rok“)</span></label><input id="seasonName" maxlength="80"></div></div>
-          <div class="form-two-col"><div><label class="field-label" for="seasonFrom">Otevřít od</label><input id="seasonFrom" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div><div><label class="field-label" for="seasonTo">Plánované uzavření <span class="optional">(prázdné = do uzavření)</span></label><input id="seasonTo" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div></div>
-          <div class="resolve-actions"><button class="primary-button" type="submit">Otevřít sezonu</button><button class="text-button" type="button" id="cancelSeasonForm">Zrušit</button></div>
+          <div class="form-two-col"><div><label class="field-label req" for="seasonRevir">Revír</label><select id="seasonRevir" data-revir-select></select></div><div><label class="field-label" for="seasonName">Název <span class="optional">(nepovinný, jinak „Sezona rok“)</span></label><input id="seasonName" maxlength="80"></div></div>
+          <div class="form-two-col"><div><label class="field-label req" for="seasonFrom">Otevřít od</label><input id="seasonFrom" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div><div><label class="field-label" for="seasonTo">Plánované uzavření <span class="optional">(prázdné = do uzavření)</span></label><input id="seasonTo" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div></div>
+          <p class="req-legend"><span class="required">*</span> povinné údaje</p>
+            <div class="resolve-actions"><button class="primary-button" type="submit">Otevřít sezonu</button><button class="text-button" type="button" id="cancelSeasonForm">Zrušit</button></div>
         </form>
         <h2 class="manage-h2">Stav revírů</h2>
         <div id="revirStatus" class="revir-status-grid"></div>
@@ -141,8 +146,9 @@
         <details class="invite-box">
           <summary>+ Uzavřít revír</summary>
           <form id="closureForm" novalidate>
-            <div class="form-two-col"><div><label class="field-label" for="closureFrom">Od</label><input id="closureFrom" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div><div><label class="field-label" for="closureTo">Do <span class="optional">(prázdné = jeden den)</span></label><input id="closureTo" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div></div>
-            <div class="form-two-col"><div><label class="field-label" for="closureRevir">Revír</label><select id="closureRevir" data-revir-select></select></div><div><label class="field-label" for="closureReason">Důvod</label><input id="closureReason" maxlength="300" placeholder="např. výlov, povodeň"></div></div>
+            <div class="form-two-col"><div><label class="field-label req" for="closureFrom">Od</label><input id="closureFrom" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div><div><label class="field-label" for="closureTo">Do <span class="optional">(prázdné = jeden den)</span></label><input id="closureTo" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div></div>
+            <div class="form-two-col"><div><label class="field-label" for="closureRevir">Revír</label><select id="closureRevir" data-revir-select></select></div><div><label class="field-label req" for="closureReason">Důvod</label><input id="closureReason" maxlength="300" placeholder="např. výlov, povodeň"></div></div>
+            <p class="req-legend"><span class="required">*</span> povinné údaje</p>
             <button class="danger-button" type="submit">Uzavřít</button>
           </form>
         </details>

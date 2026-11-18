@@ -128,3 +128,6 @@ tr.clickable{cursor:pointer}tr.clickable:hover td{background:#f6fbff}#csvLink{te
 .radio-row{display:flex;align-items:center;gap:8px;margin:6px 0}.radio-row .close-from{max-width:130px;margin:0!important;padding:6px 8px!important}
 .fish-suggestions{max-height:260px;overflow-y:auto}
 .budget-table .total-row td{background:#f4f3f1;color:var(--muted);font-weight:600;border-top:2px solid var(--line)}
+
+/* Povinná pole: hvězdička za popiskem (třída req), legenda pod formulářem. */
+.field-label.req::after{content:" *";color:var(--blue)}.req-legend{font-size:11px;color:var(--muted);margin:2px 0 10px}

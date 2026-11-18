@@ -14,7 +14,8 @@
     if (raw === "" || !Number.isFinite(n) || (int && !Number.isInteger(n))) throw new Error(`${label}: zadejte ${int ? "celé " : ""}číslo.`);
     return n;
   };
-  const field = (id, label, value, attrs = "") => `<div><label class="field-label" for="${id}">${label}</label><input id="${id}" value="${esc(value ?? "")}" ${attrs}></div>`;
+  const REQUIRED_FIELDS = new Set(["oShort", "pcChars", "prTickets", "prAccounting", "prEmails", "prAudit", "prBackups", "lpCount", "pAccount", "pBank", "pReservation", "rName", "rPrice", "rCapacity", "rAhead", "rLate", "nId", "nName", "nPrice", "nCapacity", "nAhead", "nLate"]);
+  const field = (id, label, value, attrs = "") => `<div><label class="field-label${REQUIRED_FIELDS.has(id) ? " req" : ""}" for="${id}">${label}</label><input id="${id}" value="${esc(value ?? "")}" ${attrs}></div>`;
   const area = (id, label, value, rows = 3) => `<label class="field-label" for="${id}">${label}</label><textarea id="${id}" rows="${rows}">${esc(value ?? "")}</textarea>`;
   // Doba hájení: uloženo MM-DD, zobrazeno d.m.–d.m.; více období oddělených středníkem.
   const seasonsToText = (list) => (list || []).map(({ from, to }) => `${Number(from.slice(3))}.${Number(from.slice(0, 2))}.–${Number(to.slice(3))}.${Number(to.slice(0, 2))}.`).join("; ");
@@ -33,7 +34,7 @@
   }
   // Společná patička: poznámka, uložit, historie, výchozí hodnoty, JSON (admin).
   function footer(scope, part, { canEdit = true } = {}) {
-    return `<div class="settings-footer">
+    return `<p class="req-legend"><span class="required">*</span> povinné údaje</p><div class="settings-footer">
       ${canEdit ? `<input id="settingsNote" maxlength="200" placeholder="Poznámka ke změně (volitelné)"><button class="primary-button" type="submit">Uložit</button>` : ""}
       <span class="muted-inline">${meta(part)}</span></div>
       <div class="settings-tools"><button class="text-button" type="button" data-history="${esc(scope)}">Historie změn</button>

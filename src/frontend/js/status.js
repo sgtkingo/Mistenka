@@ -83,7 +83,7 @@ function renderWarden(view) {
     <ul class="check-log">${view.checks.map((c) => `<li>${esc(czDateTime(c.at))} · ${esc(c.wardenName)}${c.status === "seized" ? " · <b>zadržení</b>" : ""}</li>`).join("") || "<li>—</li>"}</ul>
     ${view.seizable ? `<details class="seize-box"><summary>Zadržet místenku</summary>
       <p class="field-help">Zadržením lov okamžitě končí a místenka neplatí. Držitel ji musí i tak odevzdat s úlovky. Držitel i správce dostanou e-mail.</p>
-      <label class="field-label" for="seizeReason">Důvod zadržení</label><textarea id="seizeReason" rows="3" maxlength="500"></textarea>
+      <label class="field-label req" for="seizeReason">Důvod zadržení</label><textarea id="seizeReason" rows="3" maxlength="500"></textarea>
       <label class="field-label" for="seizePlace">Místo <span class="optional">(volitelné)</span></label><input id="seizePlace" maxlength="200" placeholder="např. Petr 1, severní břeh">
       <button class="danger-button" type="button" id="seizeButton">Zadržet místenku</button></details>` : ""}`;
   panel.classList.remove("hidden");

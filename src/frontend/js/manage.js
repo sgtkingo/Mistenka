@@ -222,7 +222,7 @@ async function openTicket(code) {
       <h3>Kontroly porybným</h3>${d.checks.length ? `<ul class="plain-list">${d.checks.map((c) => `<li>${esc(czDateTime(c.at))} · ${esc(c.wardenName)}${c.status === "seized" ? " · zadržení" : ""}</li>`).join("")}</ul>` : '<p class="muted">Žádné.</p>'}
       <h3>E-maily</h3><ul class="plain-list">${d.emails.map((e) => `<li>${esc(czDateTime(e.createdAt))} · ${esc(e.subject)}${e.sentAt ? "" : e.error ? " · <b>chyba</b>" : " · čeká"}</li>`).join("") || "<li>—</li>"}</ul>
       ${d.cancellable ? `<details class="seize-box"><summary>Zrušit místenku</summary><p class="field-help">Místenka přestane platit a uvolní místo. ${t.payment === null && !t.voucherUsed ? "Peníze se nevracejí automaticky – vraťte je v bankovnictví. " : ""}Držitel vystavené místenky dostane e-mail.</p>
-        <label class="field-label" for="cancelReason">Důvod</label><input id="cancelReason" maxlength="300"><button class="danger-button" type="button" id="cancelTicket">Zrušit místenku</button></details>` : ""}`;
+        <label class="field-label req" for="cancelReason">Důvod</label><input id="cancelReason" maxlength="300"><button class="danger-button" type="button" id="cancelTicket">Zrušit místenku</button></details>` : ""}`;
     qs("#closeDialog").addEventListener("click", () => dialog.close());
     qs("#cancelTicket")?.addEventListener("click", async (event) => {
       const reason = qs("#cancelReason").value.trim();

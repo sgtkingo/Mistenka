@@ -115,14 +115,14 @@
           </div>
           <div id="returnPanel" class="panel-content hidden">
             <p class="panel-intro">Zadejte kód z místenky a číslo členské legitimace, na kterou byla vystavena. Odkaz pro odevzdání najdete také v e-mailu s místenkou.</p>
-            <label class="field-label" for="returnCode">Kód místenky</label>
+            <label class="field-label req" for="returnCode">Kód místenky</label>
             <input id="returnCode" class="code-input" maxlength="6" placeholder="S7K4P2" autocomplete="off">
-            <label class="field-label" for="returnMemberId">Číslo členské legitimace</label>
+            <label class="field-label req" for="returnMemberId">Číslo členské legitimace</label>
             <div class="code-row"><input id="returnMemberId" type="text" inputmode="numeric" maxlength="10" placeholder="8 číslic" autocomplete="off"><button class="primary-button" id="returnFind" type="button">Najít místenku</button></div>
           </div>
           <div id="checkPanel" class="panel-content hidden">
             <p class="panel-intro">Ověřte místenku načtením QR kódu nebo ručním zadáním jejího kódu.</p>
-            <label class="field-label" for="checkCode">Kód místenky</label>
+            <label class="field-label req" for="checkCode">Kód místenky</label>
             <div class="code-row"><input id="checkCode" class="code-input" maxlength="6" placeholder="S7K4P2" autocomplete="off"><button class="primary-button" id="checkButton" type="button">Ověřit kód</button></div>
           </div>
           <div id="paymentPanel" class="panel-content hidden">

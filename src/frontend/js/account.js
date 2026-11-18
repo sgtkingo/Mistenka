@@ -176,6 +176,7 @@ function renderAccount() {
   qs("#pEmail").value = user.email;
   // Účet správce nemusí mít rybářské údaje (číslo legitimace, datum narození).
   qsa(".staff-optional").forEach((el) => el.classList.toggle("hidden", !isStaff(user)));
+  qsa(".member-req").forEach((el) => el.classList.toggle("req", !isStaff(user)));
   qs("#profileIntro").textContent = isStaff(user) && user.staffOnly
     ? "Účet jen pro správu. Číslo legitimace a datum narození doplňte, pokud chcete z účtu kupovat místenky."
     : "Použijeme je k předvyplnění místenky. Na již vystavených místenkách se nezmění.";

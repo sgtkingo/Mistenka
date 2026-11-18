@@ -20,10 +20,10 @@
 
       <form id="detailsForm" class="auth-form hidden" novalidate>
         <p class="panel-intro">Admin spravuje celou organizaci: jmenuje správce, mění platební údaje a spravuje zálohy. Je to účet jen pro správu – číslo legitimace ani datum narození nepotřebuje (můžete je doplnit později, pokud chcete z účtu i kupovat místenky).</p>
-        <div class="form-two-col"><div><label class="field-label" for="firstName">Jméno</label><input id="firstName" autocomplete="given-name" maxlength="100"></div><div><label class="field-label" for="lastName">Příjmení</label><input id="lastName" autocomplete="family-name" maxlength="100"></div></div>
-        <label class="field-label" for="email">E-mail</label>
+        <div class="form-two-col"><div><label class="field-label req" for="firstName">Jméno</label><input id="firstName" autocomplete="given-name" maxlength="100"></div><div><label class="field-label req" for="lastName">Příjmení</label><input id="lastName" autocomplete="family-name" maxlength="100"></div></div>
+        <label class="field-label req" for="email">E-mail</label>
         <input id="email" type="email" autocomplete="email" maxlength="200">
-        <div class="form-two-col"><div><label class="field-label" for="password">Heslo <span class="optional">(alespoň 8 znaků)</span></label><input id="password" type="password" autocomplete="new-password" maxlength="200"></div><div><label class="field-label" for="password2">Heslo znovu</label><input id="password2" type="password" autocomplete="new-password" maxlength="200"></div></div>
+        <div class="form-two-col"><div><label class="field-label req" for="password">Heslo <span class="optional">(alespoň 8 znaků)</span></label><input id="password" type="password" autocomplete="new-password" maxlength="200"></div><div><label class="field-label req" for="password2">Heslo znovu</label><input id="password2" type="password" autocomplete="new-password" maxlength="200"></div></div>
         <button class="primary-button full-width" type="submit">Pokračovat k dvoufázovému ověření →</button>
       </form>
 

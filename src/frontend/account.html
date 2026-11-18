@@ -26,12 +26,12 @@
       <div id="authMessage" class="info-box hidden" role="status"></div>
 
       <form id="loginForm" class="auth-form" novalidate>
-        <label class="field-label" for="loginEmail">E-mail</label>
+        <label class="field-label req" for="loginEmail">E-mail</label>
         <input id="loginEmail" type="email" autocomplete="username" maxlength="200" required>
         <label class="field-label" for="loginPassword">Heslo</label>
         <input id="loginPassword" type="password" autocomplete="current-password" maxlength="200">
         <div class="otp-field hidden" id="loginOtpField">
-          <label class="field-label" for="loginOtp">Kód z ověřovací aplikace</label>
+          <label class="field-label req" for="loginOtp">Kód z ověřovací aplikace</label>
           <input id="loginOtp" class="otp-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456">
         </div>
         <button class="primary-button full-width" type="submit">Přihlásit se</button>
@@ -57,12 +57,12 @@
 
       <form id="resetForm" class="auth-form hidden" novalidate>
         <p class="panel-intro" id="resetIntro">Zvolte si nové heslo. Po uložení vás odhlásíme na ostatních zařízeních.</p>
-        <label class="field-label" for="resetPassword">Nové heslo <span class="optional">(alespoň 8 znaků)</span></label>
+        <label class="field-label req" for="resetPassword">Nové heslo <span class="optional">(alespoň 8 znaků)</span></label>
         <input id="resetPassword" type="password" autocomplete="new-password" maxlength="200">
-        <label class="field-label" for="resetPassword2">Nové heslo znovu</label>
+        <label class="field-label req" for="resetPassword2">Nové heslo znovu</label>
         <input id="resetPassword2" type="password" autocomplete="new-password" maxlength="200">
         <div class="otp-field hidden" id="resetOtpField">
-          <label class="field-label" for="resetOtp">Kód z ověřovací aplikace</label>
+          <label class="field-label req" for="resetOtp">Kód z ověřovací aplikace</label>
           <input id="resetOtp" class="otp-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456">
         </div>
         <button class="primary-button full-width" type="submit">Uložit heslo a přihlásit se</button>
@@ -70,7 +70,7 @@
 
       <form id="magicOtpForm" class="auth-form hidden" novalidate>
         <p class="panel-intro">Váš účet má zapnuté dvoufázové ověření. Zadejte kód z ověřovací aplikace.</p>
-        <label class="field-label" for="magicOtp">Kód z ověřovací aplikace</label>
+        <label class="field-label req" for="magicOtp">Kód z ověřovací aplikace</label>
         <input id="magicOtp" class="otp-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456">
         <button class="primary-button full-width" type="submit">Přihlásit se</button>
       </form>
@@ -99,9 +99,9 @@
         <span class="section-kicker">Osobní údaje</span><h2>Moje údaje</h2>
         <p class="panel-intro" id="profileIntro">Použijeme je k předvyplnění místenky. Na již vystavených místenkách se nezmění.</p>
         <form id="profileForm" novalidate>
-          <div class="form-two-col"><div><label class="field-label" for="pFirstName">Jméno</label><input id="pFirstName" autocomplete="given-name" maxlength="100"></div><div><label class="field-label" for="pLastName">Příjmení</label><input id="pLastName" autocomplete="family-name" maxlength="100"></div></div>
-          <div class="form-two-col"><div><label class="field-label" for="pBirthDate">Datum narození <span class="optional staff-optional hidden">(volitelné)</span></label><input id="pBirthDate" type="text" class="date-input" inputmode="numeric" placeholder="dd.mm.rrrr" maxlength="10" autocomplete="bday"></div><div><label class="field-label" for="pMemberId">Číslo členské legitimace <span class="optional staff-optional hidden">(volitelné)</span></label><input id="pMemberId" inputmode="numeric" maxlength="10" autocomplete="off"></div></div>
-          <label class="field-label" for="pEmail">E-mail</label>
+          <div class="form-two-col"><div><label class="field-label req" for="pFirstName">Jméno</label><input id="pFirstName" autocomplete="given-name" maxlength="100"></div><div><label class="field-label req" for="pLastName">Příjmení</label><input id="pLastName" autocomplete="family-name" maxlength="100"></div></div>
+          <div class="form-two-col"><div><label class="field-label member-req" for="pBirthDate">Datum narození <span class="optional staff-optional hidden">(volitelné)</span></label><input id="pBirthDate" type="text" class="date-input" inputmode="numeric" placeholder="dd.mm.rrrr" maxlength="10" autocomplete="bday"></div><div><label class="field-label member-req" for="pMemberId">Číslo členské legitimace <span class="optional staff-optional hidden">(volitelné)</span></label><input id="pMemberId" inputmode="numeric" maxlength="10" autocomplete="off"></div></div>
+          <label class="field-label req" for="pEmail">E-mail</label>
           <input id="pEmail" type="email" autocomplete="email" maxlength="200">
           <p class="field-help" id="emailHelp">Změnu e-mailu potvrdíte odkazem, který pošleme na novou adresu.</p>
           <button class="primary-button" type="submit">Uložit údaje</button>
@@ -111,10 +111,10 @@
       <section class="panel-card account-card">
         <span class="section-kicker">Zabezpečení</span><h2 id="passwordTitle">Heslo</h2>
         <form id="passwordForm" novalidate>
-          <div id="currentPasswordWrap"><label class="field-label" for="currentPassword">Současné heslo</label><input id="currentPassword" type="password" autocomplete="current-password" maxlength="200"></div>
+          <div id="currentPasswordWrap"><label class="field-label req" for="currentPassword">Současné heslo</label><input id="currentPassword" type="password" autocomplete="current-password" maxlength="200"></div>
           <div class="form-two-col">
-            <div><label class="field-label" for="newPassword" id="newPasswordLabel">Nové heslo</label><input id="newPassword" type="password" autocomplete="new-password" maxlength="200"></div>
-            <div><label class="field-label" for="newPassword2">Nové heslo znovu</label><input id="newPassword2" type="password" autocomplete="new-password" maxlength="200"></div>
+            <div><label class="field-label req" for="newPassword" id="newPasswordLabel">Nové heslo</label><input id="newPassword" type="password" autocomplete="new-password" maxlength="200"></div>
+            <div><label class="field-label req" for="newPassword2">Nové heslo znovu</label><input id="newPassword2" type="password" autocomplete="new-password" maxlength="200"></div>
           </div>
           <button class="secondary-button" type="submit" id="passwordSubmit">Změnit heslo</button>
         </form>
@@ -130,7 +130,7 @@
         <span class="section-kicker">Smazání účtu</span><h2>Smazat účet</h2>
         <p class="panel-intro">Smaže účet a přihlašovací údaje. Vystavené místenky uchováváme po dobu stanovenou pro evidenci, už ale nebudou spojené s účtem.</p>
         <form id="deleteForm" novalidate>
-          <div id="deletePasswordWrap"><label class="field-label" for="deletePassword">Heslo</label><input id="deletePassword" type="password" autocomplete="current-password" maxlength="200"></div>
+          <div id="deletePasswordWrap"><label class="field-label req" for="deletePassword">Heslo</label><input id="deletePassword" type="password" autocomplete="current-password" maxlength="200"></div>
           <label class="checkbox-label"><input type="checkbox" id="deleteConfirm"> <span>Rozumím, že smazání nelze vrátit.</span></label>
           <button class="danger-button" type="submit">Smazat účet</button>
         </form>
