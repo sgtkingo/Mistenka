@@ -71,4 +71,6 @@ Tato licence se řídí právem České republiky. V případě rozporu má pře
 
 ---
 
+Šablona licenční smlouvy: `docs/LICENCNI_SMLOUVA.md`.
+
 Kontakt pro licencování: **Ing. Jiří Konečný**, jiri.konecny@vsb.cz · https://github.com/sgtkingo/Mistenka
