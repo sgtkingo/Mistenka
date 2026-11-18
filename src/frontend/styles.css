@@ -147,3 +147,4 @@ tr.clickable{cursor:pointer}tr.clickable:hover td{background:#f6fbff}#csvLink{te
 
 .penalty-table td{vertical-align:top}.penalty-input{max-width:120px;margin-bottom:0!important;padding:7px 8px!important}.penalty-check{margin-top:6px;font-size:12px}#penaltyForm .primary-button{margin-top:4px}
 .manage-nav .manage-nav-group:first-of-type{margin-top:4px}
+.bal-pos,.kpi-pos b{color:#17803f}.bal-neg,.kpi-neg b{color:#b52f27}.kpi-pos{border-color:#c4e6cc;background:#f3faf5}.kpi-neg{border-color:#f0c4c0;background:#fff6f5}.kpi-grid{grid-template-columns:repeat(4,1fr)}

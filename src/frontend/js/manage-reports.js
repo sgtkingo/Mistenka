@@ -148,14 +148,19 @@
   }
 
   // ---------- přehledy a uzávěrky ----------
+  const sign = (n) => (n > 0 ? "pos" : n < 0 ? "neg" : "");
   const balanceTable = (rows) => rows.length ? `<table class="data-table"><thead><tr><th>Druh</th><th>Uloveno</th><th>Nasazeno</th><th>Rozdíl (kg)</th></tr></thead><tbody>${rows.map((b) => `
     <tr><td data-label="Druh"><b>${esc(b.species)}</b></td><td data-label="Uloveno">${esc(b.caughtCount)} ks · ${esc(kg(b.caughtKg))}</td><td data-label="Nasazeno">${b.stockedPieces ? `${esc(b.stockedPieces)} ks · ` : ""}${esc(kg(b.stockedKg))}</td>
-    <td data-label="Rozdíl"><b class="${b.balanceKg < 0 ? "over-budget" : ""}">${b.balanceKg > 0 ? "+" : ""}${esc(kg(b.balanceKg))}</b></td></tr>`).join("")}</tbody></table><p class="field-help">Hmotnost úlovků jen z vyplněných nebo dopočtených hodnot – skutečně odebrané množství může být vyšší.</p>` : '<p class="muted">Žádné úlovky ani zarybnění.</p>';
+    <td data-label="Rozdíl"><b class="bal-${sign(b.balanceKg) || "zero"}">${b.balanceKg > 0 ? "+" : ""}${esc(kg(b.balanceKg))}</b></td></tr>`).join("")}</tbody></table><p class="field-help">Hmotnost úlovků jen z vyplněných nebo dopočtených hodnot – skutečně odebrané množství může být vyšší.</p>` : '<p class="muted">Žádné úlovky ani zarybnění.</p>';
   function statsHtml(s, title) {
     const sum = s.summary;
     const tiles = [["Prodané místenky", sum.sold], ["Rybářů", sum.anglers], ["Tržby", czk(sum.revenueHalere)], ["Odevzdané", `${sum.returned}${sum.returnedLate ? ` (${sum.returnedLate} opožděně)` : ""}`], ["Neodevzdané", sum.unreturned], ["Úlovky", `${s.catches.total} ks · ${kg(s.catches.weightKg)}`], ["Zarybnění", czk(s.stocking.costHalere)], ["Poukazy · zadržené", `${sum.vouchers} · ${sum.seized}`]];
+    // Bilance (zeleně/červeně); ostatní přehledové údaje zůstávají černé.
+    const money = sum.revenueHalere - s.stocking.costHalere;
+    const fishKg = s.balance.reduce((total, b) => total + b.balanceKg, 0);
+    tiles.push(["Bilance tržby − zarybnění", `${money > 0 ? "+" : ""}${czk(money)}`, sign(money)], ["Bilance ryb (nasazeno − uloveno)", `${fishKg > 0 ? "+" : ""}${kg(fishKg)}`, sign(fishKg)]);
     return `<div class="report-head"><div><span class="section-kicker">${esc(s.revir)}</span><h2>${esc(title || `${short(s.from)} – ${short(s.to)}`)}</h2><small class="muted-inline">Období ${esc(short(s.from))} – ${esc(short(s.to))} · vytvořeno ${esc(czDateTime(s.generatedAt))}</small></div><button class="secondary-button no-print" type="button" onclick="window.print()">⎙ Tisk / PDF</button></div>
-      <div class="kpi-grid">${tiles.map(([label, value]) => `<div class="kpi"><small>${esc(label)}</small><b>${esc(value)}</b></div>`).join("")}</div>
+      <div class="kpi-grid">${tiles.map(([label, value, tone]) => `<div class="kpi${tone ? ` kpi-${tone}` : ""}"><small>${esc(label)}</small><b>${esc(value)}</b></div>`).join("")}</div>
       <div class="viz-root viz-grid-2"><div class="viz-card" data-chart="tickets"></div><div class="viz-card" data-chart="money"></div><div class="viz-card" data-chart="species"></div><div class="viz-card" data-chart="balance"></div></div>
       <h3>Úlovky podle druhů</h3>${s.catches.bySpecies.length ? `<table class="data-table"><thead><tr><th>Druh</th><th>Kusů</th><th>Hmotnost</th><th>Prům. délka</th><th>Max. délka</th></tr></thead><tbody>${s.catches.bySpecies.map((c) => `<tr><td data-label="Druh"><b>${esc(c.species)}</b></td><td data-label="Kusů">${esc(c.count)}</td><td data-label="Hmotnost">${esc(kg(c.weightKg))}${c.weighed < c.count ? ` <small class="muted-inline">(${esc(c.weighed)}/${esc(c.count)} vážených)</small>` : ""}</td><td data-label="Prům. délka">${esc(c.avgLength)} cm</td><td data-label="Max. délka">${esc(c.maxLength)} cm</td></tr>`).join("")}</tbody></table>` : '<p class="muted">Žádné úlovky.</p>'}
       <h3>Uloveno vs. nasazeno</h3>${balanceTable(s.balance)}
