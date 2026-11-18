@@ -177,3 +177,14 @@ input[type=checkbox],input[type=radio]{width:auto!important;margin:0!important;p
 .qr-scan-box{background:#fff;border-radius:12px;padding:16px;width:min(420px,100%);text-align:center}.qr-scan-box p{margin:12px 0;font-size:14px}
 .qr-scan-video{position:relative;border-radius:8px;overflow:hidden;background:#000;aspect-ratio:1}.qr-scan-video video{width:100%;height:100%;object-fit:cover;display:block}
 .qr-scan-frame{position:absolute;inset:18%;border:3px solid rgba(255,255,255,.9);border-radius:12px;box-shadow:0 0 0 999px rgba(0,0,0,.25)}
+
+/* Kalendářní výběr u datových polí */
+.date-wrap{position:relative;display:block;width:100%}
+.date-wrap>input.date-input{width:100%;padding-right:40px!important}
+.date-wrap .date-pick{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;color:var(--muted,#6d6862);cursor:pointer;padding:0}
+.date-wrap .date-pick:hover,.date-wrap .date-pick:focus-visible{background:rgba(0,117,222,.1);color:var(--brand,#0075de)}
+.date-wrap .date-native{position:absolute;right:4px;bottom:0;width:32px;height:1px;opacity:0;pointer-events:none;border:0;padding:0}
+.panel-content>.date-wrap{margin-bottom:18px}
+.panel-content>.date-wrap>input.date-input{width:100%;border:1px solid #ddd;border-radius:4px;padding:11px 12px;color:var(--ink);outline:0;margin-bottom:0}
+.panel-content>.date-wrap>input.date-input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(9,127,232,.16)}
+

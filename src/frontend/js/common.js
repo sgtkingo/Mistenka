@@ -123,6 +123,46 @@
     return d.getUTCDate() === Number(m[1]) && d.getUTCMonth() + 1 === Number(m[2]) ? iso : "";
   }
   const formatCzDate = (iso) => (/^\d{4}-\d{2}-\d{2}$/.test(iso || "") ? `${Number(iso.slice(8))}. ${Number(iso.slice(5, 7))}. ${iso.slice(0, 4)}` : "");
+  // Kalendářní výběr pro všechna textová data (.date-input): text zůstává v českém tvaru, tlačítko otevře nativní kalendář.
+  function attachDatePicker(input) {
+    if (input.dataset.picker || input.autocomplete === "bday" || input.dataset.noPicker !== undefined || input.type !== "text" && input.type !== "") return;
+    input.dataset.picker = "1";
+    const wrap = document.createElement("span");
+    wrap.className = "date-wrap";
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    const native = document.createElement("input");
+    native.type = "date";
+    native.tabIndex = -1;
+    native.className = "date-native";
+    native.setAttribute("aria-hidden", "true");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "date-pick";
+    button.title = "Vybrat v kalendáři";
+    button.setAttribute("aria-label", "Vybrat datum v kalendáři");
+    button.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>';
+    wrap.append(native, button);
+    button.addEventListener("click", () => {
+      if (input.disabled || input.readOnly) return;
+      native.value = parseCzDate(input.value) || "";
+      try { native.showPicker(); } catch { native.focus(); native.click(); }
+    });
+    native.addEventListener("change", () => {
+      if (!native.value) return;
+      input.value = formatCzDate(native.value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  }
+  function enhanceDateInputs(root = document) { root.querySelectorAll?.("input.date-input").forEach(attachDatePicker); }
+  if (typeof document !== "undefined") {
+    const start = () => {
+      enhanceDateInputs();
+      new MutationObserver((list) => list.forEach((m) => m.addedNodes.forEach((n) => { if (n.nodeType === 1) { if (n.matches("input.date-input")) attachDatePicker(n); else enhanceDateInputs(n); } }))).observe(document.body, { childList: true, subtree: true });
+    };
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
+  }
   // Heslo: alespoň 8 znaků a shoda s potvrzením. Vrátí chybovou zprávu, nebo "".
   const PASSWORD_MIN = 8;
   function passwordProblem(password, confirmation) {
