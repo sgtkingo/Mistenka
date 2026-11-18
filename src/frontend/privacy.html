@@ -82,11 +82,12 @@
         applyBranding(config);
         const org = config.organization;
         const p = config.privacy;
-        const contact = org.contact || {};
-        const email = p.contactEmail || contact.email || "";
+        // Kontakt pro osobní údaje jen z nastavení organizace; dokud chybí, zobrazí se zástupný text.
+        const email = p.contactEmail || "";
+        const placeholder = (text) => `<span class="placeholder">[${text}]</span>`;
         const years = (n) => `${n} ${n === 1 ? "rok" : n < 5 ? "roky" : "let"}`;
         qs("#privacyIntro").textContent = `Jak ${org.name} zpracovává osobní údaje v aplikaci Místenka (online rezervace rybolovu).`;
-        qs("#controller").innerHTML = `<b>${esc(org.name)}</b>${org.ico ? `, IČO ${esc(org.ico)}` : ""}${org.address ? `, ${esc(org.address)}` : ""}.<br>Kontakt ve věcech osobních údajů: ${email ? `<a href="mailto:${esc(email)}">${esc(email)}</a>` : "kontakt organizace na úvodní stránce"}${contact.phone ? `, tel. ${esc(contact.phone)}` : ""}. Pověřence pro ochranu osobních údajů organizace jmenovat nemusí.`;
+        qs("#controller").innerHTML = `<b>${esc(org.name)}</b>, IČO ${org.ico ? esc(org.ico) : placeholder("IČO organizace")}, se sídlem ${org.address ? esc(org.address) : placeholder("adresa sídla organizace")}.<br>Kontakt ve věcech osobních údajů: ${email ? `<a href="mailto:${esc(email)}">${esc(email)}</a>` : placeholder("e-mail organizace pro ochranu osobních údajů")}. Pověřence pro ochranu osobních údajů organizace jmenovat nemusí.`;
         qs("#retentionList").innerHTML = [
           `<b>Místenky a úlovky</b> s údaji držitele: ${years(p.ticketYears)} po skončení kalendářního roku, ve kterém byl den lovu (kontrola, reklamace, evidence úlovků).`,
           `<b>Účetní záznamy o platbách</b>: ${years(p.accountingYears)} (zákon o účetnictví a daňové předpisy); údaje o plátci se pak odstraní.`,
@@ -96,7 +97,7 @@
           `<b>Zálohy databáze</b>: denní zálohy 2 dny, zálohy po uzávěrkách sezon nejvýše ${years(p.backupYears)}.`,
           "<b>Blokace nákupu</b>: po dobu blokace a poté po dobu uchování místenek."
         ].map((item) => `<li>${item}</li>`).join("");
-        qs("#rightsContact").innerHTML = `Svá práva uplatníte ${email ? `e-mailem na <a href="mailto:${esc(email)}">${esc(email)}</a>` : "u správce organizace"}. Odpovíme bez zbytečného odkladu, nejpozději do jednoho měsíce.`;
+        qs("#rightsContact").innerHTML = `Svá práva uplatníte e-mailem na ${email ? `<a href="mailto:${esc(email)}">${esc(email)}</a>` : placeholder("e-mail organizace pro ochranu osobních údajů")}. Odpovíme bez zbytečného odkladu, nejpozději do jednoho měsíce.`;
       } catch (error) {
         qs("#privacyIntro").textContent = error.message;
       }
