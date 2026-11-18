@@ -96,6 +96,17 @@ function memberBlocked(config, { ticket, block, limits }) {
   };
 }
 
+// ---------- nastavení (B5) ----------
+function paymentSettingsChanged(config, { actorName, before, after, at }) {
+  const labels = { accountNumber: "Číslo účtu", bankCode: "Kód banky", iban: "IBAN", recipientName: "Příjemce", reservationMinutes: "Rezervace (min)", messagePrefix: "Zpráva pro příjemce" };
+  const rows = Object.keys(labels).filter((key) => String(before?.[key] ?? "") !== String(after?.[key] ?? "")).map((key) => [labels[key], `${before?.[key] ?? "—"} → ${after?.[key] ?? "—"}`]);
+  return {
+    subject: "Místenka – změněny platební údaje",
+    html: layout(config, "Změněny platební údaje", `<p>${esc(actorName)} změnil(a) ${esc(czDateTime(at))} platební údaje Místenky. Nové objednávky se platí podle nových údajů.</p>${table(rows.length ? rows : [["Změna", "beze změny hodnot"]])}<p><b>Pokud o změně nevíte, okamžitě ji prověřte</b> – změna účtu je nejčastější podvod.</p>`),
+    text: textBlock([`${actorName} změnil(a) ${czDateTime(at)} platební údaje Místenky.`, ...rows.map(([k, v]) => `${k}: ${v}`), "Pokud o změně nevíte, okamžitě ji prověřte."])
+  };
+}
+
 // ---------- zrušení správcem (B4) ----------
 function ticketCancelled(config, { ticket, revir }) {
   const contact = [config.organization.contact?.email, config.organization.contact?.phone].filter(Boolean).join(", ");
@@ -150,4 +161,4 @@ function createFileMailer(dir) {
   };
 }
 
-module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, ticketCancelled, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, createFileMailer, czDate };
+module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, ticketCancelled, paymentSettingsChanged, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, createFileMailer, czDate };

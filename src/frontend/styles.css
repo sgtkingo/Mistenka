@@ -102,3 +102,11 @@ tr.clickable{cursor:pointer}tr.clickable:hover td{background:#f6fbff}#csvLink{te
 .resolve-form{display:grid;grid-template-columns:140px 1fr;gap:8px}.resolve-form input{margin-bottom:0!important}.resolve-actions{grid-column:1/-1;display:flex;gap:10px;align-items:center}.resolve-actions .text-button{margin:0}
 .inline-link{margin:4px 0 0!important;padding:0}.voucher-code{font-size:12px;letter-spacing:.06em;background:var(--warm);padding:2px 6px;border-radius:4px}
 @media(max-width:800px){.ticket-filters{grid-template-columns:1fr 1fr}.ticket-filters input[type=search]{grid-column:1/-1}.resolve-form{grid-template-columns:1fr}}
+
+/* ---------- nastavení (B5) ---------- */
+.settings-tabs{flex-wrap:wrap}.settings-form h3{font-size:15px;margin:22px 0 10px}.settings-form h3:first-child{margin-top:4px}.form-three-col{display:grid;grid-template-columns:1fr 1fr 2fr;gap:12px}.form-four-col{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.settings-check{margin-top:30px;font-size:13px}.edit-table input:not([type=checkbox]){margin-bottom:0!important;padding:7px 8px!important;font-size:13px}.edit-table td{padding:6px}.table-scroll{max-height:520px;overflow:auto;border:1px solid var(--line);border-radius:6px}
+.rule-section{border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:10px}.rule-section textarea{margin-bottom:6px}.rule-section .text-button{margin:0}
+.settings-footer{position:sticky;bottom:0;background:#fff;display:flex;gap:10px;align-items:center;padding:14px 0;margin-top:20px;border-top:1px solid var(--line)}.settings-footer input{margin-bottom:0!important;max-width:340px}
+.settings-tools{display:flex;gap:16px;flex-wrap:wrap}.settings-tools .text-button{margin:4px 0 0}.settings-history{margin-top:10px}.json-editor{font-family:ui-monospace,Consolas,monospace;font-size:12px;width:100%}
+@media(max-width:800px){.form-three-col,.form-four-col{grid-template-columns:1fr 1fr}.settings-footer{flex-wrap:wrap}}

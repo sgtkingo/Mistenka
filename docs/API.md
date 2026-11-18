@@ -308,6 +308,33 @@ Správa pro `manager`/`admin` (🛠, jinak `401`/`403 forbidden_role`). `revirId
   "ticket": { "code": "D4KM3R", "holder": "Eva Štiková" }, "needsAction": true, "resolution": null /* { action, note, at } */ }
 ```
 
+## Nastavení (B5)
+
+Konfigurace = soubor (`config/organization.json` + pravidla druhů, ve WordPressu výchozí hodnoty pluginu) **+ poslední uložená verze každé části z manažerského portálu**. Každé uložení vytvoří novou verzi celé části s autorem a poznámkou (`settings_versions`); změna platí okamžitě (i pro `GET /config`), před uložením se zkontroluje celá konfigurace. Obnovení starší verze nebo výchozích hodnot ze souboru = uložení kopie jako nové verze, historie se nepřepisuje. Zdroj plateb (`fake` / `fio`) a Fio token zůstávají jen v konfiguraci serveru.
+
+| Část (`scope`) | Obsah | Kdo |
+| --- | --- | --- |
+| `organization` | `{ organization (vč. contact, managerEmail), email, publicCheck, limitPolicy }` | správce, admin |
+| `payment` | `{ accountNumber, bankCode, recipientName, reservationMinutes, messagePrefix }` – po změně dostanou všichni admini e-mail `payment_settings_changed` | **jen admin** |
+| `revir:<id>` | revír bez `id` a odvozených `fishRules` (cena, kapacita, podrevíry, doba lovu, texty, pravidla, `speciesOverrides`, …) | správce, admin |
+| `species:<odkaz>` | dokument pravidel druhů (druhy, míry, hájení, `dailyLimits`, `periodLimits`) | správce, admin |
+
+| Endpoint 🛠 | Tělo | Odpověď / chyby |
+| --- | --- | --- |
+| `GET /manage/settings` | – | `{ organization: { data, version, source: "file" \| "database", updatedAt, updatedBy }, payment: { data, iban, provider, … }, reviry: [{ id, data, … }], species: [{ ref, data, … }], canEditPayment }` |
+| `PUT /manage/settings/organization` | `{ data, note? }` | `{ scope, version, settings }`; `400 invalid_settings` (zpráva říká co je špatně) |
+| `PUT /manage/settings/payment` | `{ data, note? }` | totéž; `403 forbidden_role` pro správce |
+| `POST /manage/settings/reviry` | `{ id, data, note? }` | `201`; nový revír (id `a-z0-9-`, nelze změnit); `409 revir_exists` |
+| `PUT /manage/settings/reviry/{id}` | `{ data, note? }` | `200`; `404` |
+| `PUT /manage/settings/species` | `{ ref, data, note? }` | `200`; `404` |
+| `GET /manage/settings/history?scope=` | – | `{ scope, versions: [{ version, note, createdAt, createdBy }], hasFile }` |
+| `GET /manage/settings/versions/{id}` | – | `{ scope, version, data, createdAt }` |
+| `POST /manage/settings/versions/{id}/restore` | – | jako uložení |
+| `POST /manage/settings/reset` | `{ scope }` | výchozí hodnoty ze souboru jako nová verze |
+| `GET /manage/settings/export` (jen admin) | – | `{ organization, species, exportedAt }` – platná konfigurace ve tvaru souborů (záloha, převod do WordPressu) |
+
+Odevzdaná místenka si ukládá verzi pravidel, podle které byla zkontrolována (`rulesVersion`, např. `crs-smas-mp-2026-2027@v12` nebo `…@soubor`; vidí ji správce v detailu místenky). Cena se ukládá k objednávce, změna ceny platí jen pro nové objednávky.
+
 ## Porybný (B2)
 
 Veřejná kontrola (`GET /tickets/{code}`) zůstává pro každého. Přihlášený uživatel s rolí `warden` navíc (jinak `401 unauthorized` / `403 forbidden_role`; admin bez 2FA `403 mfa_required`):
@@ -410,6 +437,7 @@ V tomto pořadí; Node je spouští v intervalu, WordPress cron hostingu přes `
 | `limit_exceeded` | odevzdání s překročeným limitem, na `organization.managerEmail` | `status.html?code=…` |
 | `member_blocked` | automatická blokace po opakovaném porušení limitů (držiteli) | – |
 | `ticket_cancelled` | správce zrušil vystavenou místenku | – |
+| `payment_settings_changed` | admin změnil platební údaje (všem adminům) | – |
 | `closure_notice` | mimořádné uzavření revíru na den místenky | `status.html?code=…` |
 | `staff_invite` | admin pozval správce/admina | `account.html#invite=<token>` |
 | `account_deleted` | smazání účtu | – |

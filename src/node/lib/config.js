@@ -10,8 +10,29 @@ function fail(message) {
   throw new Error(`Chybná konfigurace: ${message}`);
 }
 
-function loadConfig(file = process.env.MISTENKA_CONFIG || DEFAULT_PATH) {
-  const config = JSON.parse(fs.readFileSync(file, "utf8"));
+// Zdroj konfigurace: soubor MO + soubory pravidel druhů ryb, na které odkazuje (speciesRules).
+function readSource(file = process.env.MISTENKA_CONFIG || DEFAULT_PATH) {
+  const raw = JSON.parse(fs.readFileSync(file, "utf8"));
+  const baseDir = path.dirname(file);
+  const species = {};
+  const refs = new Set([raw.speciesRules, ...(raw.reviry || []).map((r) => r.speciesRules)].filter(Boolean));
+  for (const ref of refs) {
+    try { species[ref] = JSON.parse(fs.readFileSync(path.resolve(baseDir, ref), "utf8")); } catch (error) { fail(`nelze načíst pravidla ${ref} (${error.message})`); }
+  }
+  return { file, raw, species };
+}
+
+function loadConfig(file) {
+  const source = readSource(file);
+  const config = buildConfig(source.raw, source.species);
+  Object.defineProperty(config, "source", { value: source, enumerable: false });
+  return config;
+}
+
+// Sestaví a zkontroluje konfiguraci z dat MO (tvar organization.json) a pravidel druhů (ref -> dokument).
+// Používá se pro soubor i pro nastavení uložené v databázi (B5); chyba = výjimka „Chybná konfigurace: …“.
+function buildConfig(rawInput, speciesDocs) {
+  const config = structuredClone(rawInput);
   if (!config.organization?.shortName) fail("chybí organization.shortName");
   if (!Array.isArray(config.reviry) || config.reviry.length === 0) fail("chybí seznam reviry");
   if (!config.payment?.accountNumber || !config.payment?.bankCode) fail("chybí payment.accountNumber nebo payment.bankCode");
@@ -23,8 +44,10 @@ function loadConfig(file = process.env.MISTENKA_CONFIG || DEFAULT_PATH) {
     for (const key of ["name", "priceCzk", "dailyCapacity", "bookingDaysAhead", "lateReturnDays"]) {
       if (revir[key] === undefined || revir[key] === null || revir[key] === "") fail(`revír ${revir.id}: chybí ${key}`);
     }
-    if (!Number.isInteger(revir.dailyCapacity) || revir.dailyCapacity < 1) fail(`revír ${revir.id}: dailyCapacity musí být kladné celé číslo`);
-    if (!(revir.priceCzk >= 0)) fail(`revír ${revir.id}: priceCzk musí být >= 0`);
+    if (!Number.isInteger(revir.dailyCapacity) || revir.dailyCapacity < 1) fail(`revír ${revir.id}: denní kapacita musí být kladné celé číslo`);
+    if (!(typeof revir.priceCzk === "number" && revir.priceCzk >= 0)) fail(`revír ${revir.id}: cena musí být číslo >= 0`);
+    if (!Number.isInteger(revir.bookingDaysAhead) || revir.bookingDaysAhead < 0 || revir.bookingDaysAhead > 60) fail(`revír ${revir.id}: prodej dopředu musí být 0–60 dní`);
+    if (!Number.isInteger(revir.lateReturnDays) || revir.lateReturnDays < 0 || revir.lateReturnDays > 60) fail(`revír ${revir.id}: lhůta pro opožděné odevzdání musí být 0–60 dní`);
     if (revir.ticketSubdistricts !== undefined) {
       if (!Array.isArray(revir.ticketSubdistricts)) fail(`revír ${revir.id}: ticketSubdistricts musí být seznam čísel podrevírů`);
       for (const number of revir.ticketSubdistricts) {
@@ -33,43 +56,52 @@ function loadConfig(file = process.env.MISTENKA_CONFIG || DEFAULT_PATH) {
     }
   }
   config.payment.reservationMinutes ||= 60;
+  if (!Number.isInteger(config.payment.reservationMinutes) || config.payment.reservationMinutes < 10 || config.payment.reservationMinutes > 24 * 60) fail("rezervace před platbou musí být 10–1440 minut");
   config.payment.provider ||= "fake";
   config.publicCheck ||= { showFullName: true, memberIdVisibleChars: 4 };
-  // Automatická blokace po opakovaném porušení limitů (0 = vypnuto). Později nastavení v manažerském portálu (B5).
+  // Automatická blokace po opakovaném porušení limitů (0 = vypnuto).
   config.limitPolicy = { violationsBeforeBlock: 0, blockDays: null, ...(config.limitPolicy || {}) };
-  const baseDir = path.dirname(file);
-  const orgRules = loadSpeciesRules(baseDir, config.speciesRules, "organizace");
+  if (!Number.isInteger(config.limitPolicy.violationsBeforeBlock) || config.limitPolicy.violationsBeforeBlock < 0) fail("počet porušení před blokací musí být celé číslo >= 0");
+  if (config.limitPolicy.blockDays !== null && !(Number.isInteger(config.limitPolicy.blockDays) && config.limitPolicy.blockDays > 0)) fail("délka blokace musí být kladný počet dní, nebo prázdná (do konce roku)");
+  const managerEmail = config.organization.managerEmail;
+  if (managerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(managerEmail)) fail("neplatný e-mail správce");
+  const orgRules = speciesRulesFor(speciesDocs, config.speciesRules, "organizace");
   for (const revir of config.reviry) {
-    const rules = revir.speciesRules ? loadSpeciesRules(baseDir, revir.speciesRules, `revír ${revir.id}`) : orgRules;
+    const rules = revir.speciesRules ? speciesRulesFor(speciesDocs, revir.speciesRules, `revír ${revir.id}`) : orgRules;
     revir.fishRules = applyOverrides(rules, revir.speciesOverrides || [], revir.id);
   }
   config.iban = czIban(config.payment.accountNumber, config.payment.bankCode);
   return config;
 }
 
-// Pravidla druhů ryb (míry, hájení, denní limity) jsou v samostatném souboru, např.
-// config/species/crs-smas-mp-2026-2027.json. Cesta je relativní ke konfiguraci MO.
-function loadSpeciesRules(baseDir, ref, owner) {
-  if (!ref) fail(`${owner}: chybí odkaz speciesRules na soubor s pravidly druhů ryb`);
-  const file = path.resolve(baseDir, ref);
-  let rules;
-  try { rules = JSON.parse(fs.readFileSync(file, "utf8")); } catch (error) { fail(`${owner}: nelze načíst ${file} (${error.message})`); }
+// Pravidla druhů ryb (míry, hájení, limity), např. config/species/crs-smas-mp-2026-2027.json.
+function speciesRulesFor(speciesDocs, ref, owner) {
+  if (!ref) fail(`${owner}: chybí odkaz speciesRules na pravidla druhů ryb`);
+  const rules = speciesDocs[ref];
+  if (!rules) fail(`${owner}: pravidla ${ref} nejsou načtená`);
+  return validateSpeciesRules(rules, ref);
+}
+function validateSpeciesRules(rules, file) {
   if (!Array.isArray(rules.species) || rules.species.length === 0) fail(`${file}: chybí seznam species`);
   const ids = new Set();
   for (const s of rules.species) {
     if (!/^[a-z0-9-]+$/.test(s.id || "") || !s.name) fail(`${file}: druh musí mít id (a-z0-9-) a name`);
     if (ids.has(s.id)) fail(`${file}: duplicitní druh ${s.id}`);
     ids.add(s.id);
+    for (const key of ["minLength", "releaseFromLength", "weightFactor"]) {
+      if (s[key] !== undefined && s[key] !== null && !(typeof s[key] === "number" && s[key] >= 0)) fail(`${file}: ${s.name} – ${key} musí být číslo >= 0`);
+    }
     for (const season of s.closedSeasons || []) {
-      if (!/^\d{2}-\d{2}$/.test(season.from) || !/^\d{2}-\d{2}$/.test(season.to)) fail(`${file}: ${s.id} má neplatnou dobu hájení (MM-DD)`);
+      if (!/^\d{2}-\d{2}$/.test(season.from) || !/^\d{2}-\d{2}$/.test(season.to)) fail(`${file}: ${s.name} má neplatnou dobu hájení (MM-DD)`);
     }
   }
   for (const limit of rules.dailyLimits || []) {
+    if (!(Number.isInteger(limit.maxCount) && limit.maxCount > 0)) fail(`${file}: denní limit ${limit.id} musí mít maxCount > 0`);
     for (const id of limit.species) if (!ids.has(id)) fail(`${file}: denní limit ${limit.id} odkazuje na neznámý druh ${id}`);
   }
   for (const limit of rules.periodLimits || []) {
     if (!["week", "month"].includes(limit.period)) fail(`${file}: limit ${limit.id} má neplatné období (week | month)`);
-    if (!(limit.maxCount > 0)) fail(`${file}: limit ${limit.id} musí mít maxCount > 0`);
+    if (!(Number.isInteger(limit.maxCount) && limit.maxCount > 0)) fail(`${file}: limit ${limit.id} musí mít maxCount > 0`);
     for (const id of limit.species) if (!ids.has(id)) fail(`${file}: limit ${limit.id} odkazuje na neznámý druh ${id}`);
   }
   return { id: rules.id, name: rules.name, validFrom: rules.validFrom, validTo: rules.validTo, sources: rules.sources || [], dailyLimits: rules.dailyLimits || [], periodLimits: rules.periodLimits || [], species: rules.species };
@@ -129,4 +161,4 @@ function czIban(accountNumber, bankCode) {
   return `CZ${String(98 - remainder).padStart(2, "0")}${bban}`;
 }
 
-module.exports = { loadConfig, getRevir, revirRules, ticketSubdistrictLabel, publicConfig, czIban };
+module.exports = { loadConfig, readSource, buildConfig, getRevir, revirRules, ticketSubdistrictLabel, publicConfig, czIban };

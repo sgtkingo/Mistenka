@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 
 // Sloupce tabulky users (sdílí vytvoření i migrace).
 const USERS_COLUMNS = `
@@ -63,7 +63,7 @@ function openDatabase(dataDir) {
     if (!existing.length) return; // tabulka vznikne níže už s novými sloupci
     for (const [column, definition] of columns) if (!existing.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   };
-  addColumns("tickets", [["cancel_reason", "TEXT"], ["cancelled_by", "INTEGER"]]);
+  addColumns("tickets", [["cancel_reason", "TEXT"], ["cancelled_by", "INTEGER"], ["rules_version", "TEXT"]]);
   addColumns("bank_transactions", [["resolution", "TEXT"], ["resolution_note", "TEXT"], ["resolved_at", "TEXT"], ["resolved_by", "INTEGER"]]);
   addColumns("vouchers", [["created_at", "TEXT"], ["created_by", "INTEGER"], ["note", "TEXT"], ["voided_at", "TEXT"]]);
   // Migrace 4 -> 5: zadržení místenky porybným.
@@ -132,8 +132,19 @@ function openDatabase(dataDir) {
       seized_reason TEXT,
       seized_place TEXT,
       cancel_reason TEXT,                      -- zrušení správcem (B4)
-      cancelled_by INTEGER
+      cancelled_by INTEGER,
+      rules_version TEXT                       -- verze pravidel druhů použitá při odevzdání (B5)
     );
+    -- Nastavení z manažerského portálu (B5): každá změna = nová verze celé části.
+    CREATE TABLE IF NOT EXISTS settings_versions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      scope TEXT NOT NULL,                     -- organization | payment | revir:<id> | species:<odkaz>
+      data TEXT NOT NULL,                      -- JSON
+      note TEXT,
+      created_by INTEGER,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS settings_versions_scope ON settings_versions (scope, id);
     -- Kontroly místenek porybným (obdoba zápisu stráže do povolenky).
     CREATE TABLE IF NOT EXISTS ticket_checks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

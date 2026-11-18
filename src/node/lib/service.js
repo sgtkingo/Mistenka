@@ -37,7 +37,7 @@ function catchProblem(species, length, fishingDate) {
   return null;
 }
 
-function createService({ db, config, provider, mailer, appUrl, operations }) {
+function createService({ db, config, provider, mailer, appUrl, operations, settings }) {
   // ---------- pomocné ----------
   function makeCode() {
     for (;;) {
@@ -316,7 +316,7 @@ function createService({ db, config, provider, mailer, appUrl, operations }) {
       if (state === "closed_unreturned") throw new ApiError(409, "return_closed", "Lhůta pro odevzdání uplynula, místenka byla uzavřena jako neodevzdaná. Kontaktujte hospodáře.");
       const insert = db.prepare("INSERT INTO catches (ticket_id, species, length_cm, weight_kg, weight_estimated) VALUES (?, ?, ?, ?, ?)");
       for (const c of catches) insert.run(fresh.id, c.species, c.length, c.weight, c.weightEstimated ? 1 : 0);
-      db.prepare("UPDATE tickets SET returned_at = ?, return_late = ?, no_catch = ? WHERE id = ?").run(iso(now), now >= windowOf(fresh).end ? 1 : 0, noCatch ? 1 : 0, fresh.id);
+      db.prepare("UPDATE tickets SET returned_at = ?, return_late = ?, no_catch = ?, rules_version = ? WHERE id = ?").run(iso(now), now >= windowOf(fresh).end ? 1 : 0, noCatch ? 1 : 0, settings ? settings.rulesVersion(fresh.revir_id) : null, fresh.id);
       const returned = db.prepare("SELECT * FROM tickets WHERE id = ?").get(fresh.id);
       recordViolations(returned);
       return ownerTicket(returned);
@@ -580,7 +580,7 @@ function createService({ db, config, provider, mailer, appUrl, operations }) {
     const sentEmails = db.prepare("SELECT kind, to_email, subject, created_at, sent_at, error FROM email_outbox WHERE ticket_id = ? ORDER BY id").all(ticket.id)
       .map((e) => ({ kind: e.kind, to: e.to_email, subject: e.subject, createdAt: e.created_at, sentAt: e.sent_at, error: e.error }));
     const cancellation = ticket.cancelled_at ? { at: ticket.cancelled_at, reason: ticket.cancel_reason || "zrušeno držitelem před zaplacením", byManager: Boolean(ticket.cancelled_by) } : null;
-    return { ticket: { ...ownerTicket(ticket), variableSymbol: ticket.variable_symbol, account: Boolean(ticket.user_id) }, payments, checks, violations, emails: sentEmails, cancellation, cancellable: ["pending_payment", "payment_expired", "future", "active", "expired_unreturned", "seized"].includes(stateOf(ticket)) };
+    return { ticket: { ...ownerTicket(ticket), variableSymbol: ticket.variable_symbol, account: Boolean(ticket.user_id), rulesVersion: ticket.rules_version || null }, payments, checks, violations, emails: sentEmails, cancellation, cancellable: ["pending_payment", "payment_expired", "future", "active", "expired_unreturned", "seized"].includes(stateOf(ticket)) };
   }
   // Zrušení správcem: vystavená neodevzdaná místenka nebo objednávka. Peníze se nevracejí automaticky.
   function cancelByManager(actor, code, body = {}) {

@@ -911,6 +911,102 @@ test("poukazy: správce je vygeneruje a může zneplatnit nepoužitý", async ()
   assert.equal((await call("POST", `/manage/vouchers/${codes[1]}/void`, { session })).data.code, "not_voidable", "použitý poukaz nejde zneplatnit");
 });
 
+// ---------- nastavení v portálu (B5) ----------
+test("nastavení revíru: změna ceny a kapacity platí hned, neplatná hodnota se neuloží, historie a obnovení", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const member = await verifiedAccount();
+  assert.equal((await call("GET", "/manage/settings", { session: member.session })).data.code, "forbidden_role");
+  const { session } = await managerAccount();
+  const view = (await call("GET", "/manage/settings", { session })).data;
+  assert.equal(view.canEditPayment, false);
+  const revirB = view.reviry.find((r) => r.id === "revir-b");
+  assert.equal(revirB.source, "file");
+  assert.ok(!("fishRules" in revirB.data), "odvozená pravidla se neukládají");
+
+  const bad = await call("PUT", "/manage/settings/reviry/revir-b", { body: { data: { ...revirB.data, dailyCapacity: 0 } }, session });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.data.code, "invalid_settings");
+  assert.match(bad.data.error, /kapacita/);
+
+  const saved = await call("PUT", "/manage/settings/reviry/revir-b", { body: { data: { ...revirB.data, priceCzk: 250, dailyCapacity: 5 }, note: "Nový ceník" }, session });
+  assert.equal(saved.status, 200, JSON.stringify(saved.data));
+  const cfg = (await call("GET", "/config")).data.reviry.find((r) => r.id === "revir-b");
+  assert.equal(cfg.priceCzk, 250, "veřejná konfigurace hned s novou cenou");
+  assert.equal((await call("GET", "/reviry/revir-b/availability")).data.days[0].capacity, 5);
+  assert.equal((await order({ revirId: "revir-b", date: "2026-06-13" })).ticket.amountDueHalere, 25000, "nová objednávka za novou cenu");
+
+  const history = (await call("GET", "/manage/settings/history?scope=revir:revir-b", { session })).data;
+  assert.equal(history.versions[0].note, "Nový ceník");
+  assert.equal(history.hasFile, true);
+  const reset = await call("POST", "/manage/settings/reset", { body: { scope: "revir:revir-b" }, session });
+  assert.equal(reset.status, 200, JSON.stringify(reset.data));
+  assert.equal((await call("GET", "/config")).data.reviry.find((r) => r.id === "revir-b").priceCzk, revirB.data.priceCzk, "výchozí hodnoty ze souboru");
+  const restored = await call("POST", `/manage/settings/versions/${history.versions[0].version}/restore`, { session });
+  assert.equal(restored.data.settings.reviry.find((r) => r.id === "revir-b").data.priceCzk, 250, "obnovení starší verze");
+  await call("POST", "/manage/settings/reset", { body: { scope: "revir:revir-b" }, session });
+});
+
+test("nastavení organizace a pravidel ryb; verze pravidel se uloží k odevzdané místence", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const { session } = await managerAccount();
+  const view = (await call("GET", "/manage/settings", { session })).data;
+  const org = view.organization.data;
+  assert.equal((await call("PUT", "/manage/settings/organization", { body: { data: { ...org, organization: { ...org.organization, managerEmail: "spatny" } } }, session })).data.code, "invalid_settings");
+  const changed = await call("PUT", "/manage/settings/organization", { body: { data: { ...org, publicCheck: { showFullName: false, memberIdVisibleChars: 2 } } }, session });
+  assert.equal(changed.status, 200, JSON.stringify(changed.data));
+  const t = await paidTicket({ lastName: "Veřejný" });
+  const pub = (await call("GET", `/tickets/${t.code}`)).data;
+  assert.equal(pub.holder.name, "Jan V.", "zkrácené jméno ve veřejné kontrole");
+  assert.ok(pub.holder.memberId.endsWith(t.memberId.slice(-2)) && !pub.holder.memberId.endsWith(t.memberId.slice(-3)));
+  await call("POST", "/manage/settings/reset", { body: { scope: "organization" }, session });
+
+  const ref = "../../config/species/crs-smas-mp-2026-2027.json";
+  const species = view.species.find((s) => s.ref === ref);
+  assert.ok(species, JSON.stringify(view.species.map((s) => s.ref)));
+  const doc = structuredClone(species.data);
+  doc.species.find((s) => s.id === "lin-obecny").minLength = 30;
+  const savedRules = await call("PUT", "/manage/settings/species", { body: { ref, data: doc, note: "Zpřísnění lína" }, session });
+  assert.equal(savedRules.status, 200, JSON.stringify(savedRules.data));
+  const ticket = await paidTicket();
+  assert.equal((await call("POST", `/tickets/${ticket.code}/return`, { body: { catches: [{ species: "lín", length: 27 }] }, token: ticket.token })).data.code, "undersized", "nová míra platí hned");
+  assert.equal((await call("POST", `/tickets/${ticket.code}/return`, { body: { catches: [{ species: "lín", length: 31 }] }, token: ticket.token })).status, 200);
+  const detail = (await call("GET", `/manage/tickets/${ticket.code}`, { session })).data;
+  assert.match(detail.ticket.rulesVersion, /^crs-smas-mp-2026-2027@v\d+$/, "verze pravidel u místenky");
+  doc.dailyLimits[0].maxCount = 0;
+  assert.equal((await call("PUT", "/manage/settings/species", { body: { ref, data: doc }, session })).data.code, "invalid_settings");
+  await call("POST", "/manage/settings/reset", { body: { scope: `species:${ref}` }, session });
+  assert.equal((await call("GET", "/config")).data.reviry[0].fishRules.species.find((s) => s.id === "lin-obecny").minLength, 25);
+});
+
+test("platební údaje mění jen admin; změnu dostanou e-mailem všichni admini; nový revír", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const manager = await managerAccount();
+  const view = (await call("GET", "/manage/settings", { session: manager.session })).data;
+  assert.equal((await call("PUT", "/manage/settings/payment", { body: { data: view.payment.data }, session: manager.session })).data.code, "forbidden_role");
+  const admin = await verifiedAccount();
+  await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: ["admin"] } });
+  await enableTwoFactor(admin.session, T0 + 30_000);
+  await setClock("2026-06-10T08:00:00Z");
+  assert.equal((await call("PUT", "/manage/settings/payment", { body: { data: { ...view.payment.data, bankCode: "12" } }, session: admin.session })).data.code, "invalid_settings");
+  const saved = await call("PUT", "/manage/settings/payment", { body: { data: { ...view.payment.data, accountNumber: "1234567890" } }, session: admin.session });
+  assert.equal(saved.status, 200, JSON.stringify(saved.data));
+  assert.equal(saved.data.settings.payment.provider, "fake", "zdroj plateb se z portálu nemění");
+  const { ticket } = await order();
+  assert.ok(ticket.payment.spayd.includes("20100000001234567890"), "nová objednávka s novým účtem");
+  const mail = await lastEmail(admin.email, "payment_settings_changed");
+  assert.ok(mail && mail.text.includes("1234567890"), "admin dostane e-mail se změnou");
+  await call("POST", "/manage/settings/reset", { body: { scope: "payment" }, session: admin.session });
+
+  const created = await call("POST", "/manage/settings/reviry", { body: { id: "revir-c", data: { name: "Revír C", priceCzk: 100, dailyCapacity: 10, bookingDaysAhead: 2, lateReturnDays: 7 } }, session: manager.session });
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  assert.ok((await call("GET", "/config")).data.reviry.some((r) => r.id === "revir-c"), "nový revír je hned v nabídce");
+  assert.equal((await call("POST", "/manage/settings/reviry", { body: { id: "revir-c", data: { name: "X" } }, session: manager.session })).data.code, "revir_exists");
+  const exported = await call("GET", "/manage/settings/export", { session: admin.session });
+  assert.ok(exported.data.organization.reviry.some((r) => r.id === "revir-c"), "export platné konfigurace");
+  assert.equal((await call("GET", "/manage/settings/export", { session: manager.session })).data.code, "forbidden_role");
+  await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: [] } }); // průvodce na konci testů čeká, že admin neexistuje
+});
+
 // ---------- průvodce prvním spuštěním a pozvání správce ----------
 // Musí běžet poslední: po založení admina se průvodce zavře.
 test("průvodce prvním spuštěním: admin vznikne jen s jednorázovým odkazem a rovnou s 2FA", async () => {

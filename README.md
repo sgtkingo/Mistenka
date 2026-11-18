@@ -44,6 +44,10 @@ npm run user -- setup                     # nový odkaz na průvodce (jen když 
 npm run user -- roles vas@email.cz admin  # ruční přidělení role
 ```
 
+## Nastavení v portálu
+
+Organizaci, revíry (cena, kapacita, podrevíry, doba lovu, pravidla), ryby a limity mění správce v manažerském portálu (Nastavení), platební údaje jen admin. Změny se ukládají jako verze do databáze a mají přednost před konfiguračním souborem, který zůstává výchozími hodnotami. Admin si může platnou konfiguraci stáhnout (export JSON).
+
 ## Jiná MO nebo jiný revír
 
 1. Zkopírujte `config/organization.json` a upravte `organization`, `payment`, `email` a seznam `reviry`.

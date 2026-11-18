@@ -26,8 +26,8 @@
         <button class="manage-nav-item" type="button" data-section="limits">Limity a blokace</button>
         <button class="manage-nav-item" type="button" data-section="announcements">Důležité</button>
         <button class="manage-nav-item" type="button" data-section="seasons">Sezona a uzavření</button>
+        <button class="manage-nav-item" type="button" data-section="settings">Nastavení</button>
         <span class="manage-nav-group">Připravujeme</span>
-        <button class="manage-nav-item" type="button" data-section="soon" data-title="Nastavení organizace a revírů" data-step="B5">Nastavení</button>
         <button class="manage-nav-item" type="button" data-section="soon" data-title="Zarybnění" data-step="B6">Zarybnění</button>
         <button class="manage-nav-item" type="button" data-section="soon" data-title="Přehledy a uzávěrky" data-step="B6">Přehledy</button>
         <button class="manage-nav-item admin-only hidden" type="button" data-section="soon" data-title="Zálohy" data-step="B7">Zálohy</button>
@@ -147,6 +147,13 @@
         <div id="closureList"></div>
       </section>
 
+      <section class="panel-card manage-section hidden" id="section-settings">
+        <div class="panel-heading"><div><span class="section-kicker">Organizace</span><h1>Nastavení</h1></div></div>
+        <p class="panel-intro">Každé uložení vytvoří novou verzi s vaším jménem; starší verzi lze obnovit. Výchozí hodnoty jsou v konfiguračním souboru serveru.</p>
+        <div class="tabs settings-tabs" id="settingsTabs"></div>
+        <div id="settingsPanel"></div>
+      </section>
+
       <section class="panel-card manage-section hidden" id="section-soon">
         <div class="panel-heading"><div><span class="section-kicker" id="soonStep"></span><h1 id="soonTitle"></h1></div></div>
         <p class="muted">Tato sekce přibude v dalším kroku podle plánu (docs/PLAN.md).</p>
@@ -158,5 +165,6 @@
   <script src="js/env.js"></script>
   <script src="js/common.js"></script>
   <script src="js/manage.js"></script>
+  <script src="js/manage-settings.js"></script>
 </body>
 </html>

@@ -114,7 +114,7 @@ Vše nejdřív v Node verzi. WordPress (WP uživatelé s vlastními rolemi, při
 - **„Důležité“:** zprávy pro MO nebo konkrétní revír, volitelně platnost od–do, jinak do smazání. Na úvodní stránce nejvýš 3 aktivní (přepínání tečkami). Nahradí `notice` v konfiguraci.
 - Sezona: otevření a uzavření, mimořádné uzavření jednotlivých dní.
 
-**B5. Manažerský portál: nastavení**
+**B5. Manažerský portál: nastavení** – *hotovo v Node verzi 18. 11. 2026 (38 sdílených testů API).* Revír nelze z portálu smazat (id je u místenek); pole, která formulář nenabízí, upraví admin jako JSON.
 - Organizace, revíry, ceny, kapacity, kontakty (včetně e-mailu správce), pravidla revíru a tabulka ryb. `config/organization.json` zůstane jako výchozí data a import, změny se ukládají do DB s historií. Pravidla úlovků se verzují a místenka si pamatuje verzi, podle které se kontrolovala.
 - Platební údaje (účet/IBAN) smí měnit jen admin; změna se audituje a oznámí e-mailem všem adminům. Fio token zůstává mimo DB.
 

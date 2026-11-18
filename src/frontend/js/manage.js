@@ -15,8 +15,9 @@ qsa(".manage-nav-item").forEach((item) => item.addEventListener("click", () => {
   qsa(".manage-nav-item").forEach((other) => other.classList.toggle("active", other === item));
   const section = item.dataset.section;
   qsa(".manage-section").forEach((el) => el.classList.toggle("hidden", el.id !== `section-${section}`));
-  if (section !== "soon") history.replaceState(null, "", section === "tickets" ? location.pathname : `#${section}`);
+  if (section !== "soon" && location.hash.slice(1).split("/")[0] !== section) history.replaceState(null, "", section === "tickets" ? location.pathname : `#${section}`);
   if (section === "tickets") loadTickets();
+  if (section === "settings") window.MistenkaSettings.load(decodeURIComponent(location.hash.split("/")[1] || ""));
   if (section === "payments") loadPayments();
   if (section === "vouchers") loadVouchers();
   if (section === "users") loadUsers();
@@ -401,6 +402,6 @@ qs("#closureForm").addEventListener("submit", (event) => submitForm(event, async
   loadTickets();
   api("/manage/payments").then(({ payments }) => updatePaymentCount(payments.length)).catch(() => {});
   // Odkaz přímo na sekci: manage.html#seasons
-  const target = qs(`.manage-nav-item[data-section="${CSS.escape(location.hash.slice(1))}"]`);
+  const target = qs(`.manage-nav-item[data-section="${CSS.escape(location.hash.slice(1).split("/")[0])}"]`);
   if (target && !target.classList.contains("hidden")) target.click();
 })();

@@ -22,6 +22,7 @@ const { createFileMailer } = require("./lib/emails");
 const { createService, ApiError } = require("./lib/service");
 const { createAccounts } = require("./lib/accounts");
 const { createOperations } = require("./lib/operations");
+const { createSettings } = require("./lib/settings");
 const time = require("./lib/time");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -35,8 +36,9 @@ const config = loadConfig();
 const db = openDatabase(DATA_DIR);
 const provider = createProvider(config);
 const mailer = createFileMailer(path.join(DATA_DIR, "outbox"));
+const settings = createSettings({ db, config }); // nastavení z portálu (B5) přepíše hodnoty ze souboru
 const operations = createOperations({ db, config, appUrl: APP_URL });
-const service = createService({ db, config, provider, mailer, appUrl: APP_URL, operations });
+const service = createService({ db, config, provider, mailer, appUrl: APP_URL, operations, settings });
 const accounts = createAccounts({ db, config, appUrl: APP_URL });
 service.addJob("accounts", () => accounts.cleanup());
 
@@ -219,6 +221,26 @@ async function handleApi(req, res, url, ip) {
     }
     if (method === "DELETE" && id) return send(res, 200, { announcements: operations.deleteAnnouncement, seasons: operations.deleteSeason, closures: operations.deleteClosure }[kind](actor, id));
   }
+  // Nastavení (B5). Platební údaje jen admin (kontrola v settings.save).
+  if (pathname.startsWith("/api/manage/settings")) {
+    const actor = accounts.requireManager(ctx);
+    const sub = pathname.slice("/api/manage/settings".length);
+    if (sub === "" && method === "GET") return send(res, 200, settings.view(actor));
+    if (sub === "/organization" && method === "PUT") { const b = await readBody(req); return send(res, 200, settings.save(actor, "organization", b.data, { note: b.note })); }
+    if (sub === "/payment" && method === "PUT") { const b = await readBody(req); return send(res, 200, settings.save(actor, "payment", b.data, { note: b.note })); }
+    if (sub === "/reviry" && method === "POST") { const b = await readBody(req); return send(res, 201, settings.save(actor, `revir:${String(b.id || "")}`, b.data, { note: b.note, creating: true })); }
+    if ((m = sub.match(/^\/reviry\/([a-z0-9-]+)$/)) && method === "PUT") { const b = await readBody(req); return send(res, 200, settings.save(actor, `revir:${m[1]}`, b.data, { note: b.note })); }
+    if (sub === "/species" && method === "PUT") { const b = await readBody(req); return send(res, 200, settings.save(actor, `species:${String(b.ref || "")}`, b.data, { note: b.note })); }
+    if (sub === "/history" && method === "GET") return send(res, 200, settings.history(url.searchParams.get("scope") || ""));
+    if ((m = sub.match(/^\/versions\/(\d+)$/)) && method === "GET") return send(res, 200, settings.versionData(m[1]));
+    if ((m = sub.match(/^\/versions\/(\d+)\/restore$/)) && method === "POST") return send(res, 200, settings.restore(actor, m[1]));
+    if (sub === "/reset" && method === "POST") { const b = await readBody(req); return send(res, 200, settings.resetToFile(actor, b.scope)); }
+    if (sub === "/export" && method === "GET") {
+      if (!String(actor.roles).split(",").includes("admin")) throw new ApiError(403, "forbidden_role", "Export nastavení je jen pro admina.");
+      return send(res, 200, settings.exportAll(), { "Content-Disposition": `attachment; filename="mistenka-nastaveni-${time.pragueToday()}.json"` });
+    }
+  }
+
   // Místenky, platby, poukazy (B4).
   const filters = () => Object.fromEntries(["status", "revirId", "from", "to", "q", "limit", "offset"].map((key) => [key, url.searchParams.get(key) || ""]));
   if (pathname === "/api/manage/tickets" && method === "GET") { accounts.requireManager(ctx); return send(res, 200, service.listTickets(filters())); }
