@@ -168,3 +168,4 @@ input[type=checkbox],input[type=radio]{width:auto!important;margin:0!important;p
 .input-suffix input[id$=Days]{width:140px!important}
 /* Tisk portálu (uzávěrky): globální pravidlo tisku místenky skrývá vše – v portálu ho přebít. */
 @media print{.manage-body *{visibility:visible}.manage-page{padding:0;max-width:none}.manage-body .manage-section.hidden,.manage-body .hidden{display:none!important}.report-head .no-print{display:none!important}.data-table{font-size:11px}.viz-tip{display:none!important}}
+@media print{.viz-legend i,.viz-swatch,.kpi-pos,.kpi-neg,.badge{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
