@@ -202,10 +202,47 @@
     const total = size + margin * 2;
     return `<svg class="qr-svg" viewBox="0 0 ${total} ${total}" role="img" aria-label="${esc(label || "QR kód")}" shape-rendering="crispEdges"><rect width="${total}" height="${total}" fill="#fff"/><path d="${path}" fill="#000"/></svg>`;
   }
-  // ---------- čtečka QR kódu místenky (vestavěné BarcodeDetector + kamera) ----------
-  // Podpora: Chrome/Edge na Androidu, Chrome na Windows/macOS. Bez podpory (Safari, Firefox) se tlačítko
-  // nezobrazí – QR kód místenky obsahuje odkaz na kontrolu, takže ho stačí načíst fotoaparátem telefonu.
-  const qrScanSupported = () => "BarcodeDetector" in window && Boolean(navigator.mediaDevices?.getUserMedia) && window.isSecureContext;
+  // ---------- čtečka QR kódu místenky (kamera) ----------
+  // Dekódování: vestavěné BarcodeDetector (Chrome/Edge na Androidu, macOS), jinde knihovna jsQR (vendor/jsqr.js,
+  // načte se až při prvním skenování) – funguje tak i v Safari na iPhonu a ve Firefoxu. Kamera vyžaduje HTTPS.
+  const qrScanSupported = () => Boolean(navigator.mediaDevices?.getUserMedia) && window.isSecureContext;
+  let jsQrPromise = null;
+  function loadJsQr() {
+    jsQrPromise ||= new Promise((resolve, reject) => {
+      if (window.jsQR) return resolve(window.jsQR);
+      const script = document.createElement("script");
+      // Stejný adresář jako common.js (funguje i ve WordPress pluginu).
+      script.src = new URL("../vendor/jsqr.js", document.currentScript?.src || qs('script[src*="common.js"]')?.src || location.href).href;
+      script.onload = () => resolve(window.jsQR);
+      script.onerror = () => { jsQrPromise = null; reject(new Error("Čtečku QR se nepodařilo načíst.")); };
+      document.head.append(script);
+    });
+    return jsQrPromise;
+  }
+  // Vrátí funkci, která ze snímku videa přečte text QR kódu (nebo prázdný řetězec).
+  async function qrDecoder(video) {
+    if ("BarcodeDetector" in window) {
+      try {
+        const formats = await window.BarcodeDetector.getSupportedFormats?.();
+        if (!formats || formats.includes("qr_code")) {
+          const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+          return async () => (await detector.detect(video)).map((r) => r.rawValue);
+        }
+      } catch { /* přejde na jsQR */ }
+    }
+    const jsQR = await loadJsQr();
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    return async () => {
+      if (!video.videoWidth) return [];
+      const scale = Math.min(1, 640 / video.videoWidth); // menší snímek = rychlejší dekódování na mobilu
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const result = jsQR(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height, { inversionAttempts: "dontInvert" });
+      return result ? [result.data] : [];
+    };
+  }
   // Z textu QR vytáhne kód místenky: odkaz …status.html?code=KÓD, nebo samotný kód.
   function codeFromQr(text) {
     const value = String(text || "").trim();
@@ -236,12 +273,12 @@
           if (stopped) return stream.getTracks().forEach((t) => t.stop());
           video.srcObject = stream;
           await video.play();
-          const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+          const decode = await qrDecoder(video);
           const tick = async () => {
             if (stopped) return;
             try {
-              for (const result of await detector.detect(video)) {
-                const code = codeFromQr(result.rawValue);
+              for (const text of await decode()) {
+                const code = codeFromQr(text);
                 if (code) return finish(code);
               }
             } catch { /* snímek ještě není připravený */ }
