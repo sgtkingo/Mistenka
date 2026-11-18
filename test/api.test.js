@@ -1202,6 +1202,40 @@ test("uchovávání (GDPR): místenka se 3 roky po konci roku lovu anonymizuje, 
   await setClock("2026-06-10T08:00:00Z");
 });
 
+test("pravidla porušení: po pozdních odevzdáních a po zadržení automatická blokace nákupu s příčinou", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const { session } = await managerAccount();
+  const org = (await call("GET", "/manage/settings", { session })).data.organization.data;
+  assert.equal((await call("PUT", "/manage/settings/organization", { body: { data: { ...org, penaltyPolicy: { lateReturn: { count: -1 }, seizure: { count: 1 } } } }, session })).data.code, "invalid_settings");
+  const saved = await call("PUT", "/manage/settings/organization", { body: { data: { ...org, penaltyPolicy: { lateReturn: { count: 2, blockDays: 10, includeUnreturned: true }, seizure: { count: 1, blockDays: null } } } }, session });
+  assert.equal(saved.status, 200, JSON.stringify(saved.data));
+
+  const late = "76000001";
+  const a = await paidTicket({ memberId: late, email: "pozdni@example.cz" });
+  const b = await paidTicket({ memberId: late, email: "pozdni@example.cz" });
+  await setClock("2026-06-11T08:00:00Z"); // den po lovu → opožděné odevzdání
+  await call("POST", `/tickets/${a.code}/return`, { body: { noCatch: true }, token: a.token });
+  assert.equal((await call("POST", "/orders", { body: orderBody({ memberId: late, date: "2026-06-12" }) })).status, 201, "první pozdní odevzdání ještě neblokuje");
+  await call("POST", `/tickets/${b.code}/return`, { body: { noCatch: true }, token: b.token });
+  const blocked = await call("POST", "/orders", { body: orderBody({ memberId: late, date: "2026-06-12" }) });
+  assert.equal(blocked.data.code, "member_blocked", "po 2 pozdních odevzdáních blokace");
+  assert.ok(await lastEmail("pozdni@example.cz", "member_blocked"));
+  const lateBlock = (await call("GET", "/manage/blocks", { session })).data.blocks.find((x) => x.memberId === late);
+  assert.equal(lateBlock.cause, "late_return");
+  assert.equal(lateBlock.until, "2026-06-20", "10 dní včetně dneška");
+
+  await setClock("2026-06-10T08:00:00Z");
+  const warden = await wardenAccount();
+  const seizedMember = "76000002";
+  const t = await paidTicket({ memberId: seizedMember });
+  await call("POST", `/warden/tickets/${t.code}/seize`, { body: { reason: "Lov čtyřmi pruty" }, session: warden.session });
+  assert.equal((await call("POST", "/orders", { body: orderBody({ memberId: seizedMember, date: "2026-06-11" }) })).data.code, "member_blocked", "po zadržení blokace");
+  const seizureBlock = (await call("GET", "/manage/blocks", { session })).data.blocks.find((x) => x.memberId === seizedMember);
+  assert.equal(seizureBlock.cause, "seizure");
+  assert.equal(seizureBlock.until, "2026-12-31", "bez počtu dní = do konce roku");
+  await call("POST", "/manage/settings/reset", { body: { scope: "organization" }, session });
+});
+
 // ---------- průvodce prvním spuštěním a pozvání správce ----------
 // Musí běžet poslední: po založení admina se průvodce zavře.
 test("průvodce prvním spuštěním: admin vznikne jen s jednorázovým odkazem a rovnou s 2FA", async () => {

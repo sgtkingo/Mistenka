@@ -69,6 +69,17 @@ function buildConfig(rawInput, speciesDocs) {
     if (!Number.isInteger(config.privacy[key]) || config.privacy[key] < min || config.privacy[key] > max) fail(`${label} musí být celé číslo ${min}–${max}`);
   }
   if (config.privacy.contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.privacy.contactEmail)) fail("neplatný e-mail pro ochranu osobních údajů");
+  // Následky porušení pravidel (automatická blokace nákupu): pozdní/neodevzdání a zadržení porybným.
+  const pp = config.penaltyPolicy || {};
+  config.penaltyPolicy = {
+    lateReturn: { count: 0, blockDays: null, includeUnreturned: true, ...(pp.lateReturn || {}) },
+    seizure: { count: 0, blockDays: null, ...(pp.seizure || {}) }
+  };
+  for (const [key, label] of [["lateReturn", "pozdní odevzdání"], ["seizure", "zadržení"]]) {
+    const rule = config.penaltyPolicy[key];
+    if (!Number.isInteger(rule.count) || rule.count < 0 || rule.count > 50) fail(`${label}: počet případů musí být celé číslo 0–50`);
+    if (rule.blockDays !== null && !(Number.isInteger(rule.blockDays) && rule.blockDays > 0 && rule.blockDays <= 3650)) fail(`${label}: délka blokace musí být 1–3650 dní, nebo prázdná (do konce roku)`);
+  }
   const managerEmail = config.organization.managerEmail;
   if (managerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(managerEmail)) fail("neplatný e-mail správce");
   const orgRules = speciesRulesFor(speciesDocs, config.speciesRules, "organizace");

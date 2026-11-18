@@ -92,13 +92,56 @@ qs("#userSearch").addEventListener("submit", (event) => {
 
 // ---------- limity a blokace (B3) ----------
 const PERIODS = { day: "den", week: "týden", month: "měsíc" };
+// Pravidla následků (uložená v nastavení organizace: limitPolicy + penaltyPolicy).
+let penaltyOrg = null;
+async function loadPenaltyRules() {
+  const box = qs("#penaltyRules");
+  try {
+    penaltyOrg = (await api("/manage/settings")).organization.data;
+    const lp = penaltyOrg.limitPolicy || {};
+    const pp = penaltyOrg.penaltyPolicy || {};
+    const late = pp.lateReturn || {};
+    const seizure = pp.seizure || {};
+    const row = (key, label, help, count, days, extra = "") => `<tr><td data-label="Porušení"><b>${label}</b><br><small class="muted-inline">${help}</small>${extra}</td>
+      <td data-label="Po kolika případech"><input class="penalty-input" id="${key}Count" type="number" min="0" max="50" value="${esc(count ?? 0)}"></td>
+      <td data-label="Blokace na dní"><input class="penalty-input" id="${key}Days" type="number" min="1" max="3650" value="${esc(days ?? "")}" placeholder="do konce roku"></td></tr>`;
+    box.innerHTML = `<table class="data-table penalty-table"><thead><tr><th>Porušení</th><th>Blokovat po … případech v roce</th><th>Blokace na dní</th></tr></thead><tbody>
+      ${row("limits", "Překročení limitů úlovků", "místenky s překročeným denním, týdenním nebo měsíčním limitem", lp.violationsBeforeBlock, lp.blockDays)}
+      ${row("late", "Pozdní odevzdání", "odevzdání po skončení dne lovu", late.count, late.blockDays, `<label class="checkbox-label penalty-check"><input type="checkbox" id="lateUnreturned"${late.includeUnreturned !== false ? " checked" : ""}> <span>počítat i neodevzdané (uzavřené po lhůtě)</span></label>`)}
+      ${row("seizure", "Zadržení porybným", "místenka zadržená rybářskou stráží", seizure.count, seizure.blockDays)}
+      </tbody></table>
+      <p class="field-help">0 = pravidlo vypnuto. Počítá se kalendářní rok podle dne lovu; po dosažení počtu se nákup místenek automaticky pozastaví (prázdné dny = do konce roku). Držitel dostane e-mail, blokaci vidíte níže a můžete ji zrušit. Odevzdání místenek blokace nikdy nebrání.</p>
+      <button class="primary-button" type="submit">Uložit pravidla</button>`;
+  } catch (error) { box.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
+}
+qs("#penaltyForm").addEventListener("submit", (event) => submitForm(event, async () => {
+  const int = (id, label, optional = false) => {
+    const raw = qs(`#${id}`).value.trim();
+    if (raw === "" && optional) return null;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 0) throw new Error(`${label}: zadejte celé číslo.`);
+    return n;
+  };
+  const data = structuredClone(penaltyOrg);
+  data.limitPolicy = { violationsBeforeBlock: int("limitsCount", "Limity – počet"), blockDays: int("limitsDays", "Limity – dny", true) };
+  data.penaltyPolicy = {
+    lateReturn: { count: int("lateCount", "Pozdní odevzdání – počet"), blockDays: int("lateDays", "Pozdní odevzdání – dny", true), includeUnreturned: qs("#lateUnreturned").checked },
+    seizure: { count: int("seizureCount", "Zadržení – počet"), blockDays: int("seizureDays", "Zadržení – dny", true) }
+  };
+  await api("/manage/settings/organization", { method: "PUT", body: { data, note: "Pravidla při porušení" } });
+  showToast("Pravidla uložena.");
+  loadPenaltyRules();
+}));
+
+const CAUSE_LABELS = { limits: "limity úlovků", late_return: "pozdní odevzdání", seizure: "zadržení porybným", manual: "ručně" };
 async function loadLimits() {
+  loadPenaltyRules();
   const blocks = qs("#blockList");
   const violations = qs("#violationList");
   try {
     const [b, v] = await Promise.all([api("/manage/blocks"), api("/manage/violations")]);
     blocks.innerHTML = b.blocks.length ? `<table class="data-table"><thead><tr><th>Člen</th><th>Důvod</th><th>Do</th><th>Stav</th><th></th></tr></thead><tbody>${b.blocks.map((x) => `
-      <tr><td data-label="Člen"><b>${esc(x.memberId)}</b><br><small class="muted-inline">${esc(x.holder)}</small></td><td data-label="Důvod">${esc(x.reason)}<br><small class="muted-inline">${x.source === "auto" ? "automaticky" : "ručně"}</small></td>
+      <tr><td data-label="Člen"><b>${esc(x.memberId)}</b><br><small class="muted-inline">${esc(x.holder)}</small></td><td data-label="Důvod">${esc(x.reason)}<br><small class="muted-inline">${x.source === "auto" ? `automaticky – ${esc(CAUSE_LABELS[x.cause] || x.cause)}` : "ručně"}</small></td>
       <td data-label="Do">${x.until ? esc(czDate(x.until)) : "do zrušení"}</td><td data-label="Stav"><span class="badge badge-${x.active ? "bad" : "off"}">${x.active ? "Aktivní" : x.liftedAt ? "Zrušená" : "Vypršela"}</span></td>
       <td>${x.active ? `<button class="secondary-button lift-block" type="button" data-id="${esc(x.id)}">Zrušit</button>` : ""}</td></tr>`).join("")}</tbody></table>` : '<p class="muted">Žádné blokace.</p>';
     qsa(".lift-block", blocks).forEach((button) => button.addEventListener("click", async () => {

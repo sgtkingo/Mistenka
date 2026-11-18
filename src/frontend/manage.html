@@ -19,17 +19,22 @@
     <div class="manage-layout hidden" id="portal">
       <nav class="manage-nav" aria-label="Sekce správy">
         <span class="section-kicker" data-org-short></span>
+        <span class="manage-nav-group">Prodej</span>
         <button class="manage-nav-item active" type="button" data-section="tickets">Místenky</button>
         <button class="manage-nav-item" type="button" data-section="payments">Platby <span class="nav-count hidden" id="paymentCount"></span></button>
         <button class="manage-nav-item" type="button" data-section="vouchers">Poukazy</button>
+        <span class="manage-nav-group">Rybáři</span>
         <button class="manage-nav-item" type="button" data-section="users">Uživatelé a role</button>
         <button class="manage-nav-item" type="button" data-section="limits">Limity a blokace</button>
-        <button class="manage-nav-item" type="button" data-section="announcements">Vývěska</button>
-        <button class="manage-nav-item" type="button" data-section="seasons">Sezona a uzavření</button>
+        <span class="manage-nav-group">Revíry</span>
         <button class="manage-nav-item" type="button" data-section="reviry">Revíry</button>
-        <button class="manage-nav-item" type="button" data-section="settings">Nastavení</button>
+        <button class="manage-nav-item" type="button" data-section="seasons">Sezona a uzavření</button>
+        <button class="manage-nav-item" type="button" data-section="announcements">Vývěska</button>
+        <span class="manage-nav-group">Hospodaření</span>
         <button class="manage-nav-item" type="button" data-section="stocking">Zarybnění</button>
         <button class="manage-nav-item" type="button" data-section="reports">Přehledy a uzávěrky</button>
+        <span class="manage-nav-group">Organizace</span>
+        <button class="manage-nav-item" type="button" data-section="settings">Nastavení</button>
         <span class="manage-nav-group admin-only hidden">Admin</span>
         <button class="manage-nav-item admin-only hidden" type="button" data-section="backups">Zálohy</button>
         <button class="manage-nav-item admin-only hidden" type="button" data-section="audit">Audit změn</button>
@@ -94,7 +99,9 @@
 
       <section class="panel-card manage-section hidden" id="section-limits">
         <div class="panel-heading"><div><span class="section-kicker">Limity úlovků</span><h1>Limity a blokace</h1></div></div>
-        <p class="panel-intro">Překročení limitu neblokuje odevzdání ani nákup. Nákup můžete členovi pozastavit ručně; automatická blokace se řídí pravidlem organizace.</p>
+        <p class="panel-intro">Porušení pravidel nikdy neblokuje odevzdání. Nákup místenek lze pozastavit ručně, nebo automaticky podle pravidel níže.</p>
+        <h2 class="manage-h2">Pravidla při porušení</h2>
+        <form id="penaltyForm" novalidate><div id="penaltyRules"><p class="muted">Načítám…</p></div></form>
         <h2 class="manage-h2">Blokace nákupu</h2>
         <details class="invite-box">
           <summary>+ Zablokovat člena</summary>

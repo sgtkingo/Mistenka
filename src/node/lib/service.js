@@ -319,6 +319,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       db.prepare("UPDATE tickets SET returned_at = ?, return_late = ?, no_catch = ?, rules_version = ? WHERE id = ?").run(iso(now), now >= windowOf(fresh).end ? 1 : 0, noCatch ? 1 : 0, settings ? settings.rulesVersion(fresh.revir_id) : null, fresh.id);
       const returned = db.prepare("SELECT * FROM tickets WHERE id = ?").get(fresh.id);
       recordViolations(returned);
+      if (returned.return_late) applyPenalty(returned, "late_return");
       return ownerTicket(returned);
     });
   }
@@ -375,27 +376,45 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     const insert = db.prepare("INSERT INTO limit_violations (ticket_id, member_id, limit_id, label, period, period_from, period_to, count, max_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     for (const l of exceeded) insert.run(ticket.id, ticket.member_id, l.id, l.label, l.period, l.from, l.to, l.count, l.maxCount, now);
     if (config.organization.managerEmail) enqueueEmail(ticket, "limit_exceeded", null, { to: config.organization.managerEmail, limits: exceeded });
-    const policy = config.limitPolicy || {};
-    if (policy.violationsBeforeBlock > 0 && !activeBlock(ticket.member_id)) {
-      const year = ticket.fishing_date.slice(0, 4);
-      const violating = db.prepare(`SELECT COUNT(DISTINCT v.ticket_id) AS n FROM limit_violations v JOIN tickets t ON t.id = v.ticket_id
-        WHERE v.member_id = ? AND substr(t.fishing_date, 1, 4) = ?`).get(ticket.member_id, year).n;
-      if (violating >= policy.violationsBeforeBlock) {
-        const until = policy.blockDays ? time.addDays(time.pragueToday(), policy.blockDays - 1) : `${year}-12-31`;
-        const reason = `Opakované překročení limitů úlovků (${violating}× v roce ${year})`;
-        const result = db.prepare("INSERT INTO member_blocks (member_id, reason, until, source, created_at) VALUES (?, ?, ?, 'auto', ?)").run(ticket.member_id, reason, until, now);
-        const block = db.prepare("SELECT * FROM member_blocks WHERE id = ?").get(Number(result.lastInsertRowid));
-        db.prepare("INSERT INTO audit_events (at, action, target_type, target_id, detail) VALUES (?, 'member_blocked_auto', 'member', ?, ?)").run(now, ticket.member_id, JSON.stringify({ until, violating }));
-        enqueueEmail(ticket, "member_blocked", null, { block, limits: exceeded });
-      }
-    }
+    applyPenalty(ticket, "limits", { limits: exceeded });
     return exceeded;
+  }
+
+  // Následky porušení pravidel: po N případech v kalendářním roce (dle dne lovu) automatická blokace nákupu.
+  // limits = místenky s překročeným limitem (limitPolicy), late_return = opožděně odevzdané (+ volitelně neodevzdané),
+  // seizure = zadržené porybným (penaltyPolicy). Držitel dostane e-mail, správce blokaci vidí a může ji zrušit.
+  const PENALTY_LABELS = { limits: "překročení limitů úlovků", late_return: "pozdní odevzdání místenky", seizure: "zadržení místenky porybným" };
+  function penaltyRule(cause) {
+    if (cause === "limits") { const p = config.limitPolicy || {}; return { count: p.violationsBeforeBlock || 0, blockDays: p.blockDays ?? null }; }
+    if (cause === "late_return") return config.penaltyPolicy.lateReturn;
+    return config.penaltyPolicy.seizure;
+  }
+  function penaltyCount(memberId, year, cause) {
+    if (cause === "limits") return db.prepare("SELECT COUNT(DISTINCT v.ticket_id) AS n FROM limit_violations v JOIN tickets t ON t.id = v.ticket_id WHERE v.member_id = ? AND substr(t.fishing_date, 1, 4) = ?").get(memberId, year).n;
+    if (cause === "seizure") return db.prepare("SELECT COUNT(*) AS n FROM tickets WHERE member_id = ? AND seized_at IS NOT NULL AND substr(fishing_date, 1, 4) = ?").get(memberId, year).n;
+    const unreturned = config.penaltyPolicy.lateReturn.includeUnreturned ? " OR (closed_at IS NOT NULL AND returned_at IS NULL)" : "";
+    return db.prepare(`SELECT COUNT(*) AS n FROM tickets WHERE member_id = ? AND status = 'issued' AND substr(fishing_date, 1, 4) = ? AND ((returned_at IS NOT NULL AND return_late = 1)${unreturned})`).get(memberId, year).n;
+  }
+  function applyPenalty(ticket, cause, extra = {}) {
+    const rule = penaltyRule(cause);
+    if (!(rule.count > 0) || !ticket.member_id || activeBlock(ticket.member_id)) return null;
+    const year = ticket.fishing_date.slice(0, 4);
+    const count = penaltyCount(ticket.member_id, year, cause);
+    if (count < rule.count) return null;
+    const now = iso(time.now());
+    const until = rule.blockDays ? time.addDays(time.pragueToday(), rule.blockDays - 1) : `${year}-12-31`;
+    const reason = `Opakované ${PENALTY_LABELS[cause]} (${count}× v roce ${year})`;
+    const id = Number(db.prepare("INSERT INTO member_blocks (member_id, reason, until, source, cause, created_at) VALUES (?, ?, ?, 'auto', ?, ?)").run(ticket.member_id, reason, until, cause, now).lastInsertRowid);
+    const block = db.prepare("SELECT * FROM member_blocks WHERE id = ?").get(id);
+    db.prepare("INSERT INTO audit_events (at, action, target_type, target_id, detail) VALUES (?, 'member_blocked_auto', 'member', ?, ?)").run(now, ticket.member_id, JSON.stringify({ cause, count, until }));
+    enqueueEmail(ticket, "member_blocked", null, { block, ...extra });
+    return block;
   }
 
   // ---------- správa limitů a blokací (manažerský portál) ----------
   const blockShape = (b) => {
     const holder = db.prepare("SELECT first_name, last_name FROM tickets WHERE member_id = ? ORDER BY id DESC").get(b.member_id);
-    return { id: b.id, memberId: b.member_id, holder: holder ? `${holder.first_name} ${holder.last_name}` : "", reason: b.reason, until: b.until, source: b.source,
+    return { id: b.id, memberId: b.member_id, holder: holder ? `${holder.first_name} ${holder.last_name}` : "", reason: b.reason, until: b.until, source: b.source, cause: b.cause || (b.source === "manual" ? "manual" : "limits"),
       createdAt: b.created_at, liftedAt: b.lifted_at, active: !b.lifted_at && (!b.until || b.until >= time.pragueToday()) };
   };
   function listViolations() {
@@ -415,7 +434,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     return transaction(db, () => {
       if (activeBlock(memberId)) throw new ApiError(409, "already_blocked", "Toto číslo legitimace už je zablokované.");
       const now = iso(time.now());
-      const result = db.prepare("INSERT INTO member_blocks (member_id, reason, until, source, created_by, created_at) VALUES (?, ?, ?, 'manual', ?, ?)").run(memberId, reason, until, actor.id, now);
+      const result = db.prepare("INSERT INTO member_blocks (member_id, reason, until, source, cause, created_by, created_at) VALUES (?, ?, ?, 'manual', 'manual', ?, ?)").run(memberId, reason, until, actor.id, now);
       db.prepare("INSERT INTO audit_events (at, actor_user_id, action, target_type, target_id, detail) VALUES (?, ?, 'member_blocked', 'member', ?, ?)").run(now, actor.id, memberId, JSON.stringify({ reason, until }));
       return { block: blockShape(db.prepare("SELECT * FROM member_blocks WHERE id = ?").get(Number(result.lastInsertRowid))) };
     });
@@ -503,6 +522,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       const seized = db.prepare("SELECT * FROM tickets WHERE id = ?").get(fresh.id);
       // Držitel: e-mail s odkazem na odevzdání. Správce: jen upozornění (nepotvrzuje).
       enqueueEmail(seized, "ticket_seized", issueToken(seized.id, "email"), { deadline: iso(windowOf(seized).deadline) });
+      applyPenalty(seized, "seizure");
       if (config.organization.managerEmail) enqueueEmail(seized, "seizure_notice", null, { to: config.organization.managerEmail, wardenName: wardenName(warden) });
       return wardenView(seized);
     });
@@ -759,7 +779,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
   }
 
   // Po uplynutí lhůty pro opožděné odevzdání se místenka uzavře jako neodevzdaná (bez úlovku)
-  // a držitel dostane e-mail. Další následky (např. blokace) zatím nejsou definované.
+  // a držitel dostane e-mail. Následky (blokace) podle penaltyPolicy.lateReturn.
   function closeOverdue() {
     const now = time.now();
     const candidates = db.prepare("SELECT * FROM tickets WHERE status = 'issued' AND returned_at IS NULL AND closed_at IS NULL AND fishing_date <= ?").all(time.pragueToday(now));
@@ -768,7 +788,9 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       if (now < windowOf(ticket).deadline) continue;
       transaction(db, () => {
         db.prepare("UPDATE tickets SET closed_at = ? WHERE id = ? AND closed_at IS NULL AND returned_at IS NULL").run(iso(now), ticket.id);
-        enqueueEmail(db.prepare("SELECT * FROM tickets WHERE id = ?").get(ticket.id), "ticket_closed", null);
+        const closedTicket = db.prepare("SELECT * FROM tickets WHERE id = ?").get(ticket.id);
+        enqueueEmail(closedTicket, "ticket_closed", null);
+        if (config.penaltyPolicy.lateReturn.includeUnreturned) applyPenalty(closedTicket, "late_return");
       });
       closed += 1;
     }

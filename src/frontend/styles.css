@@ -144,3 +144,6 @@ tr.clickable{cursor:pointer}tr.clickable:hover td{background:#f6fbff}#csvLink{te
 @media(max-width:900px){.viz-grid-2{grid-template-columns:1fr}}
 @media print{.viz-grid-2{grid-template-columns:1fr 1fr}.viz-card{break-inside:avoid}}
 .viz-grid-2{align-items:start}
+
+.penalty-table td{vertical-align:top}.penalty-input{max-width:120px;margin-bottom:0!important;padding:7px 8px!important}.penalty-check{margin-top:6px;font-size:12px}#penaltyForm .primary-button{margin-top:4px}
+.manage-nav .manage-nav-group:first-of-type{margin-top:4px}

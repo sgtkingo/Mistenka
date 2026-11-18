@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
-const SCHEMA_VERSION = 12;
+const SCHEMA_VERSION = 13;
 
 // Sloupce tabulky users (sdílí vytvoření i migrace).
 const USERS_COLUMNS = `
@@ -105,6 +105,7 @@ function openDatabase(dataDir, { autoRecover = true } = {}) {
   };
   addColumns("tickets", [["cancel_reason", "TEXT"], ["cancelled_by", "INTEGER"], ["rules_version", "TEXT"], ["anonymized_at", "TEXT"]]);
   addColumns("bank_transactions", [["resolution", "TEXT"], ["resolution_note", "TEXT"], ["resolved_at", "TEXT"], ["resolved_by", "INTEGER"]]);
+  addColumns("member_blocks", [["cause", "TEXT"]]);
   addColumns("vouchers", [["created_at", "TEXT"], ["created_by", "INTEGER"], ["note", "TEXT"], ["voided_at", "TEXT"]]);
   // Migrace 4 -> 5: zadržení místenky porybným.
   for (const [column, definition] of [["seized_at", "TEXT"], ["seized_by", "INTEGER"], ["seized_reason", "TEXT"], ["seized_place", "TEXT"]]) {
@@ -271,6 +272,7 @@ function openDatabase(dataDir, { autoRecover = true } = {}) {
       reason TEXT NOT NULL,
       until TEXT,                              -- YYYY-MM-DD včetně; NULL = do zrušení
       source TEXT NOT NULL,                    -- manual | auto
+      cause TEXT,                              -- limits | late_return | seizure | manual
       created_by INTEGER,
       created_at TEXT NOT NULL,
       lifted_at TEXT,

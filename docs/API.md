@@ -92,7 +92,9 @@ Při odevzdání se překročené limity zapíšou (`limit_violations`) a správ
 
 ### Blokace nákupu
 
-Aktivní blokace čísla legitimace → `POST /orders` vrátí `403 member_blocked` (zpráva s datem konce a důvodem). Blokaci zakládá správce ručně, nebo automaticky pravidlo `limitPolicy` v konfiguraci: `{ violationsBeforeBlock: 2, blockDays: 30 }` = po 2 místenkách s překročeným limitem v kalendářním roce blokace na 30 dní včetně dneška (`blockDays: null` = do konce roku; `violationsBeforeBlock: 0` = vypnuto). Automatická blokace pošle držiteli e-mail `member_blocked`. Později se pravidlo bude nastavovat v manažerském portálu (B5).
+Aktivní blokace čísla legitimace → `POST /orders` vrátí `403 member_blocked` (zpráva s datem konce a důvodem). Blokaci zakládá správce ručně, nebo automaticky pravidlo `limitPolicy` v konfiguraci: `{ violationsBeforeBlock: 2, blockDays: 30 }` = po 2 místenkách s překročeným limitem v kalendářním roce blokace na 30 dní včetně dneška (`blockDays: null` = do konce roku; `violationsBeforeBlock: 0` = vypnuto). Automatická blokace pošle držiteli e-mail `member_blocked`.
+
+**Další pravidla následků** (`penaltyPolicy` v nastavení organizace, portál → Limity a blokace): `{ lateReturn: { count, blockDays, includeUnreturned }, seizure: { count, blockDays } }` – po `count` opožděně odevzdaných (a při `includeUnreturned` i neodevzdaných, uzavřených po lhůtě) nebo zadržených místenkách v kalendářním roce (den lovu) se nákup automaticky zablokuje na `blockDays` dní včetně dneška (`null` = do konce roku; `count: 0` = vypnuto). Blokace má příčinu `cause`: `limits` | `late_return` | `seizure` | `manual` (v `GET /manage/blocks`). Odevzdání se nikdy neblokuje.
 
 ## Stavy místenky
 

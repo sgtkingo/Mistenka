@@ -99,8 +99,7 @@
       <div class="form-three-col">${field("prEmail", "E-mail pro žádosti subjektů údajů", d.privacy?.contactEmail, 'type="email"')}${field("prTickets", "Místenky (roky po roce lovu)", d.privacy?.ticketYears ?? 3, 'type="number" min="1" max="20"')}${field("prAccounting", "Platby – účetní lhůta (roky)", d.privacy?.accountingYears ?? 10, 'type="number" min="5" max="20"')}</div>
       <div class="form-three-col">${field("prEmails", "Odeslané e-maily (dny)", d.privacy?.emailDays ?? 90, 'type="number" min="7"')}${field("prAudit", "Audit (roky)", d.privacy?.auditYears ?? 5, 'type="number" min="1" max="20"')}${field("prBackups", "Zálohy (roky)", d.privacy?.backupYears ?? 3, 'type="number" min="1" max="20"')}</div>
       <p class="field-help">Po uplynutí lhůt se údaje automaticky anonymizují nebo smažou. Výchozí hodnoty jsou obecné doporučení; potvrďte je ve výboru.</p>
-      <h3>Automatická blokace po porušení limitů</h3>
-      <div class="form-two-col">${field("lpCount", "Po kolika porušeních v roce (0 = vypnuto)", lp.violationsBeforeBlock ?? 0, 'type="number" min="0"')}${field("lpDays", "Na kolik dní (prázdné = do konce roku)", lp.blockDays ?? "", 'type="number" min="1"')}</div>
+      <p class="field-help">Pravidla automatické blokace (limity, pozdní odevzdání, zadržení) nastavíte v sekci <a class="text-link" href="#limits" onclick="document.querySelector('[data-section=limits]').click();return false">Limity a blokace</a>.</p>
       ${footer("organization", view.organization)}</form>`;
   }
   function organizationData() {
@@ -109,7 +108,6 @@
     d.organization = { ...d.organization, name: val("oName"), shortName: val("oShort"), web: val("oWeb"), privacyUrl: val("oPrivacy"), address: val("oAddress"), ico: val("oIco"), managerEmail: val("oManager"), contact: { ...(d.organization?.contact || {}), label: val("cLabel"), email: val("cEmail"), phone: val("cPhone") } };
     d.email = { ...(d.email || {}), fromName: val("eName"), fromEmail: val("eEmail") };
     d.publicCheck = { showFullName: qs("#pcFull").checked, memberIdVisibleChars: num("pcChars", "Viditelné číslice") };
-    d.limitPolicy = { violationsBeforeBlock: num("lpCount", "Počet porušení"), blockDays: num("lpDays", "Délka blokace", { optional: true }) };
     return d;
   }
 
