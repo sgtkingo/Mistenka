@@ -62,6 +62,7 @@
       qs("#stRevir").addEventListener("change", fillRevirFields);
       qs("#stCancel").addEventListener("click", () => editStocking(null));
       qs("#stockForm").addEventListener("submit", saveStocking);
+      if (!qs("#stDate").value) qs("#stDate").value = short(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}`);
       attachSpeciesSuggest(qs("#stSpecies"), () => (config.reviry.find((r) => r.id === qs("#stRevir").value) || config.reviry[0]).fishRules?.species);
       fillRevirFields();
     }
@@ -119,7 +120,9 @@
     qs("#stRevir").value = s ? s.revirId : config.reviry[0].id;
     fillRevirFields();
     qs("#stSub").value = s?.subdistrict || "";
-    qs("#stDate").value = short(s?.date);
+    const now = new Date();
+    const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    qs("#stDate").value = short(s?.date || todayIso);
     qs("#stSpecies").value = s?.species || "";
     qs("#stAge").value = s?.ageClass || "";
     qs("#stKg").value = s?.kg ?? "";
