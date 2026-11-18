@@ -23,6 +23,7 @@ const { createService, ApiError } = require("./lib/service");
 const { createAccounts } = require("./lib/accounts");
 const { createOperations } = require("./lib/operations");
 const { createSettings } = require("./lib/settings");
+const { createReports } = require("./lib/reports");
 const time = require("./lib/time");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -40,6 +41,8 @@ const settings = createSettings({ db, config }); // nastavení z portálu (B5) p
 const operations = createOperations({ db, config, appUrl: APP_URL });
 const service = createService({ db, config, provider, mailer, appUrl: APP_URL, operations, settings });
 const accounts = createAccounts({ db, config, appUrl: APP_URL });
+const reports = createReports({ db, config, appUrl: APP_URL });
+service.addJob("seasons", () => reports.closeSeasons()); // automatická uzávěrka po skončení sezony
 service.addJob("accounts", () => accounts.cleanup());
 
 // ---------- omezení počtu požadavků (v paměti, na IP) ----------
@@ -239,6 +242,24 @@ async function handleApi(req, res, url, ip) {
       if (!String(actor.roles).split(",").includes("admin")) throw new ApiError(403, "forbidden_role", "Export nastavení je jen pro admina.");
       return send(res, 200, settings.exportAll(), { "Content-Disposition": `attachment; filename="mistenka-nastaveni-${time.pragueToday()}.json"` });
     }
+  }
+
+  // Zarybnění, přehledy, uzávěrky (B6).
+  if (pathname.startsWith("/api/manage/stocking") || pathname.startsWith("/api/manage/stats") || pathname.startsWith("/api/manage/reports")) {
+    const actor = accounts.requireManager(ctx);
+    const q = (key) => url.searchParams.get(key) || "";
+    if (pathname === "/api/manage/stocking" && method === "GET") return send(res, 200, reports.listStocking({ year: q("year"), revirId: q("revirId"), planned: q("planned") }));
+    if (pathname === "/api/manage/stocking" && method === "POST") return send(res, 201, reports.saveStocking(actor, null, await readBody(req)));
+    if (pathname === "/api/manage/stocking/budget" && method === "GET") return send(res, 200, reports.getBudget(q("year")));
+    if (pathname === "/api/manage/stocking/budget" && method === "PUT") return send(res, 200, reports.setBudget(actor, await readBody(req)));
+    if ((m = pathname.match(/^\/api\/manage\/stocking\/(\d+)$/))) {
+      if (method === "PUT") return send(res, 200, reports.saveStocking(actor, m[1], await readBody(req)));
+      if (method === "DELETE") return send(res, 200, reports.deleteStocking(actor, m[1]));
+    }
+    if (pathname === "/api/manage/stats" && method === "GET") return send(res, 200, reports.stats({ from: q("from"), to: q("to"), revirId: q("revirId") }));
+    if (pathname === "/api/manage/reports" && method === "GET") return send(res, 200, reports.listReports());
+    if (pathname === "/api/manage/reports" && method === "POST") return send(res, 201, reports.createReport(actor, await readBody(req)));
+    if ((m = pathname.match(/^\/api\/manage\/reports\/(\d+)$/)) && method === "GET") return send(res, 200, reports.getReport(m[1]));
   }
 
   // Místenky, platby, poukazy (B4).

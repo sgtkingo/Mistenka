@@ -335,6 +335,42 @@ Konfigurace = soubor (`config/organization.json` + pravidla druhů, ve WordPress
 
 Odevzdaná místenka si ukládá verzi pravidel, podle které byla zkontrolována (`rulesVersion`, např. `crs-smas-mp-2026-2027@v12` nebo `…@soubor`; vidí ji správce v detailu místenky). Cena se ukládá k objednávce, změna ceny platí jen pro nové objednávky.
 
+## Zarybnění a přehledy (B6)
+
+Pro `manager`/`admin` (🛠).
+
+**Zarybnění** – skutečné nasazení (`planned: false`) i plán (`planned: true`, datum = předpoklad). Realizace plánu = úprava záznamu na `planned: false` se skutečnými údaji. Druh se převede na kanonický název podle pravidel revíru (neznámý se přijme, jak je zadán).
+
+| Endpoint | Tělo / parametry | Odpověď / chyby |
+| --- | --- | --- |
+| `GET /manage/stocking` | `?year=&revirId=&planned=0\|1` | `{ stocking: [{ id, revirId, revir, subdistrict, date, planned, speciesId, species, ageClass, kg, pieces, costHalere, supplier, note, … }], ageClasses }` |
+| `POST /manage/stocking`, `PUT /manage/stocking/{id}` | `{ revirId, date, species, subdistrict?, ageClass?, kg?, pieces?, costCzk?, supplier?, note?, planned? }` (kg nebo kusy povinné) | `201 { stocking }` / `{ stocking }`; `400 unknown_revir`, `invalid_date`, `invalid_species`, `invalid_amount`, `invalid_number`, `invalid_subdistrict` |
+| `DELETE /manage/stocking/{id}` | – | `{ deleted: true }` |
+| `GET /manage/stocking/budget?year=` | – | `{ year, budgets: [{ revirId (null = MO), revir, amountHalere, note, spentHalere, plannedHalere }] }` |
+| `PUT /manage/stocking/budget` | `{ year, revirId?, amountCzk (null = smazat), note? }` | jako GET |
+
+**Přehledy** – `GET /manage/stats?from=&to=&revirId=` (den lovu / den zarybnění v období):
+
+```jsonc
+{ "from": "2026-01-01", "to": "2026-12-31", "revirId": null, "revir": "Všechny revíry", "generatedAt": "…",
+  "summary": { "sold": 120, "returned": 110, "returnedLate": 6, "noCatch": 40, "unreturned": 4, "upcoming": 6, "seized": 1,
+               "cancelled": 2 /* zaplacené a zrušené */, "vouchers": 3, "revenueHalere": 2340000, "anglers": 61 },
+  "catches": { "total": 95, "weightKg": 180.4, "bySpecies": [{ "species": "kapr obecný", "count": 50, "weightKg": 140.2, "weighed": 44, "estimated": 30, "avgLength": 52.1, "maxLength": 69 }] },
+  "stocking": { "costHalere": 2120000, "bySpecies": [{ "species": "kapr obecný", "pieces": 300, "kg": 150, "costHalere": 1800000 }] },
+  "balance": [{ "species": "kapr obecný", "caughtCount": 50, "caughtKg": 140.2, "stockedPieces": 300, "stockedKg": 150, "balanceKg": 9.8 }],   // uloveno vs. nasazeno
+  "byMonth": [{ "month": "2026-11", "tickets": 4, "catches": 5, "revenueHalere": 80000, "stockingHalere": 2120000 }] }
+```
+
+Hmotnost úlovků se sčítá jen z vyplněných nebo dopočtených hodnot (`weighed` z `count`).
+
+**Uzávěrky** – uložená statistika za období. Automatická (`kind: "season"`) vznikne plánovanou úlohou den po `closesOn` každé sezony (jednou) a správce dostane e-mail `season_report`; ruční (`kind: "manual"`) za libovolné období.
+
+| Endpoint | Tělo | Odpověď |
+| --- | --- | --- |
+| `GET /manage/reports` | – | `{ reports: [{ id, name, kind, seasonId, revirId, revir, from, to, createdAt }] }` |
+| `POST /manage/reports` | `{ from, to, revirId?, name? }` | `201` uzávěrka s `data` (tvar jako `/manage/stats`) |
+| `GET /manage/reports/{id}` | – | uzávěrka s `data` |
+
 ## Porybný (B2)
 
 Veřejná kontrola (`GET /tickets/{code}`) zůstává pro každého. Přihlášený uživatel s rolí `warden` navíc (jinak `401 unauthorized` / `403 forbidden_role`; admin bez 2FA `403 mfa_required`):
@@ -415,7 +451,8 @@ V tomto pořadí; Node je spouští v intervalu, WordPress cron hostingu přes `
 3. připomínky odevzdání (jednou, po skončení dne lovu, dokud běží lhůta),
 4. uzavření neodevzdaných místenek po lhůtě `lateReturnDays` (stav `closed_unreturned`, bez úlovku) + e-mail držiteli,
 5. úklid účtů: smazání neověřených účtů starších 48 h, prošlých relací a odkazů,
-6. odeslání fronty e-mailů.
+6. automatické uzávěrky skončených sezon,
+7. odeslání fronty e-mailů.
 
 `POST /jobs/run` vyžaduje hlavičku `X-Mistenka-Cron-Key` s tajným klíčem z konfigurace serveru; bez něj `404`.
 
@@ -437,6 +474,7 @@ V tomto pořadí; Node je spouští v intervalu, WordPress cron hostingu přes `
 | `limit_exceeded` | odevzdání s překročeným limitem, na `organization.managerEmail` | `status.html?code=…` |
 | `member_blocked` | automatická blokace po opakovaném porušení limitů (držiteli) | – |
 | `ticket_cancelled` | správce zrušil vystavenou místenku | – |
+| `season_report` | automatická uzávěrka po skončení sezony, na `organization.managerEmail` | `manage.html#reports/<id>` |
 | `payment_settings_changed` | admin změnil platební údaje (všem adminům) | – |
 | `closure_notice` | mimořádné uzavření revíru na den místenky | `status.html?code=…` |
 | `staff_invite` | admin pozval správce/admina | `account.html#invite=<token>` |

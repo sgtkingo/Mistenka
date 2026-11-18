@@ -1007,6 +1007,86 @@ test("platební údaje mění jen admin; změnu dostanou e-mailem všichni admin
   await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: [] } }); // průvodce na konci testů čeká, že admin neexistuje
 });
 
+// ---------- zarybnění, přehledy, uzávěrky (B6) ----------
+test("zarybnění: záznamy a plán, validace, rozpočet roku", async () => {
+  await setClock("2026-08-03T08:00:00Z");
+  const member = await verifiedAccount();
+  assert.equal((await call("GET", "/manage/stocking", { session: member.session })).data.code, "forbidden_role");
+  const { session } = await managerAccount();
+  const add = (body) => call("POST", "/manage/stocking", { body, session });
+  assert.equal((await add({ revirId: "revir-a", date: "2026-08-01", species: "kapr" })).data.code, "invalid_amount");
+  assert.equal((await add({ revirId: "neexistuje", date: "2026-08-01", species: "kapr", kg: 1 })).data.code, "unknown_revir");
+  const actual = await add({ revirId: "revir-a", date: "2026-08-01", species: "kapr", ageClass: "K3", kg: 100, pieces: 200, costCzk: 15000, supplier: "Rybářství Třeboň" });
+  assert.equal(actual.status, 201, JSON.stringify(actual.data));
+  assert.equal(actual.data.stocking.species, "kapr obecný", "druh v kanonickém tvaru");
+  assert.equal(actual.data.stocking.costHalere, 1500000);
+  const plan = await add({ revirId: "revir-a", date: "2026-10-01", species: "amur", kg: 30, costCzk: 4500, planned: true });
+  assert.equal(plan.data.stocking.planned, true);
+  const planned = (await call("GET", "/manage/stocking?year=2026&planned=1", { session })).data.stocking;
+  assert.ok(planned.some((s) => s.id === plan.data.stocking.id) && planned.every((s) => s.planned));
+
+  const budget = await call("PUT", "/manage/stocking/budget", { body: { year: "2026", revirId: "revir-a", amountCzk: 50000 }, session });
+  assert.equal(budget.status, 200, JSON.stringify(budget.data));
+  const row = budget.data.budgets.find((b) => b.revirId === "revir-a");
+  assert.equal(row.amountHalere, 5000000);
+  assert.equal(row.spentHalere, 1500000, "skutečné náklady");
+  assert.equal(row.plannedHalere, 450000, "plánované náklady");
+  // Realizace plánu = úprava záznamu (planned: false).
+  const done = await call("PUT", `/manage/stocking/${plan.data.stocking.id}`, { body: { revirId: "revir-a", date: "2026-08-02", species: "amur", kg: 28, costCzk: 4200, planned: false }, session });
+  assert.equal(done.data.stocking.planned, false);
+  assert.equal((await call("GET", "/manage/stocking/budget?year=2026", { session })).data.budgets.find((b) => b.revirId === "revir-a").spentHalere, 1920000);
+  assert.equal((await call("DELETE", `/manage/stocking/${plan.data.stocking.id}`, { session })).status, 200);
+});
+
+test("přehledy: místenky, tržby, úlovky po druzích, uloveno vs. nasazeno, po měsících", async () => {
+  await setClock("2026-08-03T08:00:00Z");
+  const { session } = await managerAccount();
+  const a = await paidTicket({ date: "2026-08-03", memberId: "74000001" });
+  const b = await paidTicket({ date: "2026-08-03", memberId: "74000002" });
+  await call("POST", `/tickets/${a.code}/return`, { body: { catches: [{ species: "kapr", length: 50, weight: 2.5 }, { species: "kapr", length: 55 }, { species: "lín", length: 30 }] }, token: a.token });
+  await call("POST", `/tickets/${b.code}/return`, { body: { noCatch: true }, token: b.token });
+  assert.equal((await call("GET", "/manage/stats?from=2026-08-31&to=2026-08-01", { session })).data.code, "invalid_date");
+  const res = await call("GET", "/manage/stats?from=2026-08-01&to=2026-08-31&revirId=revir-a", { session });
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  const s = res.data;
+  assert.equal(s.summary.sold, 2);
+  assert.equal(s.summary.returned, 2);
+  assert.equal(s.summary.noCatch, 1);
+  assert.equal(s.summary.anglers, 2);
+  assert.equal(s.summary.revenueHalere, 40000);
+  assert.equal(s.catches.total, 3);
+  const kapr = s.catches.bySpecies.find((c) => c.species === "kapr obecný");
+  assert.deepEqual([kapr.count, kapr.weightKg, kapr.weighed, kapr.avgLength, kapr.maxLength], [2, 2.5, 1, 52.5, 55]);
+  const balance = s.balance.find((x) => x.species === "kapr obecný");
+  assert.deepEqual([balance.caughtKg, balance.stockedKg, balance.stockedPieces, balance.balanceKg], [2.5, 100, 200, 97.5], "uloveno vs. nasazeno");
+  assert.equal(s.stocking.costHalere, 1500000);
+  assert.deepEqual(s.byMonth.map((m) => [m.month, m.tickets, m.catches]), [["2026-08", 2, 3]]);
+});
+
+test("uzávěrky: ruční za období; automatická po skončení sezony s e-mailem správci, jen jednou", async () => {
+  await setClock("2026-08-03T08:00:00Z");
+  const { session } = await managerAccount();
+  const manual = await call("POST", "/manage/reports", { body: { name: "Srpen 2026", from: "2026-08-01", to: "2026-08-31", revirId: "revir-a" }, session });
+  assert.equal(manual.status, 201, JSON.stringify(manual.data));
+  assert.equal(manual.data.kind, "manual");
+  assert.equal(manual.data.data.summary.sold, 2, "uložená statistika");
+
+  const season = await call("POST", "/manage/seasons", { body: { name: "Letní sezona", revirId: "revir-a", opensOn: "2026-08-01", closesOn: "2026-08-03" }, session });
+  assert.equal(season.status, 201);
+  const before = (await call("GET", "/manage/reports", { session })).data.reports.filter((r) => r.kind === "season").length;
+  await setClock("2026-08-04T06:00:00Z"); // den po skončení sezony – úlohy vytvoří uzávěrku
+  const reports = (await call("GET", "/manage/reports", { session })).data.reports;
+  const auto = reports.find((r) => r.kind === "season" && r.seasonId === season.data.season.id);
+  assert.ok(auto, "automatická uzávěrka");
+  assert.deepEqual([auto.from, auto.to], ["2026-08-01", "2026-08-03"]);
+  assert.equal((await call("GET", `/manage/reports/${auto.id}`, { session })).data.data.summary.sold, 2);
+  assert.ok(await lastEmail("spravce-mo@example.cz", "season_report"), "e-mail správci");
+  await setClock("2026-08-05T06:00:00Z");
+  assert.equal((await call("GET", "/manage/reports", { session })).data.reports.filter((r) => r.kind === "season").length, before + 1, "uzávěrka sezony jen jednou");
+  await call("DELETE", `/manage/seasons/${season.data.season.id}`, { session });
+  await setClock("2026-06-10T08:00:00Z");
+});
+
 // ---------- průvodce prvním spuštěním a pozvání správce ----------
 // Musí běžet poslední: po založení admina se průvodce zavře.
 test("průvodce prvním spuštěním: admin vznikne jen s jednorázovým odkazem a rovnou s 2FA", async () => {

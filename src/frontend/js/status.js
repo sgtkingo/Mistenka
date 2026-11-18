@@ -91,14 +91,15 @@ function renderWarden(view) {
     const reason = qs("#seizeReason").value.trim();
     if (reason.length < 3) return showToast("Uveďte důvod zadržení.");
     if (!window.confirm("Opravdu zadržet místenku? Lov tím okamžitě končí.")) return;
-    event.currentTarget.disabled = true;
+    const button = event.currentTarget;
+    button.disabled = true;
     try {
       await api(`/warden/tickets/${code}/seize`, { method: "POST", body: { reason, place: qs("#seizePlace").value.trim() } });
       showToast("Místenka byla zadržena.");
       loadStatus();
     } catch (error) {
       showToast(error.message);
-      event.currentTarget.disabled = false;
+      button.disabled = false;
     }
   });
 }

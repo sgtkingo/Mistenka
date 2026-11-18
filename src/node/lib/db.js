@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 // Sloupce tabulky users (sdílí vytvoření i migrace).
 const USERS_COLUMNS = `
@@ -145,6 +145,48 @@ function openDatabase(dataDir) {
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS settings_versions_scope ON settings_versions (scope, id);
+    -- Zarybnění (B6): skutečné (planned = 0) i plánované (planned = 1) nasazení ryb.
+    CREATE TABLE IF NOT EXISTS stocking_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      revir_id TEXT NOT NULL,
+      subdistrict TEXT,                        -- číslo podrevíru, NULL = celý revír
+      date TEXT NOT NULL,                      -- YYYY-MM-DD (u plánu předpokládané)
+      planned INTEGER NOT NULL DEFAULT 0,
+      species_id TEXT,
+      species_name TEXT NOT NULL,
+      age_class TEXT,                          -- K1, K2, K3, plůdek, tržní …
+      kg REAL,
+      pieces INTEGER,
+      cost_halere INTEGER,
+      supplier TEXT,
+      note TEXT,
+      created_by INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS stocking_date ON stocking_events (date);
+    CREATE TABLE IF NOT EXISTS stocking_budgets (
+      year TEXT NOT NULL,
+      revir_id TEXT,                           -- NULL = celá MO
+      amount_halere INTEGER NOT NULL,
+      note TEXT,
+      updated_by INTEGER,
+      updated_at TEXT NOT NULL
+    );
+    -- Uzávěrky: automatické po skončení sezony a ruční za libovolné období. data = statistika (JSON).
+    CREATE TABLE IF NOT EXISTS season_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL,                      -- season | manual
+      season_id INTEGER,
+      revir_id TEXT,
+      date_from TEXT NOT NULL,
+      date_to TEXT NOT NULL,
+      data TEXT NOT NULL,
+      created_by INTEGER,
+      created_at TEXT NOT NULL
+    );
     -- Kontroly místenek porybným (obdoba zápisu stráže do povolenky).
     CREATE TABLE IF NOT EXISTS ticket_checks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -96,6 +96,17 @@ function memberBlocked(config, { ticket, block, limits }) {
   };
 }
 
+// ---------- uzávěrka sezony (B6) ----------
+function seasonReport(config, { name, revir, data, link }) {
+  const s = data.summary;
+  const rows = [["Revír", revir], ["Období", `${czDate(data.from)} – ${czDate(data.to)}`], ["Prodané místenky", String(s.sold)], ["Rybářů", String(s.anglers)], ["Tržby", czk(s.revenueHalere)], ["Odevzdané / neodevzdané", `${s.returned} / ${s.unreturned}`], ["Úlovky", `${data.catches.total} ks, ${data.catches.weightKg} kg`], ["Zarybnění", czk(data.stocking.costHalere)]];
+  return {
+    subject: `Uzávěrka – ${name}`,
+    html: layout(config, `Uzávěrka: ${name}`, `<p>Sezona skončila, uzávěrka je vytvořená a uložená v manažerském portálu.</p>${table(rows)}${button(link, "Otevřít uzávěrku")}`),
+    text: textBlock([`Uzávěrka: ${name}`, ...rows.map(([k, v]) => `${k}: ${v}`), `Uzávěrka: ${link}`])
+  };
+}
+
 // ---------- nastavení (B5) ----------
 function paymentSettingsChanged(config, { actorName, before, after, at }) {
   const labels = { accountNumber: "Číslo účtu", bankCode: "Kód banky", iban: "IBAN", recipientName: "Příjemce", reservationMinutes: "Rezervace (min)", messagePrefix: "Zpráva pro příjemce" };
@@ -161,4 +172,4 @@ function createFileMailer(dir) {
   };
 }
 
-module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, ticketCancelled, paymentSettingsChanged, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, createFileMailer, czDate };
+module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, ticketCancelled, paymentSettingsChanged, seasonReport, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, createFileMailer, czDate };

@@ -110,3 +110,11 @@ tr.clickable{cursor:pointer}tr.clickable:hover td{background:#f6fbff}#csvLink{te
 .settings-footer{position:sticky;bottom:0;background:#fff;display:flex;gap:10px;align-items:center;padding:14px 0;margin-top:20px;border-top:1px solid var(--line)}.settings-footer input{margin-bottom:0!important;max-width:340px}
 .settings-tools{display:flex;gap:16px;flex-wrap:wrap}.settings-tools .text-button{margin:4px 0 0}.settings-history{margin-top:10px}.json-editor{font-family:ui-monospace,Consolas,monospace;font-size:12px;width:100%}
 @media(max-width:800px){.form-three-col,.form-four-col{grid-template-columns:1fr 1fr}.settings-footer{flex-wrap:wrap}}
+
+/* ---------- zarybnění a přehledy (B6) ---------- */
+.stock-filters{grid-template-columns:140px 220px;margin-bottom:14px}.stats-filters{grid-template-columns:150px 150px 1fr auto auto;margin-bottom:18px}.budget-input{max-width:140px;margin-bottom:0!important;padding:6px 8px!important}.over-budget{color:#b52f27}
+.report-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}.report-head h2{margin:6px 0 2px;font-size:22px}
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:8px}.kpi{border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:#fbfbfa}.kpi small{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}.kpi b{font-size:18px}
+.report-body h3{font-size:15px;margin:22px 0 8px}
+@media(max-width:800px){.kpi-grid{grid-template-columns:1fr 1fr}.stats-filters{grid-template-columns:1fr 1fr}}
+@media print{.manage-nav,.site-header,.no-print,.toast{display:none!important}.manage-layout{display:block}.manage-section{box-shadow:none;border:0;padding:0}.manage-body{background:#fff}.kpi{break-inside:avoid}}

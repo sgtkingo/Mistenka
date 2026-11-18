@@ -17,6 +17,8 @@ qsa(".manage-nav-item").forEach((item) => item.addEventListener("click", () => {
   qsa(".manage-section").forEach((el) => el.classList.toggle("hidden", el.id !== `section-${section}`));
   if (section !== "soon" && location.hash.slice(1).split("/")[0] !== section) history.replaceState(null, "", section === "tickets" ? location.pathname : `#${section}`);
   if (section === "tickets") loadTickets();
+  if (section === "stocking") window.MistenkaReports.loadStocking();
+  if (section === "reports") window.MistenkaReports.loadReports(location.hash.startsWith("#reports/") ? location.hash.split("/")[1] : "");
   if (section === "settings") window.MistenkaSettings.load(decodeURIComponent(location.hash.split("/")[1] || ""));
   if (section === "payments") loadPayments();
   if (section === "vouchers") loadVouchers();
@@ -227,9 +229,10 @@ async function openTicket(code) {
       const reason = qs("#cancelReason").value.trim();
       if (reason.length < 3) return showToast("Uveďte důvod zrušení.");
       if (!window.confirm(`Opravdu zrušit místenku ${t.code}?`)) return;
-      event.currentTarget.disabled = true;
+      const button = event.currentTarget;
+      button.disabled = true;
       try { await api(`/manage/tickets/${t.code}/cancel`, { method: "POST", body: { reason } }); showToast("Místenka zrušena."); openTicket(t.code); loadTickets(); }
-      catch (error) { showToast(error.message); event.currentTarget.disabled = false; }
+      catch (error) { showToast(error.message); button.disabled = false; }
     });
   } catch (error) { body.innerHTML = `<p class="status-error">${esc(error.message)}</p><button class="text-button" type="button" onclick="this.closest('dialog').close()">Zavřít</button>`; }
 }
