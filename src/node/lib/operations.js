@@ -97,7 +97,7 @@ function createOperations({ db, config, appUrl }) {
   // ---------- sezony ----------
   const seasonShape = (s, today = time.pragueToday()) => ({
     id: s.id, revirId: s.revir_id, revirName: revirName(s.revir_id), name: s.name, opensOn: s.opens_on, closesOn: s.closes_on,
-    state: s.opens_on > today ? "upcoming" : !s.closes_on || s.closes_on >= today ? "open" : "closed"
+    state: s.closes_on && s.closes_on < s.opens_on ? "closed" : s.opens_on > today ? "upcoming" : !s.closes_on || s.closes_on >= today ? "open" : "closed"
   });
   const seasonsFor = (revirId) => db.prepare(`SELECT * FROM seasons WHERE deleted_at IS NULL AND ${scopeSql} ORDER BY opens_on`).all(revirId);
   function listSeasons() {
@@ -105,9 +105,10 @@ function createOperations({ db, config, appUrl }) {
     return { seasons: db.prepare("SELECT * FROM seasons WHERE deleted_at IS NULL ORDER BY opens_on DESC, id DESC").all().map((s) => seasonShape(s, today)) };
   }
   function saveSeason(actor, id, body = {}) {
-    const name = validText(body.name, { min: 1, max: 80, code: "invalid_name", label: "Název" });
     const revirId = validRevir(body.revirId);
     const opensOn = validDate(body.opensOn, { required: true, label: "Otevření sezony" });
+    // Název je nepovinný – výchozí „Sezona <rok otevření>“.
+    const name = validText(body.name, { max: 80, code: "invalid_name", label: "Název" }) || `Sezona ${opensOn.slice(0, 4)}`;
     const closesOn = validDate(body.closesOn, { label: "Uzavření sezony" });
     if (closesOn && closesOn < opensOn) throw new ApiError(400, "invalid_date", "Uzavření sezony musí být po jejím otevření.");
     return transaction(db, () => {
@@ -122,6 +123,21 @@ function createOperations({ db, config, appUrl }) {
       }
       audit(actor, id ? "season_updated" : "season_created", "season", rowId, { name, opensOn, closesOn, revirId });
       return { season: seasonShape(db.prepare("SELECT * FROM seasons WHERE id = ?").get(rowId)) };
+    });
+  }
+  // Uzavření sezony od data (včetně): posledním dnem lovu je den předtím. Od dneška = uzavřít ihned.
+  // Už vystavené místenky platí dál; nákup na dny od data uzavření se zablokuje.
+  function closeSeason(actor, id, body = {}) {
+    const from = validDate(body.from, { required: true, label: "Datum uzavření" });
+    if (from < time.pragueToday()) throw new ApiError(400, "invalid_date", "Sezonu lze uzavřít nejdříve ode dneška.");
+    return transaction(db, () => {
+      const season = db.prepare("SELECT * FROM seasons WHERE id = ? AND deleted_at IS NULL").get(Number(id));
+      if (!season) throw new ApiError(404, "not_found", "Sezona neexistuje.");
+      const closesOn = time.addDays(from, -1);
+      if (season.closes_on && season.closes_on < closesOn) throw new ApiError(409, "already_closing", "Sezona už končí dříve.");
+      db.prepare("UPDATE seasons SET closes_on = ?, updated_at = ? WHERE id = ?").run(closesOn, iso(time.now()), season.id);
+      audit(actor, "season_closed", "season", season.id, { from, closesOn });
+      return { season: seasonShape(db.prepare("SELECT * FROM seasons WHERE id = ?").get(season.id)) };
     });
   }
   function deleteSeason(actor, id) {
@@ -178,7 +194,7 @@ function createOperations({ db, config, appUrl }) {
     return { open: true };
   }
 
-  return { activeAnnouncements, listAnnouncements, saveAnnouncement, deleteAnnouncement, listSeasons, saveSeason, deleteSeason, listClosures, createClosure, deleteClosure, dayStatus };
+  return { activeAnnouncements, listAnnouncements, saveAnnouncement, deleteAnnouncement, listSeasons, saveSeason, closeSeason, deleteSeason, listClosures, createClosure, deleteClosure, dayStatus };
 }
 
 module.exports = { createOperations };

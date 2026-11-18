@@ -276,7 +276,8 @@ Správa pro `manager`/`admin` (🛠, jinak `401`/`403 forbidden_role`). `revirId
 | Endpoint | Tělo | Odpověď / chyby |
 | --- | --- | --- |
 | `GET /manage/seasons` | – | `{ seasons: [{ id, revirId, revirName, name, opensOn, closesOn, state: "upcoming" \| "open" \| "closed" }] }` |
-| `POST /manage/seasons`, `PUT /manage/seasons/{id}` | `{ name, revirId?, opensOn, closesOn? }` (`closesOn` prázdné = do uzavření) | `201 { season }` / `{ season }`; `400 invalid_name`, `invalid_date` |
+| `POST /manage/seasons`, `PUT /manage/seasons/{id}` | `{ name?, revirId?, opensOn, closesOn? }` (`name` prázdné = „Sezona <rok otevření>“, `closesOn` prázdné = do uzavření) | `201 { season }` / `{ season }`; `400 invalid_name`, `invalid_date` |
+| `POST /manage/seasons/{id}/close` | `{ from }` – uzavřít od data včetně (nejdřív dnes = ihned); posledním dnem lovu je den předtím, vystavené místenky platí dál | `{ season }`; `400 invalid_date`, `404`, `409 already_closing` |
 | `DELETE /manage/seasons/{id}` | – | `{ deleted: true }` |
 
 **Mimořádná uzavření** – zablokují nákup na dny `dateFrom`–`dateTo` (`409 revir_closed`, má přednost před sezonou). Držitelé už vystavených neodevzdaných místenek a platných rezervací na tyto dny dostanou e-mail `closure_notice`; vrácení peněz řeší správce ručně.

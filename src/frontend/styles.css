@@ -121,3 +121,8 @@ tr.clickable{cursor:pointer}tr.clickable:hover td{background:#f6fbff}#csvLink{te
 
 .privacy-doc h2{font-size:18px;margin:28px 0 8px}.privacy-doc ul{padding-left:20px}.privacy-doc li{margin:4px 0}.privacy-table td{vertical-align:top;font-size:13px}.privacy-doc .info-box{margin:14px 0 4px}
 .placeholder{background:#fff4dc;color:#946100;padding:0 4px;border-radius:3px}
+
+.big-button{font-size:15px;padding:14px 22px;border-radius:6px}.season-open-form{border:1px solid #b9d8f2;background:#f6fbff;border-radius:8px;padding:16px;margin-top:4px}
+.revir-status-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}.revir-status-card{border:1px solid var(--line);border-radius:10px;padding:14px 16px;font-size:13px}.revir-status-card p{margin:8px 0 12px}
+.revir-status-head{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:15px}.close-season-form{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}.close-season-form .danger-button{margin-top:4px}
+.radio-row{display:flex;align-items:center;gap:8px;margin:6px 0}.radio-row .close-from{max-width:130px;margin:0!important;padding:6px 8px!important}

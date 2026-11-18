@@ -776,6 +776,16 @@ test("sezona: mimo sezonu nelze koupit, dny jsou v dostupnosti uzavřené; reví
   await setClock("2026-06-10T08:00:00Z");
   const { session } = await managerAccount();
   assert.equal((await call("POST", "/manage/seasons", { body: { name: "Sezona 2026", revirId: "revir-a" }, session })).data.code, "invalid_date");
+  // Název je nepovinný; uzavření od data = poslední den lovu je den předtím; uzavřít lze nejdřív ode dneška.
+  const unnamed = (await call("POST", "/manage/seasons", { body: { revirId: "revir-b", opensOn: "2026-06-01" }, session })).data.season;
+  assert.equal(unnamed.name, "Sezona 2026");
+  assert.equal((await call("POST", `/manage/seasons/${unnamed.id}/close`, { body: { from: "2026-06-09" }, session })).data.code, "invalid_date");
+  const closing = (await call("POST", `/manage/seasons/${unnamed.id}/close`, { body: { from: "2026-06-12" }, session })).data.season;
+  assert.equal(closing.closesOn, "2026-06-11");
+  assert.equal((await call("POST", "/orders", { body: orderBody({ revirId: "revir-b", date: "2026-06-12" }) })).data.code, "out_of_season");
+  const now = (await call("POST", `/manage/seasons/${unnamed.id}/close`, { body: { from: "2026-06-10" }, session })).data.season;
+  assert.equal(now.state, "closed", "uzavřeno ihned");
+  await call("DELETE", `/manage/seasons/${unnamed.id}`, { session });
   const season = await call("POST", "/manage/seasons", { body: { name: "Sezona 2026", revirId: "revir-a", opensOn: "2026-06-12", closesOn: "2026-12-31" }, session });
   assert.equal(season.status, 201, JSON.stringify(season.data));
   assert.equal(season.data.season.state, "upcoming");

@@ -26,6 +26,7 @@
         <button class="manage-nav-item" type="button" data-section="limits">Limity a blokace</button>
         <button class="manage-nav-item" type="button" data-section="announcements">Vývěska</button>
         <button class="manage-nav-item" type="button" data-section="seasons">Sezona a uzavření</button>
+        <button class="manage-nav-item" type="button" data-section="reviry">Revíry</button>
         <button class="manage-nav-item" type="button" data-section="settings">Nastavení</button>
         <button class="manage-nav-item" type="button" data-section="stocking">Zarybnění</button>
         <button class="manage-nav-item" type="button" data-section="reports">Přehledy a uzávěrky</button>
@@ -125,16 +126,16 @@
 
       <section class="panel-card manage-section hidden" id="section-seasons">
         <div class="panel-heading"><div><span class="section-kicker">Provoz revíru</span><h1>Sezona a uzavření</h1></div></div>
-        <p class="panel-intro">Místenky lze kupovat jen na dny v otevřené sezoně. Revír bez nastavené sezony je otevřený celý rok. Mimořádné uzavření zablokuje nákup na zvolené dny a držitelům už prodaných místenek pošle e-mail (vrácení peněz řešíte ručně).</p>
-        <h2 class="manage-h2">Sezony</h2>
-        <details class="invite-box">
-          <summary>+ Otevřít sezonu</summary>
-          <form id="seasonForm" novalidate>
-            <div class="form-two-col"><div><label class="field-label" for="seasonName">Název</label><input id="seasonName" maxlength="80" placeholder="Sezona 2027"></div><div><label class="field-label" for="seasonRevir">Revír</label><select id="seasonRevir" data-revir-select></select></div></div>
-            <div class="form-two-col"><div><label class="field-label" for="seasonFrom">Otevření</label><input id="seasonFrom" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div><div><label class="field-label" for="seasonTo">Uzavření <span class="optional">(prázdné = do uzavření)</span></label><input id="seasonTo" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div></div>
-            <button class="primary-button" type="submit">Uložit sezonu</button>
-          </form>
-        </details>
+        <p class="panel-intro">Místenky lze kupovat jen na dny v otevřené sezoně. Revír bez nastavené sezony je otevřený celý rok. Uzavřením se zablokuje nákup na další dny; už vystavené místenky platí dál.</p>
+        <button class="primary-button big-button" type="button" id="openSeasonButton">+ Otevřít sezonu</button>
+        <form id="seasonForm" class="season-open-form hidden" novalidate>
+          <div class="form-two-col"><div><label class="field-label" for="seasonRevir">Revír</label><select id="seasonRevir" data-revir-select></select></div><div><label class="field-label" for="seasonName">Název <span class="optional">(nepovinný, jinak „Sezona rok“)</span></label><input id="seasonName" maxlength="80"></div></div>
+          <div class="form-two-col"><div><label class="field-label" for="seasonFrom">Otevřít od</label><input id="seasonFrom" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div><div><label class="field-label" for="seasonTo">Plánované uzavření <span class="optional">(prázdné = do uzavření)</span></label><input id="seasonTo" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div></div>
+          <div class="resolve-actions"><button class="primary-button" type="submit">Otevřít sezonu</button><button class="text-button" type="button" id="cancelSeasonForm">Zrušit</button></div>
+        </form>
+        <h2 class="manage-h2">Stav revírů</h2>
+        <div id="revirStatus" class="revir-status-grid"></div>
+        <h2 class="manage-h2">Všechny sezony</h2>
         <div id="seasonList"></div>
         <h2 class="manage-h2">Mimořádná uzavření</h2>
         <details class="invite-box">
@@ -148,11 +149,16 @@
         <div id="closureList"></div>
       </section>
 
+      <section class="panel-card manage-section hidden" id="section-reviry">
+        <div class="panel-heading"><div><span class="section-kicker">Organizace</span><h1>Revíry</h1></div></div>
+        <p class="panel-intro">Údaje revírů: cena, kapacita, prodej dopředu, podrevíry, doba lovu, texty a pravidla. Každé uložení vytvoří novou verzi s vaším jménem; starší verzi lze obnovit.</p>
+        <div class="settings-host" data-host="reviry"></div>
+      </section>
+
       <section class="panel-card manage-section hidden" id="section-settings">
         <div class="panel-heading"><div><span class="section-kicker">Organizace</span><h1>Nastavení</h1></div></div>
         <p class="panel-intro">Každé uložení vytvoří novou verzi s vaším jménem; starší verzi lze obnovit. Výchozí hodnoty jsou v konfiguračním souboru serveru.</p>
-        <div class="tabs settings-tabs" id="settingsTabs"></div>
-        <div id="settingsPanel"></div>
+        <div class="settings-host" data-host="settings"><div class="tabs settings-tabs" id="settingsTabs"></div><div id="settingsPanel"></div></div>
       </section>
 
       <section class="panel-card manage-section hidden" id="section-stocking">

@@ -3,6 +3,7 @@
   const { qs, qsa, esc, api, showToast, czDateTime, loadSession, hasRole } = window.Mistenka;
   let view = null;
   let tab = "organization";
+  let mode = "settings"; // settings = organizace, ryby, platby; reviry = jednotlivé revíry
   let isAdmin = false;
 
   const val = (id) => qs(`#${id}`)?.value.trim() ?? "";
@@ -41,9 +42,15 @@
       <div class="settings-history" id="settingsHistory"></div>`;
   }
 
-  async function load(initialTab) {
+  // Formuláře se vykreslují do jednoho panelu, který se přesune do aktivní sekce (Revíry / Nastavení).
+  async function load(initialTab, nextMode = "settings") {
+    mode = nextMode;
+    const host = qs(`.settings-host[data-host="${mode}"]`);
+    host.append(qs("#settingsTabs"), qs("#settingsPanel"));
     const panel = qs("#settingsPanel");
-    if (initialTab) tab = initialTab;
+    const inMode = (key) => (mode === "reviry" ? key.startsWith("revir:") || key === "new-revir" : !key.startsWith("revir:") && key !== "new-revir");
+    if (initialTab && inMode(initialTab)) tab = initialTab;
+    else if (!inMode(tab)) tab = mode === "reviry" ? "" : "organization";
     try {
       isAdmin = hasRole(await loadSession(), "admin");
       view = await api("/manage/settings");
@@ -52,8 +59,10 @@
     } catch (error) { panel.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
   }
   function renderTabs() {
-    const tabs = [["organization", "Organizace"], ...view.reviry.map((r) => [`revir:${r.id}`, r.data.name]), ["species", "Ryby a limity"], ["payment", "Platby"], ["new-revir", "+ Revír"]];
-    if (!tabs.some(([key]) => key === tab)) tab = "organization";
+    const tabs = mode === "reviry"
+      ? [...view.reviry.map((r) => [`revir:${r.id}`, r.data.name]), ["new-revir", "+ Nový revír"]]
+      : [["organization", "Organizace"], ["species", "Ryby a limity"], ["payment", "Platby"]];
+    if (!tabs.some(([key]) => key === tab)) tab = tabs[0][0];
     qs("#settingsTabs").innerHTML = tabs.map(([key, label]) => `<button type="button" class="tab${key === tab ? " active" : ""}" data-tab="${esc(key)}">${esc(label)}</button>`).join("");
     qsa("#settingsTabs .tab").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; renderTabs(); render(); }));
   }

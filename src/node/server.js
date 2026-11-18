@@ -216,6 +216,7 @@ async function handleApi(req, res, url, ip) {
   if ((m = pathname.match(/^\/api\/warden\/tickets\/([^/]+)\/seize$/)) && method === "POST") return send(res, 200, service.seizeTicket(m[1], accounts.requireWarden(ctx), await readBody(req)));
 
   // ---------- manažerský portál ----------
+  if ((m = pathname.match(/^\/api\/manage\/seasons\/(\d+)\/close$/)) && method === "POST") return send(res, 200, operations.closeSeason(accounts.requireManager(ctx), m[1], await readBody(req)));
   // Provoz (B4): důležité zprávy, sezony, mimořádná uzavření.
   const ops = pathname.match(/^\/api\/manage\/(announcements|seasons|closures)(?:\/(\d+))?$/);
   if (ops) {

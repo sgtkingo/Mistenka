@@ -21,7 +21,8 @@ qsa(".manage-nav-item").forEach((item) => item.addEventListener("click", () => {
   if (section === "audit") loadAudit();
   if (section === "stocking") window.MistenkaReports.loadStocking();
   if (section === "reports") window.MistenkaReports.loadReports(location.hash.startsWith("#reports/") ? location.hash.split("/")[1] : "");
-  if (section === "settings") window.MistenkaSettings.load(decodeURIComponent(location.hash.split("/")[1] || ""));
+  if (section === "settings") window.MistenkaSettings.load(decodeURIComponent(location.hash.split("/")[1] || ""), "settings");
+  if (section === "reviry") window.MistenkaSettings.load(decodeURIComponent(location.hash.split("/")[1] || ""), "reviry");
   if (section === "payments") loadPayments();
   if (section === "vouchers") loadVouchers();
   if (section === "users") loadUsers();
@@ -344,20 +345,60 @@ qs("#announcementForm").addEventListener("submit", (event) => submitForm(event, 
 
 // ---------- sezony a uzavření ----------
 const SEASON_STATES = { upcoming: ["Připravená", "info"], open: ["Otevřená", "ok"], closed: ["Uzavřená", "off"] };
+let seasonToday = "";
+// Sezona, která pro revír právě platí: otevřená, jinak nejbližší připravená, jinak poslední uzavřená.
+function revirSeason(seasons, revirId) {
+  const own = seasons.filter((s) => !s.revirId || s.revirId === revirId);
+  return own.find((s) => s.state === "open") || own.filter((s) => s.state === "upcoming").sort((a, b) => a.opensOn.localeCompare(b.opensOn))[0] || own.find((s) => s.state === "closed") || null;
+}
+function seasonPeriod(s) {
+  if (s.state === "upcoming") return `otevírá se ${shortDate(s.opensOn)}`;
+  if (s.closesOn && s.closesOn < s.opensOn) return "uzavřena před otevřením";
+  return `${shortDate(s.opensOn)} – ${s.closesOn ? `poslední den ${shortDate(s.closesOn)}` : "do uzavření"}`;
+}
+function renderRevirStatus(seasons) {
+  qs("#revirStatus").innerHTML = config.reviry.map((r) => {
+    const s = revirSeason(seasons, r.id);
+    const [label, tone] = s ? SEASON_STATES[s.state] : ["Otevřeno celoročně", "ok"];
+    const period = s
+      ? `${esc(s.name)}${s.revirId ? "" : ' <small class="muted-inline">(všechny revíry)</small>'}<br><small class="muted-inline">${esc(seasonPeriod(s))}</small>`
+      : '<small class="muted-inline">Bez sezony – místenky se prodávají celý rok.</small>';
+    const closable = s && (s.state === "open" || s.state === "upcoming");
+    return `<div class="revir-status-card"><div class="revir-status-head"><b>${esc(r.name)}</b><span class="badge badge-${tone}">${label}</span></div><p>${period}</p>
+      ${closable ? `<button class="secondary-button toggle-close" type="button">Uzavřít sezonu ▾</button>
+      <form class="close-season-form hidden" data-id="${s.id}" data-name="${esc(s.name)}" novalidate>
+        <label class="radio-row"><input type="radio" name="when" value="now" checked> <span>Ihned – od dneška se místenky neprodávají</span></label>
+        <label class="radio-row"><input type="radio" name="when" value="date"> <span>Od data</span> <input class="date-input close-from" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></label>
+        <p class="field-help">Posledním dnem lovu bude den před uzavřením. Vystavené místenky platí dál.</p>
+        <button class="danger-button" type="submit">Uzavřít</button>
+      </form>` : ""}</div>`;
+  }).join("");
+  qsa(".toggle-close").forEach((b) => b.addEventListener("click", () => b.nextElementSibling.classList.toggle("hidden")));
+  qsa(".close-season-form").forEach((form) => {
+    qs(".close-from", form).addEventListener("focus", () => { form.when.value = "date"; });
+    form.addEventListener("submit", (event) => submitForm(event, async () => {
+      let from = seasonToday;
+      if (form.when.value === "date") {
+        from = parseCzDate(qs(".close-from", form).value.trim());
+        if (!from) throw new Error("Zadejte datum uzavření ve tvaru den.měsíc.rok.");
+      }
+      if (!window.confirm(`Uzavřít „${form.dataset.name}“ ${from === seasonToday ? "ihned" : `od ${shortDate(from)}`}?`)) return;
+      await api(`/manage/seasons/${form.dataset.id}/close`, { method: "POST", body: { from } });
+      showToast("Sezona uzavřena.");
+      loadSeasons();
+    }));
+  });
+}
 async function loadSeasons() {
   try {
-    const [{ seasons }, { closures }] = await Promise.all([api("/manage/seasons"), api("/manage/closures")]);
+    const [{ seasons }, { closures }, cfg] = await Promise.all([api("/manage/seasons"), api("/manage/closures"), api("/config")]);
+    seasonToday = cfg.today;
+    renderRevirStatus(seasons);
     qs("#seasonList").innerHTML = seasons.length ? `<table class="data-table"><thead><tr><th>Sezona</th><th>Revír</th><th>Období</th><th>Stav</th><th></th></tr></thead><tbody>${seasons.map((s) => {
       const [label, tone] = SEASON_STATES[s.state];
       return `<tr><td data-label="Sezona"><b>${esc(s.name)}</b></td><td data-label="Revír">${esc(s.revirName)}</td><td data-label="Období">${esc(shortDate(s.opensOn))} – ${esc(shortDate(s.closesOn) || "do uzavření")}</td><td data-label="Stav"><span class="badge badge-${tone}">${label}</span></td>
-        <td class="row-actions">${s.state === "open" ? `<button class="secondary-button close-season" type="button" data-id="${s.id}">Uzavřít dnes</button>` : ""}<button class="text-button delete-season" type="button" data-id="${s.id}">Smazat</button></td></tr>`;
-    }).join("")}</tbody></table>` : '<p class="muted">Žádná sezona – revíry jsou otevřené celý rok.</p>';
-    qsa(".close-season").forEach((b) => b.addEventListener("click", async () => {
-      const s = seasons.find((x) => x.id === Number(b.dataset.id));
-      if (!window.confirm(`Uzavřít „${s.name}“ ke dnešku? Místenky na další dny pak nepůjde koupit.`)) return;
-      const today = (await api("/config")).today;
-      try { await api(`/manage/seasons/${s.id}`, { method: "PUT", body: { name: s.name, revirId: s.revirId, opensOn: s.opensOn, closesOn: today } }); showToast("Sezona uzavřena."); loadSeasons(); } catch (error) { showToast(error.message); }
-    }));
+        <td class="row-actions"><button class="text-button delete-season" type="button" data-id="${s.id}">Smazat</button></td></tr>`;
+    }).join("")}</tbody></table>` : '<p class="muted">Zatím žádná sezona.</p>';
     qsa(".delete-season").forEach((b) => b.addEventListener("click", async () => {
       if (!window.confirm("Smazat sezonu? Revír bez sezony je otevřený celý rok.")) return;
       try { await api(`/manage/seasons/${b.dataset.id}`, { method: "DELETE" }); loadSeasons(); } catch (error) { showToast(error.message); }
@@ -369,13 +410,26 @@ async function loadSeasons() {
       if (!window.confirm("Zrušit uzavření? Na tyto dny půjde znovu kupovat místenky.")) return;
       try { await api(`/manage/closures/${b.dataset.id}`, { method: "DELETE" }); loadSeasons(); } catch (error) { showToast(error.message); }
     }));
-  } catch (error) { qs("#seasonList").innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
+  } catch (error) { qs("#revirStatus").innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
 }
+function toggleSeasonForm(show) {
+  qs("#seasonForm").classList.toggle("hidden", !show);
+  qs("#openSeasonButton").classList.toggle("hidden", show);
+  if (show) {
+    qs("#seasonForm").reset();
+    fillRevirSelects();
+    qs("#seasonFrom").value = shortDate(seasonToday); // výchozí otevření = dnes
+    qs("#seasonFrom").focus();
+  }
+}
+qs("#openSeasonButton").addEventListener("click", () => toggleSeasonForm(true));
+qs("#cancelSeasonForm").addEventListener("click", () => toggleSeasonForm(false));
 qs("#seasonForm").addEventListener("submit", (event) => submitForm(event, async () => {
-  await api("/manage/seasons", { method: "POST", body: { name: qs("#seasonName").value.trim(), revirId: qs("#seasonRevir").value || null, opensOn: dateField("seasonFrom", "Otevření"), closesOn: dateField("seasonTo", "Uzavření") } });
-  qs("#seasonForm").reset();
-  fillRevirSelects();
-  showToast("Sezona uložena.");
+  const opensOn = dateField("seasonFrom", "Otevřít od");
+  if (!opensOn) throw new Error("Zadejte datum otevření.");
+  const { season } = await api("/manage/seasons", { method: "POST", body: { name: qs("#seasonName").value.trim(), revirId: qs("#seasonRevir").value || null, opensOn, closesOn: dateField("seasonTo", "Plánované uzavření") } });
+  showToast(`${season.name} otevřena.`);
+  toggleSeasonForm(false);
   loadSeasons();
 }));
 qs("#closureForm").addEventListener("submit", (event) => submitForm(event, async () => {
