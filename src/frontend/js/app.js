@@ -298,6 +298,8 @@ function prefill(user) {
     if (input && !input.value) { input.value = value || ""; input.dispatchEvent(new Event("input")); }
   }
   qs("#prefillNote").classList.remove("hidden");
+  // Vrácení místenky: číslo legitimace z účtu.
+  if (user.memberId && !qs("#returnMemberId").value) qs("#returnMemberId").value = user.memberId;
 }
 async function showCurrentTicket() {
   try {
