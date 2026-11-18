@@ -188,3 +188,7 @@ input[type=checkbox],input[type=radio]{width:auto!important;margin:0!important;p
 .panel-content>.date-wrap>input.date-input{width:100%;border:1px solid #ddd;border-radius:4px;padding:11px 12px;color:var(--ink);outline:0;margin-bottom:0}
 .panel-content>.date-wrap>input.date-input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(9,127,232,.16)}
 
+
+.footer-credit a{color:inherit;text-decoration:underline;text-underline-offset:2px}
+.footer-credit a:hover{color:var(--blue)}
+@media(max-width:640px){footer{flex-wrap:wrap;justify-content:center;text-align:center}}

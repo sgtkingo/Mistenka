@@ -1,6 +1,8 @@
 {
   "name": "mistenka",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE.md",
+  "author": "Ing. Jiří Konečný <jiri.konecny@vsb.cz>",
   "description": "Místenka – online rybářské místenky. Node.js pro lokální vývoj, PHP plugin pro WordPress.",
   "engines": {
     "node": ">=22.13"

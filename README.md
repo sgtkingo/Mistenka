@@ -76,3 +76,7 @@ Rybář platí převodem podle QR platby (SPAYD) s jedinečným variabilním sym
 ## Stav projektu
 
 Pilotní vývoj. Node verze implementuje úkoly A1–A6 z [docs/PLAN.md](docs/PLAN.md); převod do WordPress pluginu je další krok.
+
+## Licence
+
+Proprietární software, © 2026 Ing. Jiří Konečný. Všechna práva vyhrazena – užití pouze na základě písemné licenční smlouvy, viz [LICENSE.md](LICENSE.md).
