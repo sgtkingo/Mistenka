@@ -25,7 +25,10 @@
     "fromEmail": "mistenka@rybarikarvina.cz",
     "fromName": "Místenka – MO Karviná"
   },
-  "limitPolicy": { "violationsBeforeBlock": 0, "blockDays": null },
+  "limitPolicy": {
+    "violationsBeforeBlock": 0,
+    "blockDays": null
+  },
   "publicCheck": {
     "showFullName": true,
     "memberIdVisibleChars": 4
@@ -42,32 +45,54 @@
       "dailyCapacity": 30,
       "bookingDaysAhead": 3,
       "lateReturnDays": 7,
-      "area": "8 ha",
+      "area": "4,8 ha",
       "subdistrictCount": 4,
-      "subdistricts": "Petr 1–4 v k. ú. Petrovice-Prstná · celkem 8 ha",
+      "subdistricts": "Petr 1–4 v k. ú. Petrovice-Prstná · celkem 4,8 ha",
       "subdistrictList": [
         {
           "number": 1,
           "name": "Petr 1",
-          "area": "1,7 ha"
+          "area": "0,9 ha",
+          "gps": {
+            "lat": 49.9137911,
+            "lon": 18.5586933,
+            "label": "49°54'49.648\"N, 18°33'31.296\"E"
+          }
         },
         {
           "number": 2,
           "name": "Petr 2",
-          "area": "2,3 ha"
+          "area": "1,5 ha",
+          "gps": {
+            "lat": 49.9141711,
+            "lon": 18.5617942,
+            "label": "49°54'51.016\"N, 18°33'42.459\"E"
+          }
         },
         {
           "number": 3,
           "name": "Petr 3",
-          "area": "1,6 ha"
+          "area": "0,8 ha",
+          "gps": {
+            "lat": 49.9146064,
+            "lon": 18.5635322,
+            "label": "49°54'52.583\"N, 18°33'48.716\"E"
+          }
         },
         {
           "number": 4,
           "name": "Petr 4",
-          "area": "2,4 ha"
+          "area": "1,6 ha",
+          "gps": {
+            "lat": 49.9157739,
+            "lon": 18.5651953,
+            "label": "49°54'56.786\"N, 18°33'54.703\"E"
+          }
         }
       ],
-      "ticketSubdistricts": [1],
+      "ticketSubdistricts": [
+        1
+      ],
       "gps": {
         "lat": 49.9137911,
         "lon": 18.5586933,
