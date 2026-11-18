@@ -146,7 +146,7 @@ function createAccounts({ db, config, appUrl }) {
     const { firstName, lastName } = validName(input.firstName, input.lastName);
     const birthDate = validBirthDate(input.birthDate);
     const password = input.password ? validPassword(input.password) : null;
-    if (input.consent !== true) throw new ApiError(400, "consent_required", "Pro registraci je nutné potvrdit souhlas se zpracováním osobních údajů.");
+    if (input.consent !== true) throw new ApiError(400, "consent_required", "Pro registraci potvrďte, že jste se seznámili se zásadami zpracování osobních údajů.");
     return transaction(db, () => {
       const now = iso(time.now());
       const existing = userByEmail(email);
@@ -362,6 +362,19 @@ function createAccounts({ db, config, appUrl }) {
     if (!hasRole(user, "admin")) throw new ApiError(403, "forbidden_role", "Tuto část spravuje jen admin.");
     return user;
   }
+  // Citlivá akce (obnova databáze): znovu ověřit kód 2FA.
+  function confirmOtp(ctx, otp) {
+    const user = requireAdmin(ctx);
+    transaction(db, () => checkOtp(userById(user.id), otp));
+    return user;
+  }
+  // Automatická obnova při startu: audit + e-mail všem adminům.
+  function notifyAutoRestore(info) {
+    const now = iso(time.now());
+    db.prepare("INSERT INTO audit_events (at, action, target_type, target_id, detail) VALUES (?, 'database_auto_restored', 'backup', ?, ?)").run(now, info.from, JSON.stringify(info));
+    const mail = emails.databaseAutoRestored(config, info);
+    for (const admin of db.prepare("SELECT email FROM users WHERE ',' || roles || ',' LIKE '%,admin,%'").all()) queueEmail(admin.email, "database_auto_restored", mail);
+  }
   // Audit změn (jen admin): role, platby, nastavení, zálohy, zadržení, blokace …
   function listAudit(ctx, { limit = 200, action = "" } = {}) {
     requireAdmin(ctx);
@@ -495,7 +508,7 @@ function createAccounts({ db, config, appUrl }) {
   return {
     resolveSession, register, verifyEmail, login, requestMagicLink, magicLogin, requestPasswordReset, resetPassword, logout,
     me, updateProfile, confirmEmailChange, changePassword, deleteAccount, twoFactorSetup, twoFactorEnable, twoFactorDisable,
-    listUsers, setRoles, inviteStaff, requireWarden, requireManager, requireAdmin, listAudit, forceRoles, cleanup, requireUser,
+    listUsers, setRoles, inviteStaff, requireWarden, requireManager, requireAdmin, listAudit, confirmOtp, notifyAutoRestore, forceRoles, cleanup, requireUser,
     setupStatus, createSetupToken, setupTwoFactor, completeSetup
   };
 }

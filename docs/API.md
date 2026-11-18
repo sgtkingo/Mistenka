@@ -378,7 +378,8 @@ Jen `admin` (jinak `403 forbidden_role`; bez 2FA `403 mfa_required`).
 - **Denní záloha** během sezony (dnes je otevřená některá sezona, nebo žádná sezona není nastavená): plánovaná úloha jednou za den (Praha); drží se **poslední a aktuální** (2), starší se smažou.
 - **Po každé uzávěrce sezony** jedna trvalá záloha (`kind: "season"`, poznámka = název uzávěrky).
 - **Ruční** záloha admina, trvalá do smazání.
-- Node: konzistentní kopie SQLite (`VACUUM INTO`) do `DATA_DIR/backups/`. WordPress: export tabulek pluginu do chráněného adresáře mimo veřejný přístup, stejná pravidla. Obnova se z webu nedělá: zastavit server a nahradit soubor databáze zálohou.
+- Node: konzistentní kopie SQLite (`VACUUM INTO`) do `DATA_DIR/backups/`. WordPress: export tabulek pluginu do chráněného adresáře mimo veřejný přístup, stejná pravidla. - **Obnova z portálu** (`POST /manage/backups/{id}/restore` `{ confirm: "OBNOVIT", otp }`): znovu se ověří kód 2FA (`401 otp_required` / `invalid_otp`), bez potvrzení `400 confirm_required`, poškozená záloha `409 backup_corrupt`. Nejdřív vznikne pojistná záloha (`kind: "pre-restore"`), záloha se převede na aktuální schéma a data se přepíší v jedné transakci; nepřepisují se přihlášení (`sessions`), seznam záloh a technická metadata. Nastavení se znovu načte. Odpověď `{ restored, file, safetyBackup, rows }`.
+- **Automatická obnova při startu**: pokud kontrola integrity databáze selže, server ji odloží do `DATA_DIR/corrupt/`, nahradí nejnovější platnou zálohou, zapíše do auditu (`database_auto_restored`) a pošle všem adminům e-mail `database_auto_restored`. Bez platné zálohy server nenastartuje.
 
 | Endpoint | Tělo | Odpověď |
 | --- | --- | --- |
@@ -387,6 +388,19 @@ Jen `admin` (jinak `403 forbidden_role`; bez 2FA `403 mfa_required`).
 | `GET /manage/backups/{id}/download` | – | soubor zálohy (`application/vnd.sqlite3`) |
 | `DELETE /manage/backups/{id}` | – | `{ deleted: true }` |
 | `GET /manage/audit?limit=200&action=` | – | `{ events: [{ id, at, action, actor, targetType, targetId, detail }] }` – změny rolí, nastavení, plateb, zadržení, blokace, zálohy … |
+
+## Ochrana osobních údajů (GDPR)
+
+- Stránka `privacy.html` – obecné zásady pro místní organizaci rybářského svazu; správce, kontakt a lhůty se doplní z konfigurace (`GET /config` → `organization.address`, `organization.ico`, `privacy`).
+- `privacy` v nastavení organizace (`organization` scope): `{ contactEmail, ticketYears: 3, accountingYears: 10, emailDays: 90, auditYears: 5, backupYears: 3 }`.
+- Plánovaná úloha jednou denně:
+  - místenky z let `<= aktuální rok − ticketYears − 1` → anonymizace údajů držitele (jméno, e-mail, datum narození, číslo legitimace, vazba na účet, důvody zadržení/zrušení), smazání tokenů a obsahu jejich e-mailů; úlovky, ceny a VS zůstávají (`anonymized_at`),
+  - ukončené blokace starší než lhůta místenek → smazat,
+  - bankovní transakce starší než `accountingYears` → odstranit účet, jméno a zprávu plátce,
+  - odeslané e-maily starší než `emailDays` → smazat,
+  - audit starší než `auditYears` → smazat,
+  - zálohy (všechny druhy) starší než `backupYears` → smazat.
+- Registrace: pole `consent: true` znamená potvrzení, že se uživatel seznámil se zásadami (právní základ účtu je smlouva, ne souhlas).
 
 ## Porybný (B2)
 
@@ -470,7 +484,8 @@ V tomto pořadí; Node je spouští v intervalu, WordPress cron hostingu přes `
 5. úklid účtů: smazání neověřených účtů starších 48 h, prošlých relací a odkazů,
 6. automatické uzávěrky skončených sezon (+ trvalá záloha),
 7. denní záloha během sezony,
-8. odeslání fronty e-mailů.
+8. uchovávání osobních údajů (anonymizace a mazání po lhůtách),
+9. odeslání fronty e-mailů.
 
 `POST /jobs/run` vyžaduje hlavičku `X-Mistenka-Cron-Key` s tajným klíčem z konfigurace serveru; bez něj `404`.
 
@@ -493,6 +508,7 @@ V tomto pořadí; Node je spouští v intervalu, WordPress cron hostingu přes `
 | `member_blocked` | automatická blokace po opakovaném porušení limitů (držiteli) | – |
 | `ticket_cancelled` | správce zrušil vystavenou místenku | – |
 | `season_report` | automatická uzávěrka po skončení sezony, na `organization.managerEmail` | `manage.html#reports/<id>` |
+| `database_auto_restored` | databáze obnovena ze zálohy při startu (všem adminům) | – |
 | `payment_settings_changed` | admin změnil platební údaje (všem adminům) | – |
 | `closure_notice` | mimořádné uzavření revíru na den místenky | `status.html?code=…` |
 | `staff_invite` | admin pozval správce/admina | `account.html#invite=<token>` |

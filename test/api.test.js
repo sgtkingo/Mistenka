@@ -22,13 +22,14 @@ let tmpDir = null;
 before(async () => {
   if (BASE) return;
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "mistenka-test-"));
-  const port = 3300 + Math.floor(Math.random() * 500);
+  // PORT=0: volný port vybere systém, server ho vypíše (žádné kolize při souběhu).
   child = spawn(process.execPath, ["--no-warnings", path.join(__dirname, "..", "src", "node", "server.js")], {
-    env: { ...process.env, PORT: String(port), DATA_DIR: tmpDir, MISTENKA_CONFIG: path.join(__dirname, "fixtures", "organization.test.json"), MISTENKA_DEV: "1", MISTENKA_RATE_LIMIT: "0", MISTENKA_JOBS_INTERVAL_MS: "0", APP_URL: `http://localhost:${port}` },
+    env: { ...process.env, PORT: "0", DATA_DIR: tmpDir, MISTENKA_CONFIG: path.join(__dirname, "fixtures", "organization.test.json"), MISTENKA_DEV: "1", MISTENKA_RATE_LIMIT: "0", MISTENKA_JOBS_INTERVAL_MS: "0", APP_URL: "http://localhost:3999" },
     stdio: ["ignore", "pipe", "inherit"]
   });
-  await new Promise((resolve, reject) => {
-    child.stdout.on("data", (chunk) => { if (String(chunk).includes("běží na")) resolve(); });
+  const port = await new Promise((resolve, reject) => {
+    let out = "";
+    child.stdout.on("data", (chunk) => { out += chunk; const m = out.match(/běží na .* · port (\d+)/); if (m) resolve(m[1]); });
     child.on("exit", (code) => reject(new Error(`Server skončil (${code}).`)));
   });
   BASE = `http://localhost:${port}/api`;
@@ -1129,6 +1130,60 @@ test("zálohy: jen admin; ruční záloha jde stáhnout; denní se drží 2; po 
   assert.ok(audit.some((e) => e.action === "backup_deleted") && audit.some((e) => e.action === "season_created"), "audit změn");
   await call("DELETE", `/manage/seasons/${season.data.season.id}`, { session });
   await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: [] } }); // průvodce na konci čeká, že admin neexistuje
+  await setClock("2026-06-10T08:00:00Z");
+});
+
+test("obnova ze zálohy: jen admin s kódem 2FA a potvrzením; data se vrátí, přihlášení zůstane, vznikne pojistná záloha", async () => {
+  const t0 = Date.parse("2026-09-10T08:00:00Z");
+  await setClock(new Date(t0).toISOString());
+  const admin = await verifiedAccount();
+  await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: ["admin"] } });
+  const secret = await enableTwoFactor(admin.session, t0 + 30_000);
+  const session = admin.session;
+  await call("POST", "/manage/announcements", { body: { title: "Před zálohou", revirId: null }, session });
+  const backup = (await call("POST", "/manage/backups", { body: { note: "test obnovy" }, session })).data.backup;
+  const before = (await call("GET", "/manage/announcements", { session })).data.announcements;
+  for (const a of before) await call("DELETE", `/manage/announcements/${a.id}`, { session });
+  await call("POST", "/manage/announcements", { body: { title: "Po záloze", revirId: null }, session });
+
+  await setClock(new Date(t0 + 60_000).toISOString());
+  const restore = (body) => call("POST", `/manage/backups/${backup.id}/restore`, { body, session });
+  assert.equal((await restore({ confirm: "OBNOVIT" })).data.code, "otp_required");
+  assert.equal((await restore({ confirm: "OBNOVIT", otp: "000000" })).data.code, "invalid_otp");
+  await setClock(new Date(t0 + 90_000).toISOString());
+  assert.equal((await restore({ otp: totp(secret, t0 + 90_000) })).data.code, "confirm_required");
+  await setClock(new Date(t0 + 120_000).toISOString());
+  const done = await restore({ confirm: "OBNOVIT", otp: totp(secret, t0 + 120_000) });
+  assert.equal(done.status, 200, JSON.stringify(done.data));
+  assert.equal(done.data.safetyBackup.kind, "pre-restore");
+  const titles = (await call("GET", "/manage/announcements", { session })).data.announcements.map((a) => a.title);
+  assert.ok(titles.includes("Před zálohou") && !titles.includes("Po záloze"), "data ve stavu zálohy");
+  assert.equal((await call("GET", "/auth/me", { session })).data.user.email, admin.email, "přihlášení se obnovou nezruší");
+  const list = (await call("GET", "/manage/backups", { session })).data.backups;
+  assert.ok(list.some((b) => b.id === done.data.safetyBackup.id), "seznam záloh se obnovou nepřepíše");
+  assert.ok((await call("GET", "/manage/audit?action=backup_restored", { session })).data.events.length >= 1);
+  for (const a of (await call("GET", "/manage/announcements", { session })).data.announcements) await call("DELETE", `/manage/announcements/${a.id}`, { session });
+  await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: [] } });
+  await setClock("2026-06-10T08:00:00Z");
+});
+
+test("uchovávání (GDPR): místenka se 3 roky po konci roku lovu anonymizuje, statistika zůstává", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const t = await paidTicket({ email: "retence@example.cz", memberId: "75000001", lastName: "Uchovávaný" });
+  await call("POST", `/tickets/${t.code}/return`, { body: { catches: [{ species: "plotice", length: 20 }] }, token: t.token });
+  const cfg = (await call("GET", "/config")).data;
+  assert.equal(cfg.privacy.ticketYears, 3, "lhůty jsou ve veřejné konfiguraci (stránka zásad)");
+  await setClock("2029-12-31T10:00:00Z");
+  assert.equal((await call("GET", `/orders/${t.code}`, { memberId: "75000001" })).status, 200, "do konce třetího roku po roce lovu se uchovává");
+  await setClock("2030-01-02T08:00:00Z");
+  const pub = (await call("GET", `/tickets/${t.code}`)).data;
+  assert.equal(pub.holder.name.startsWith("Anonymizováno"), true, "osobní údaje odstraněny");
+  assert.equal((await call("GET", `/orders/${t.code}`, { memberId: "75000001" })).status, 403);
+  assert.equal(await lastEmail("retence@example.cz"), null, "staré e-maily smazány");
+  const { session } = await managerAccount();
+  const detail = (await call("GET", `/manage/tickets/${t.code}`, { session })).data;
+  assert.equal(detail.ticket.email, "");
+  assert.equal(detail.ticket.catches.length, 1, "úlovky zůstávají pro statistiku");
   await setClock("2026-06-10T08:00:00Z");
 });
 

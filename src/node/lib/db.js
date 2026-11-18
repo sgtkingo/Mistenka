@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 
 // Sloupce tabulky users (sdílí vytvoření i migrace).
 const USERS_COLUMNS = `
@@ -44,10 +44,50 @@ function migrateUsersNullable(db) {
   }
 }
 
-function openDatabase(dataDir) {
+// Kontrola integrity souboru SQLite. Vrátí null (v pořádku), nebo popis problému.
+function integrityProblem(file) {
+  let probe;
+  try {
+    probe = new DatabaseSync(file);
+    const rows = probe.prepare("PRAGMA integrity_check").all();
+    return rows.length === 1 && rows[0].integrity_check === "ok" ? null : rows.map((r) => r.integrity_check).join("; ").slice(0, 300);
+  } catch (error) {
+    return error.message;
+  } finally {
+    try { probe?.close(); } catch { /* už zavřeno */ }
+  }
+}
+
+// Automatická obnova: poškozená databáze se odloží do DATA_DIR/corrupt/ a nahradí nejnovější platnou zálohou.
+function autoRestore(dataDir, file, problem) {
+  const backupDir = path.join(dataDir, "backups");
+  const candidates = fs.existsSync(backupDir)
+    ? fs.readdirSync(backupDir).filter((name) => name.endsWith(".sqlite")).map((name) => path.join(backupDir, name)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)
+    : [];
+  const source = candidates.find((candidate) => !integrityProblem(candidate));
+  if (!source) throw new Error(`Databáze ${file} je poškozená (${problem}) a žádná platná záloha není k dispozici v ${backupDir}.`);
+  const corruptDir = path.join(dataDir, "corrupt");
+  fs.mkdirSync(corruptDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
+  const corruptFile = path.join(corruptDir, `mistenka-${stamp}.sqlite`);
+  for (const suffix of ["", "-wal", "-shm"]) if (fs.existsSync(file + suffix)) fs.renameSync(file + suffix, corruptFile + suffix);
+  fs.copyFileSync(source, file);
+  return { at: new Date().toISOString(), problem, from: path.basename(source), corruptFile };
+}
+
+function openDatabase(dataDir, { autoRecover = true } = {}) {
   fs.mkdirSync(dataDir, { recursive: true });
   const file = path.join(dataDir, "mistenka.sqlite");
+  let recovered = null;
+  if (autoRecover && fs.existsSync(file)) {
+    const problem = integrityProblem(file);
+    if (problem) {
+      recovered = autoRestore(dataDir, file, problem);
+      console.error(`[databáze] POŠKOZENÁ (${problem}) – automaticky obnovena ze zálohy ${recovered.from}; poškozený soubor: ${recovered.corruptFile}`);
+    }
+  }
   const db = new DatabaseSync(file);
+  db.autoRestored = recovered; // server zapíše do auditu a upozorní adminy
   const ticketColumns = db.prepare("PRAGMA table_info(tickets)").all().map((column) => column.name);
   if (ticketColumns.length && !(ticketColumns.includes("member_id") && ticketColumns.includes("closed_at"))) {
     db.close();
@@ -63,7 +103,7 @@ function openDatabase(dataDir) {
     if (!existing.length) return; // tabulka vznikne níže už s novými sloupci
     for (const [column, definition] of columns) if (!existing.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   };
-  addColumns("tickets", [["cancel_reason", "TEXT"], ["cancelled_by", "INTEGER"], ["rules_version", "TEXT"]]);
+  addColumns("tickets", [["cancel_reason", "TEXT"], ["cancelled_by", "INTEGER"], ["rules_version", "TEXT"], ["anonymized_at", "TEXT"]]);
   addColumns("bank_transactions", [["resolution", "TEXT"], ["resolution_note", "TEXT"], ["resolved_at", "TEXT"], ["resolved_by", "INTEGER"]]);
   addColumns("vouchers", [["created_at", "TEXT"], ["created_by", "INTEGER"], ["note", "TEXT"], ["voided_at", "TEXT"]]);
   // Migrace 4 -> 5: zadržení místenky porybným.
@@ -133,7 +173,8 @@ function openDatabase(dataDir) {
       seized_place TEXT,
       cancel_reason TEXT,                      -- zrušení správcem (B4)
       cancelled_by INTEGER,
-      rules_version TEXT                       -- verze pravidel druhů použitá při odevzdání (B5)
+      rules_version TEXT,                      -- verze pravidel druhů použitá při odevzdání (B5)
+      anonymized_at TEXT                       -- osobní údaje odstraněny po uplynutí lhůty (GDPR)
     );
     -- Nastavení z manažerského portálu (B5): každá změna = nová verze celé části.
     CREATE TABLE IF NOT EXISTS settings_versions (
@@ -351,4 +392,4 @@ function transaction(db, fn) {
   }
 }
 
-module.exports = { openDatabase, transaction };
+module.exports = { openDatabase, transaction, integrityProblem };

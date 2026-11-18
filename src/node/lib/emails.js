@@ -107,6 +107,16 @@ function seasonReport(config, { name, revir, data, link }) {
   };
 }
 
+// ---------- automatická obnova databáze (B7) ----------
+function databaseAutoRestored(config, info) {
+  const rows = [["Kdy", czDateTime(info.at)], ["Obnoveno ze zálohy", info.from], ["Problém", info.problem], ["Poškozený soubor", info.corruptFile]];
+  return {
+    subject: "Místenka – databáze byla automaticky obnovena ze zálohy",
+    html: layout(config, "Databáze obnovena ze zálohy", `<p>Při startu serveru byla databáze poškozená a automaticky se obnovila z nejnovější platné zálohy. <b>Data vzniklá po této záloze chybí</b> – zkontrolujte poslední objednávky a platby (fronta plateb se z banky načte znovu).</p>${table(rows)}`),
+    text: textBlock(["Databáze byla při startu poškozená a automaticky se obnovila ze zálohy. Data po záloze chybí – zkontrolujte poslední objednávky a platby.", ...rows.map(([k, v]) => `${k}: ${v}`)])
+  };
+}
+
 // ---------- nastavení (B5) ----------
 function paymentSettingsChanged(config, { actorName, before, after, at }) {
   const labels = { accountNumber: "Číslo účtu", bankCode: "Kód banky", iban: "IBAN", recipientName: "Příjemce", reservationMinutes: "Rezervace (min)", messagePrefix: "Zpráva pro příjemce" };
@@ -172,4 +182,4 @@ function createFileMailer(dir) {
   };
 }
 
-module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, ticketCancelled, paymentSettingsChanged, seasonReport, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, createFileMailer, czDate };
+module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, ticketCancelled, paymentSettingsChanged, seasonReport, databaseAutoRestored, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, createFileMailer, czDate };

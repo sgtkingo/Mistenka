@@ -63,6 +63,12 @@ function buildConfig(rawInput, speciesDocs) {
   config.limitPolicy = { violationsBeforeBlock: 0, blockDays: null, ...(config.limitPolicy || {}) };
   if (!Number.isInteger(config.limitPolicy.violationsBeforeBlock) || config.limitPolicy.violationsBeforeBlock < 0) fail("počet porušení před blokací musí být celé číslo >= 0");
   if (config.limitPolicy.blockDays !== null && !(Number.isInteger(config.limitPolicy.blockDays) && config.limitPolicy.blockDays > 0)) fail("délka blokace musí být kladný počet dní, nebo prázdná (do konce roku)");
+  // Uchovávání osobních údajů (GDPR) – obecné výchozí lhůty, organizace je může upravit.
+  config.privacy = { contactEmail: "", ticketYears: 3, accountingYears: 10, emailDays: 90, auditYears: 5, backupYears: 3, ...(config.privacy || {}) };
+  for (const [key, min, max, label] of [["ticketYears", 1, 20, "uchování místenek"], ["accountingYears", 5, 20, "účetní lhůta"], ["emailDays", 7, 3650, "uchování e-mailů"], ["auditYears", 1, 20, "uchování auditu"], ["backupYears", 1, 20, "uchování záloh"]]) {
+    if (!Number.isInteger(config.privacy[key]) || config.privacy[key] < min || config.privacy[key] > max) fail(`${label} musí být celé číslo ${min}–${max}`);
+  }
+  if (config.privacy.contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.privacy.contactEmail)) fail("neplatný e-mail pro ochranu osobních údajů");
   const managerEmail = config.organization.managerEmail;
   if (managerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(managerEmail)) fail("neplatný e-mail správce");
   const orgRules = speciesRulesFor(speciesDocs, config.speciesRules, "organizace");
@@ -140,7 +146,8 @@ function revirRules(revir) {
 function publicConfig(config, extra = {}) {
   const org = config.organization;
   return {
-    organization: { id: org.id, name: org.name, shortName: org.shortName, web: org.web || "", privacyUrl: org.privacyUrl || "", contact: org.contact || {} },
+    organization: { id: org.id, name: org.name, shortName: org.shortName, web: org.web || "", privacyUrl: org.privacyUrl || "", contact: org.contact || {}, address: org.address || "", ico: org.ico || "" },
+    privacy: config.privacy,
     payment: { mode: config.payment.provider, reservationMinutes: config.payment.reservationMinutes },
     reviry: config.reviry.map((revir) => {
       const { fishRules, speciesRules, speciesOverrides, ...rest } = revir;

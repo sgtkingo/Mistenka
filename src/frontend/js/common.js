@@ -259,7 +259,7 @@
     const org = config.organization;
     qsa("[data-org-short]").forEach((el) => { el.textContent = org.shortName; });
     qsa("[data-org-web]").forEach((el) => { if (org.web) { el.href = org.web; el.hidden = false; } else el.hidden = true; });
-    qsa("[data-privacy]").forEach((el) => { if (org.privacyUrl) el.href = org.privacyUrl; else el.hidden = true; });
+    qsa("[data-privacy]").forEach((el) => { el.href = org.privacyUrl || "privacy.html"; el.hidden = false; });
   }
 
   window.Mistenka = { qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml };

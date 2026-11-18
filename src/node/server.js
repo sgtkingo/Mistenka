@@ -25,6 +25,7 @@ const { createOperations } = require("./lib/operations");
 const { createSettings } = require("./lib/settings");
 const { createReports } = require("./lib/reports");
 const { createBackups } = require("./lib/backups");
+const { createRetention } = require("./lib/retention");
 const time = require("./lib/time");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -43,10 +44,13 @@ const operations = createOperations({ db, config, appUrl: APP_URL });
 const service = createService({ db, config, provider, mailer, appUrl: APP_URL, operations, settings });
 const accounts = createAccounts({ db, config, appUrl: APP_URL });
 const reports = createReports({ db, config, appUrl: APP_URL });
-const backups = createBackups({ db, dataDir: DATA_DIR });
+const backups = createBackups({ db, dataDir: DATA_DIR, onRestored: () => settings.reload() });
+if (db.autoRestored) accounts.notifyAutoRestore(db.autoRestored);
 reports.onSeasonReport((report) => backups.afterSeasonReport(report)); // trvalá záloha po každé uzávěrce
 service.addJob("seasons", () => reports.closeSeasons()); // automatická uzávěrka po skončení sezony
 service.addJob("backups", () => backups.daily()); // denní záloha během sezony (drží se 2)
+const retention = createRetention({ db, config, backups });
+service.addJob("retention", () => retention.run()); // GDPR: anonymizace a mazání po uplynutí lhůt
 service.addJob("accounts", () => accounts.cleanup());
 
 // ---------- omezení počtu požadavků (v paměti, na IP) ----------
@@ -257,6 +261,11 @@ async function handleApi(req, res, url, ip) {
     res.writeHead(200, { "Content-Type": "application/vnd.sqlite3", "Content-Length": backup.size, "Content-Disposition": `attachment; filename="${backup.file}"`, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
     return fs.createReadStream(backup.full).pipe(res);
   }
+  if ((m = pathname.match(/^\/api\/manage\/backups\/(\d+)\/restore$/)) && method === "POST") {
+    const body = await readBody(req);
+    const admin = accounts.confirmOtp(ctx, body.otp);
+    return send(res, 200, backups.restore(admin, m[1], body));
+  }
   if ((m = pathname.match(/^\/api\/manage\/backups\/(\d+)$/)) && method === "DELETE") return send(res, 200, backups.remove(accounts.requireAdmin(ctx), m[1]));
   if (pathname === "/api/manage/audit" && method === "GET") return send(res, 200, accounts.listAudit(ctx, { limit: url.searchParams.get("limit"), action: url.searchParams.get("action") || "" }));
 
@@ -357,7 +366,7 @@ const interval = Number(process.env.MISTENKA_JOBS_INTERVAL_MS ?? (provider.name 
 if (interval > 0) setInterval(() => { service.runJobs().catch((error) => console.error("[úlohy]", error)); }, interval).unref();
 
 server.listen(PORT, () => {
-  console.log(`Místenka (${config.organization.shortName}) běží na ${APP_URL} · platby: ${provider.name}${DEV ? " · DEV" : ""}`);
+  console.log(`Místenka (${config.organization.shortName}) běží na ${APP_URL} · port ${server.address().port} · platby: ${provider.name}${DEV ? " · DEV" : ""}`);
   printSetupLink();
 });
 

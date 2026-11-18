@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Místenka · Ochrana osobních údajů</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="Místenka, domů"><span class="brand-mark" aria-hidden="true">⌁</span><span>Místenka</span></a>
+    <div class="user-menu"><a class="login-button" href="./">← Zpět na revír</a></div>
+  </header>
+  <main class="rules-page">
+    <article class="panel-card rules-shell privacy-doc" id="privacyDoc">
+      <span class="section-kicker">Ochrana osobních údajů</span>
+      <h1>Zásady zpracování osobních údajů</h1>
+      <p class="muted" id="privacyIntro"></p>
+      <div class="info-box">Obecné znění podle nařízení (EU) 2016/679 (GDPR) a zákona č. 110/2019 Sb. pro místní organizaci rybářského svazu. Před ostrým provozem ho schvaluje výbor organizace.</div>
+
+      <h2>1. Správce osobních údajů</h2>
+      <p id="controller"></p>
+
+      <h2>2. Jaké údaje zpracováváme, proč a na jakém základě</h2>
+      <table class="rules-table privacy-table"><thead><tr><th>Účel</th><th>Údaje</th><th>Právní základ</th></tr></thead><tbody>
+        <tr><td><b>Vydání a evidence místenky</b> – rezervace místa, vystavení, zaslání e-mailem, odevzdání</td><td>jméno, příjmení, datum narození, číslo členské legitimace, e-mail, revír a den lovu</td><td>plnění smlouvy (čl. 6 odst. 1 písm. b) GDPR) – místenku si objednáváte vy</td></tr>
+        <tr><td><b>Evidence úlovků a docházky</b>, kontrola dodržování lovných měr, dob hájení a limitů úlovků</td><td>úlovky (druh, délka, hmotnost), den a revír, číslo legitimace</td><td>plnění právní povinnosti uživatele rybářského revíru (zákon č. 99/2004 Sb., o rybářství, a vyhláška č. 197/2004 Sb.) a oprávněný zájem na ochraně rybí obsádky a řádném hospodaření v revíru (čl. 6 odst. 1 písm. c) a f))</td></tr>
+        <tr><td><b>Kontrola rybářskou stráží</b> a zadržení místenky</td><td>údaje z místenky, záznam o kontrole, důvod a místo zadržení</td><td>plnění právní povinnosti a oprávněný zájem (výkon rybářské stráže podle zákona o rybářství)</td></tr>
+        <tr><td><b>Platby převodem</b> a jejich párování, vracení plateb</td><td>variabilní symbol, částka, číslo účtu a jméno plátce, zpráva pro příjemce</td><td>plnění smlouvy a právní povinnost vést účetnictví (zákon č. 563/1991 Sb., o účetnictví)</td></tr>
+        <tr><td><b>Uživatelský účet</b> (nepovinný) – předvyplnění údajů, historie místenek</td><td>jméno, příjmení, datum narození, číslo legitimace, e-mail, heslo (jen v zašifrované podobě)</td><td>plnění smlouvy – účet zakládáte na vlastní žádost; zrušit ho můžete kdykoli</td></tr>
+        <tr><td><b>Upozornění na limity a blokace nákupu</b> po opakovaném porušení pravidel</td><td>číslo legitimace, úlovky, záznam o porušení a blokaci</td><td>oprávněný zájem na dodržování pravidel výkonu rybářského práva</td></tr>
+        <tr><td><b>Provozní e-maily</b> (pokyny k platbě, místenka, připomínka odevzdání)</td><td>e-mail, údaje místenky</td><td>plnění smlouvy. <b>Obchodní sdělení nezasíláme.</b></td></tr>
+        <tr><td><b>Bezpečnost a zálohy</b> – ochrana před zneužitím, obnova po výpadku</td><td>záznamy o přihlášení a změnách (audit), zálohy databáze</td><td>oprávněný zájem na bezpečnosti a dostupnosti služby</td></tr>
+      </tbody></table>
+      <p>Uvedení údajů na místence je nezbytné pro její vystavení; bez nich místenku vydat nelze. Místenka nenahrazuje rybářský lístek ani povolenku k lovu.</p>
+
+      <h2>3. Komu údaje předáváme</h2>
+      <ul>
+        <li><b>Rybářská stráž</b> organizace – při kontrole vidí údaje místenky a úlovky člena za týden a měsíc.</li>
+        <li><b>Zpracovatelé</b>, kteří pro nás zajišťují provoz: poskytovatel webhostingu a e-mailu, banka organizace (přijímání plateb). Zpracovávají údaje jen podle našich pokynů.</li>
+        <li><b>Orgány veřejné moci</b> (např. orgán státní správy rybářství, Policie ČR), pokud to ukládá zákon.</li>
+        <li>Nadřízené organizační jednotce svazu jen v rozsahu nutném pro evidenci úlovků a statistiky, zpravidla v souhrnné podobě.</li>
+      </ul>
+      <p>Údaje nepředáváme do zemí mimo Evropskou unii. Předpověď počasí se načítá z bezplatné služby Open-Meteo přímo z vašeho prohlížeče podle polohy revíru; služba přitom vidí vaši IP adresu, žádné jiné údaje jí nepředáváme.</p>
+
+      <h2>4. Jak dlouho údaje uchováváme</h2>
+      <ul id="retentionList"></ul>
+      <p>Po uplynutí lhůty údaje automaticky anonymizujeme nebo smažeme; ponecháváme jen souhrnné údaje bez vazby na osobu (počty místenek, úlovky podle druhů, částky).</p>
+
+      <h2>5. Automatizované rozhodování</h2>
+      <p>Pokud to pravidla organizace stanoví, systém po opakovaném porušení limitů úlovků automaticky dočasně pozastaví nákup místenek. O pozastavení vás informujeme e-mailem. Máte právo na přezkoumání rozhodnutí člověkem – kontaktujte správce, který může blokaci zrušit.</p>
+
+      <h2>6. Vaše práva</h2>
+      <ul>
+        <li><b>přístup</b> k osobním údajům a jejich kopii,</li>
+        <li><b>oprava</b> nepřesných údajů (údaje účtu upravíte sami v sekci Můj účet),</li>
+        <li><b>výmaz</b> („právo být zapomenut“) – účet smažete sami; údaje, které musíme uchovávat ze zákona, smažeme po uplynutí lhůty,</li>
+        <li><b>omezení zpracování</b> a <b>přenositelnost</b> údajů,</li>
+        <li><b>námitka</b> proti zpracování založenému na oprávněném zájmu,</li>
+        <li><b>stížnost</b> u Úřadu pro ochranu osobních údajů, Pplk. Sochora 27, 170 00 Praha 7, <a href="https://uoou.gov.cz" target="_blank" rel="noreferrer">uoou.gov.cz</a>.</li>
+      </ul>
+      <p id="rightsContact"></p>
+
+      <h2>7. Cookies a úložiště prohlížeče</h2>
+      <p>Používáme jen technicky nezbytné prostředky: cookie přihlášení k účtu (platí nejdéle 30 dní, u správců 12 hodin) a v úložišti prohlížeče přístupový klíč k vašim místenkám. Analytické ani reklamní cookies nepoužíváme, proto nevyžadujeme souhlas.</p>
+
+      <h2>8. Zabezpečení</h2>
+      <p>Komunikace je šifrovaná (HTTPS), hesla ukládáme jen jako bezpečný otisk, přístup správců je chráněný rolemi a u admina dvoufázovým ověřením. Databázi pravidelně zálohujeme a změny v ní evidujeme.</p>
+
+      <p class="muted" id="privacyUpdated">Platné od 18. 11. 2026.</p>
+    </article>
+  </main>
+  <footer><span>© <span id="year"></span> <span data-org-short></span></span><span>Místenka</span></footer>
+  <script src="js/env.js"></script>
+  <script src="js/common.js"></script>
+  <script>
+    (async function () {
+      const { qs, esc, loadConfig, applyBranding } = window.Mistenka;
+      qs("#year").textContent = new Date().getFullYear();
+      try {
+        const config = await loadConfig();
+        applyBranding(config);
+        const org = config.organization;
+        const p = config.privacy;
+        const contact = org.contact || {};
+        const email = p.contactEmail || contact.email || "";
+        const years = (n) => `${n} ${n === 1 ? "rok" : n < 5 ? "roky" : "let"}`;
+        qs("#privacyIntro").textContent = `Jak ${org.name} zpracovává osobní údaje v aplikaci Místenka (online rezervace rybolovu).`;
+        qs("#controller").innerHTML = `<b>${esc(org.name)}</b>${org.ico ? `, IČO ${esc(org.ico)}` : ""}${org.address ? `, ${esc(org.address)}` : ""}.<br>Kontakt ve věcech osobních údajů: ${email ? `<a href="mailto:${esc(email)}">${esc(email)}</a>` : "kontakt organizace na úvodní stránce"}${contact.phone ? `, tel. ${esc(contact.phone)}` : ""}. Pověřence pro ochranu osobních údajů organizace jmenovat nemusí.`;
+        qs("#retentionList").innerHTML = [
+          `<b>Místenky a úlovky</b> s údaji držitele: ${years(p.ticketYears)} po skončení kalendářního roku, ve kterém byl den lovu (kontrola, reklamace, evidence úlovků).`,
+          `<b>Účetní záznamy o platbách</b>: ${years(p.accountingYears)} (zákon o účetnictví a daňové předpisy); údaje o plátci se pak odstraní.`,
+          "<b>Uživatelský účet</b>: do jeho smazání; neověřený účet se smaže po 48 hodinách.",
+          `<b>Odeslané e-maily</b>: ${p.emailDays} dní.`,
+          `<b>Záznamy o změnách (audit)</b>: ${years(p.auditYears)}.`,
+          `<b>Zálohy databáze</b>: denní zálohy 2 dny, zálohy po uzávěrkách sezon nejvýše ${years(p.backupYears)}.`,
+          "<b>Blokace nákupu</b>: po dobu blokace a poté po dobu uchování místenek."
+        ].map((item) => `<li>${item}</li>`).join("");
+        qs("#rightsContact").innerHTML = `Svá práva uplatníte ${email ? `e-mailem na <a href="mailto:${esc(email)}">${esc(email)}</a>` : "u správce organizace"}. Odpovíme bez zbytečného odkladu, nejpozději do jednoho měsíce.`;
+      } catch (error) {
+        qs("#privacyIntro").textContent = error.message;
+      }
+    })();
+  </script>
+</body>
+</html>

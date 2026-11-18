@@ -50,7 +50,15 @@ Organizaci, revíry (cena, kapacita, podrevíry, doba lovu, pravidla), ryby a li
 
 ## Zálohy
 
-Během sezony se databáze zálohuje jednou denně (drží se poslední dvě), po každé uzávěrce sezony vznikne trvalá záloha. Zálohy jsou v `data/backups/`; admin je v portálu stahuje, maže a může zálohovat ručně. Obnova: zastavte server a nahraďte `data/mistenka.sqlite` staženou zálohou.
+Během sezony se databáze zálohuje jednou denně (drží se poslední dvě), po každé uzávěrce sezony vznikne trvalá záloha. Zálohy jsou v `data/backups/`; admin je v portálu stahuje, maže a může zálohovat ručně. Admin může kteroukoli zálohu obnovit z portálu (potvrzení kódem 2FA, předtím vznikne pojistná záloha). Poškozenou databázi server při startu sám obnoví z nejnovější platné zálohy (poškozený soubor odloží do `data/corrupt/`) a upozorní adminy e-mailem.
+
+## Ochrana osobních údajů
+
+Obecné zásady jsou na `privacy.html` (odkaz v patičce). Sídlo, IČO, kontakt a lhůty uchování se nastavují v portálu (Nastavení → Organizace); po uplynutí lhůt se údaje automaticky anonymizují nebo smažou.
+
+## Ruční test
+
+Scénář pro vyzkoušení celé aplikace: [docs/TEST_NODE.md](docs/TEST_NODE.md).
 
 ## Jiná MO nebo jiný revír
 

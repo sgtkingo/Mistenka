@@ -388,7 +388,7 @@ qs("#closureForm").addEventListener("submit", (event) => submitForm(event, async
 }));
 
 // ---------- zálohy a audit (jen admin) ----------
-const KIND_LABELS = { daily: ["denní", "info"], season: ["po uzávěrce", "ok"], manual: ["ruční", "off"] };
+const KIND_LABELS = { daily: ["denní", "info"], season: ["po uzávěrce", "ok"], manual: ["ruční", "off"], "pre-restore": ["před obnovou", "warn"] };
 const size = (bytes) => (bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} kB`);
 async function loadBackups() {
   const list = qs("#backupList");
@@ -398,8 +398,24 @@ async function loadBackups() {
     list.innerHTML = backups.length ? `<p class="field-help">Celkem ${backups.length} záloh, ${size(totalBytes)}.</p><table class="data-table"><thead><tr><th>Vytvořeno</th><th>Typ</th><th>Poznámka</th><th>Velikost</th><th></th></tr></thead><tbody>${backups.map((b) => {
       const [label, tone] = KIND_LABELS[b.kind] || [b.kind, "off"];
       return `<tr><td data-label="Vytvořeno">${esc(czDateTime(b.createdAt))}</td><td data-label="Typ"><span class="badge badge-${tone}">${label}</span></td><td data-label="Poznámka">${esc(b.note)}</td><td data-label="Velikost">${esc(size(b.sizeBytes))}${b.exists ? "" : ' <b class="over-budget">soubor chybí</b>'}</td>
-        <td class="row-actions">${b.exists ? `<a class="text-link" href="${esc(`${base}/manage/backups/${b.id}/download`)}" download>Stáhnout</a>` : ""}<button class="text-button delete-backup" type="button" data-id="${b.id}">Smazat</button></td></tr>`;
+        <td class="row-actions">${b.exists ? `<a class="text-link" href="${esc(`${base}/manage/backups/${b.id}/download`)}" download>Stáhnout</a><button class="text-button restore-backup" type="button" data-id="${b.id}" data-created="${esc(czDateTime(b.createdAt))}">Obnovit</button>` : ""}<button class="text-button delete-backup" type="button" data-id="${b.id}">Smazat</button></td></tr>`;
     }).join("")}</tbody></table>` : '<p class="muted">Zatím žádné zálohy.</p>';
+    qsa(".restore-backup", list).forEach((b) => b.addEventListener("click", async () => {
+      const confirmText = window.prompt(`Obnovit databázi ze zálohy ${b.dataset.created}?
+
+Všechna data (místenky, platby, účty, nastavení) se vrátí do stavu zálohy; novější změny se ztratí. Přihlášení zůstanou. Těsně předtím se vytvoří pojistná záloha.
+
+Pro potvrzení napište OBNOVIT:`);
+      if (confirmText === null) return;
+      const otp = window.prompt("Kód z ověřovací aplikace (2FA):");
+      if (otp === null) return;
+      b.disabled = true;
+      try {
+        const result = await api(`/manage/backups/${b.dataset.id}/restore`, { method: "POST", body: { confirm: confirmText.trim().toUpperCase(), otp: otp.trim() } });
+        showToast(`Obnoveno ze zálohy ${result.file}. Pojistná záloha: ${result.safetyBackup.file}.`);
+        loadBackups();
+      } catch (error) { showToast(error.message); b.disabled = false; }
+    }));
     qsa(".delete-backup", list).forEach((b) => b.addEventListener("click", async () => {
       if (!window.confirm("Smazat zálohu? Nelze vrátit.")) return;
       try { await api(`/manage/backups/${b.dataset.id}`, { method: "DELETE" }); loadBackups(); } catch (error) { showToast(error.message); }

@@ -77,20 +77,26 @@
     return `<form class="settings-form" data-scope="organization" novalidate>
       <h3>Organizace</h3>
       <div class="form-two-col">${field("oName", "Celý název", o.name)}${field("oShort", "Zkratka", o.shortName)}</div>
-      <div class="form-two-col">${field("oWeb", "Web", o.web)}${field("oPrivacy", "Odkaz na ochranu osobních údajů", o.privacyUrl)}</div>
+      <div class="form-two-col">${field("oWeb", "Web", o.web)}${field("oPrivacy", "Vlastní stránka zásad (prázdné = privacy.html)", o.privacyUrl)}</div>
+      <div class="form-two-col">${field("oAddress", "Sídlo (pro zásady zpracování)", o.address)}${field("oIco", "IČO", o.ico)}</div>
       <h3>Kontakty</h3>
       <div class="form-two-col">${field("cLabel", "Kontakt – popisek", c.label)}${field("cPhone", "Telefon", c.phone)}</div>
       <div class="form-two-col">${field("cEmail", "Veřejný e-mail", c.email, 'type="email"')}${field("oManager", "E-mail správce (upozornění: zadržení, limity)", o.managerEmail, 'type="email"')}</div>
       <div class="form-two-col">${field("eName", "Odesílatel e-mailů – jméno", d.email?.fromName)}${field("eEmail", "Odesílatel e-mailů – adresa", d.email?.fromEmail, 'type="email"')}</div>
       <h3>Veřejná kontrola místenky</h3>
       <div class="form-two-col"><div><label class="checkbox-label settings-check"><input type="checkbox" id="pcFull"${pc.showFullName !== false ? " checked" : ""}> <span>Zobrazit celé příjmení</span></label></div>${field("pcChars", "Viditelné číslice legitimace", pc.memberIdVisibleChars ?? 4, 'type="number" min="0" max="8"')}</div>
+      <h3>Ochrana osobních údajů – lhůty uchování <a class="text-link" href="privacy.html" target="_blank">zobrazit zásady ↗</a></h3>
+      <div class="form-three-col">${field("prEmail", "E-mail pro žádosti subjektů údajů", d.privacy?.contactEmail, 'type="email"')}${field("prTickets", "Místenky (roky po roce lovu)", d.privacy?.ticketYears ?? 3, 'type="number" min="1" max="20"')}${field("prAccounting", "Platby – účetní lhůta (roky)", d.privacy?.accountingYears ?? 10, 'type="number" min="5" max="20"')}</div>
+      <div class="form-three-col">${field("prEmails", "Odeslané e-maily (dny)", d.privacy?.emailDays ?? 90, 'type="number" min="7"')}${field("prAudit", "Audit (roky)", d.privacy?.auditYears ?? 5, 'type="number" min="1" max="20"')}${field("prBackups", "Zálohy (roky)", d.privacy?.backupYears ?? 3, 'type="number" min="1" max="20"')}</div>
+      <p class="field-help">Po uplynutí lhůt se údaje automaticky anonymizují nebo smažou. Výchozí hodnoty jsou obecné doporučení; potvrďte je ve výboru.</p>
       <h3>Automatická blokace po porušení limitů</h3>
       <div class="form-two-col">${field("lpCount", "Po kolika porušeních v roce (0 = vypnuto)", lp.violationsBeforeBlock ?? 0, 'type="number" min="0"')}${field("lpDays", "Na kolik dní (prázdné = do konce roku)", lp.blockDays ?? "", 'type="number" min="1"')}</div>
       ${footer("organization", view.organization)}</form>`;
   }
   function organizationData() {
     const d = structuredClone(view.organization.data);
-    d.organization = { ...d.organization, name: val("oName"), shortName: val("oShort"), web: val("oWeb"), privacyUrl: val("oPrivacy"), managerEmail: val("oManager"), contact: { ...(d.organization?.contact || {}), label: val("cLabel"), email: val("cEmail"), phone: val("cPhone") } };
+    d.privacy = { contactEmail: val("prEmail"), ticketYears: num("prTickets", "Místenky"), accountingYears: num("prAccounting", "Účetní lhůta"), emailDays: num("prEmails", "E-maily"), auditYears: num("prAudit", "Audit"), backupYears: num("prBackups", "Zálohy") };
+    d.organization = { ...d.organization, name: val("oName"), shortName: val("oShort"), web: val("oWeb"), privacyUrl: val("oPrivacy"), address: val("oAddress"), ico: val("oIco"), managerEmail: val("oManager"), contact: { ...(d.organization?.contact || {}), label: val("cLabel"), email: val("cEmail"), phone: val("cPhone") } };
     d.email = { ...(d.email || {}), fromName: val("eName"), fromEmail: val("eEmail") };
     d.publicCheck = { showFullName: qs("#pcFull").checked, memberIdVisibleChars: num("pcChars", "Viditelné číslice") };
     d.limitPolicy = { violationsBeforeBlock: num("lpCount", "Počet porušení"), blockDays: num("lpDays", "Délka blokace", { optional: true }) };

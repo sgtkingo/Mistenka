@@ -118,3 +118,5 @@ tr.clickable{cursor:pointer}tr.clickable:hover td{background:#f6fbff}#csvLink{te
 .report-body h3{font-size:15px;margin:22px 0 8px}
 @media(max-width:800px){.kpi-grid{grid-template-columns:1fr 1fr}.stats-filters{grid-template-columns:1fr 1fr}}
 @media print{.manage-nav,.site-header,.no-print,.toast{display:none!important}.manage-layout{display:block}.manage-section{box-shadow:none;border:0;padding:0}.manage-body{background:#fff}.kpi{break-inside:avoid}}
+
+.privacy-doc h2{font-size:18px;margin:28px 0 8px}.privacy-doc ul{padding-left:20px}.privacy-doc li{margin:4px 0}.privacy-table td{vertical-align:top;font-size:13px}.privacy-doc .info-box{margin:14px 0 4px}

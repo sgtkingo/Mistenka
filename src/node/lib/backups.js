@@ -5,14 +5,19 @@
 // Pravidla: denní záloha během sezony (drží se poslední a aktuální = 2), po každé uzávěrce sezony
 // jedna trvalá, ruční záloha admina. Spravovat, stahovat a mazat smí jen admin.
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const time = require("./time");
+const { openDatabase, integrityProblem } = require("./db");
 const { ApiError } = require("./validate");
 
 const DAILY_KEEP = 2;
 const iso = (date) => date.toISOString();
 
-function createBackups({ db, dataDir }) {
+// Při obnově se nepřepisují: přihlášení (nikoho neodhlásí ani neoživí staré relace), seznam záloh, technická metadata.
+const RESTORE_SKIP = new Set(["sessions", "backups", "meta"]);
+
+function createBackups({ db, dataDir, onRestored = () => {} }) {
   const dir = path.join(dataDir, "backups");
   fs.mkdirSync(dir, { recursive: true });
   const audit = (actor, action, targetId, detail = null) => db.prepare("INSERT INTO audit_events (at, actor_user_id, action, target_type, target_id, detail) VALUES (?, ?, ?, 'backup', ?, ?)")
@@ -82,7 +87,57 @@ function createBackups({ db, dataDir }) {
     return { deleted: true };
   }
 
-  return { daily, afterSeasonReport, list, manual, filePath, remove };
+  // Obnova ze zálohy (admin): pojistná záloha → kopie zálohy se převede na aktuální schéma → data se přepíší v jedné transakci.
+  function restore(actor, id, body = {}) {
+    if (body.confirm !== "OBNOVIT") throw new ApiError(400, "confirm_required", "Pro obnovu napište OBNOVIT.");
+    const { file, full } = filePath(id);
+    const problem = integrityProblem(full);
+    if (problem) throw new ApiError(409, "backup_corrupt", `Záloha je poškozená: ${problem}`);
+    const safety = create("pre-restore", { note: `Před obnovou ze zálohy ${file}`, actor });
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "mistenka-restore-"));
+    try {
+      fs.copyFileSync(full, path.join(tmp, "mistenka.sqlite"));
+      openDatabase(tmp, { autoRecover: false }).close(); // migrace staršího schématu na aktuální
+      const source = path.join(tmp, "mistenka.sqlite");
+      db.exec("PRAGMA foreign_keys = OFF");
+      db.exec(`ATTACH DATABASE '${source.replace(/'/g, "''")}' AS src`);
+      try {
+        db.exec("BEGIN IMMEDIATE");
+        const tables = db.prepare("SELECT name FROM main.sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all().map((t) => t.name).filter((name) => !RESTORE_SKIP.has(name));
+        let rows = 0;
+        for (const table of tables) {
+          const srcColumns = db.prepare(`PRAGMA src.table_info("${table}")`).all().map((c) => c.name);
+          db.exec(`DELETE FROM main."${table}"`);
+          if (!srcColumns.length) continue;
+          const mainColumns = new Set(db.prepare(`PRAGMA main.table_info("${table}")`).all().map((c) => c.name));
+          const columns = srcColumns.filter((c) => mainColumns.has(c)).map((c) => `"${c}"`).join(", ");
+          rows += db.prepare(`INSERT INTO main."${table}" (${columns}) SELECT ${columns} FROM src."${table}"`).run().changes;
+        }
+        db.exec("COMMIT");
+        audit(actor, "backup_restored", id, { file, safety: safety.file, tables: tables.length, rows });
+        onRestored({ file, safety });
+        return { restored: true, file, safetyBackup: safety, rows };
+      } catch (error) {
+        try { db.exec("ROLLBACK"); } catch { /* nebyla otevřená */ }
+        throw error;
+      } finally {
+        db.exec("DETACH DATABASE src");
+        db.exec("PRAGMA foreign_keys = ON");
+      }
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 3 });
+    }
+  }
+
+  // Uchovávání (GDPR): zálohy obsahují osobní údaje, po lhůtě se mažou všechny včetně trvalých.
+  function removeOlderThan(cutoffIso) {
+    const old = db.prepare("SELECT * FROM backups WHERE created_at <= ?").all(cutoffIso);
+    for (const row of old) removeRow(row);
+    if (old.length) audit(null, "backups_expired", old.length, { files: old.map((b) => b.file) });
+    return old.length;
+  }
+
+  return { daily, afterSeasonReport, list, manual, filePath, remove, restore, removeOlderThan };
 }
 
 module.exports = { createBackups };

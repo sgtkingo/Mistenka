@@ -10,7 +10,7 @@ const emails = require("./emails");
 const { buildConfig } = require("./config");
 const { ApiError } = require("./validate");
 
-const ORG_KEYS = ["organization", "email", "publicCheck", "limitPolicy"];
+const ORG_KEYS = ["organization", "email", "publicCheck", "limitPolicy", "privacy"];
 const PAYMENT_KEYS = ["accountNumber", "bankCode", "recipientName", "reservationMinutes", "messagePrefix"];
 const iso = (date) => date.toISOString();
 const pick = (object, keys) => Object.fromEntries(keys.filter((key) => object?.[key] !== undefined).map((key) => [key, object[key]]));
@@ -169,7 +169,12 @@ function createSettings({ db, config }) {
     return `${revir?.fishRules?.id || ref || "?"}@${row ? `v${row.id}` : "soubor"}`;
   }
 
-  return { view, save, history, versionData, restore, resetToFile, exportAll, rulesVersion };
+  // Po obnově databáze: nastavení se znovu sestaví z obnovených verzí.
+  function reload() {
+    apply(latestRows().length ? build() : buildConfig(structuredClone(source.raw), { ...source.species }));
+  }
+
+  return { view, save, history, versionData, restore, resetToFile, exportAll, rulesVersion, reload };
 }
 
 module.exports = { createSettings };

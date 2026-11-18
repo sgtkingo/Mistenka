@@ -79,7 +79,7 @@ qs("#registerForm").addEventListener("submit", (event) => {
     if (!isMemberId(memberId)) return message("Zadejte 8místné číslo členské legitimace (pod čárovým kódem).", "error");
     const passwordError = (body.password || qs("#regPassword2").value) && passwordProblem(qs("#regPassword").value, qs("#regPassword2").value);
     if (passwordError) return message(passwordError, "error");
-    if (!body.consent) return message("Pro registraci potvrďte souhlas se zpracováním osobních údajů.", "error");
+    if (!body.consent) return message("Potvrďte, že jste se seznámili se zásadami zpracování osobních údajů.", "error");
     try {
       await api("/auth/register", { method: "POST", body });
       qs("#registerForm").reset();

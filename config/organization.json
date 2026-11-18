@@ -29,6 +29,7 @@
     "violationsBeforeBlock": 0,
     "blockDays": null
   },
+  "privacy": { "contactEmail": "", "ticketYears": 3, "accountingYears": 10, "emailDays": 90, "auditYears": 5, "backupYears": 3 },
   "publicCheck": {
     "showFullName": true,
     "memberIdVisibleChars": 4
