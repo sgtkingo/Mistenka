@@ -10,40 +10,85 @@ const czDate = (iso) => { const [y, m, d] = iso.split("-").map(Number); return `
 const czk = (halere) => `${(halere / 100).toLocaleString("cs-CZ", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} Kč`;
 const czDateTime = (iso) => new Date(iso).toLocaleString("cs-CZ", { timeZone: "Europe/Prague", day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
-function layout(config, title, rowsHtml, footerHtml = "") {
+// ---------- vzhled e-mailů ----------
+// Tabulkové rozvržení a inline styly – spolehlivé v Gmailu, Outlooku i mobilních klientech. Barvy jako aplikace.
+const C = { brand: "#0075de", brandDark: "#005bab", ink: "#252321", muted: "#6d6862", line: "#e6e4e0", soft: "#f6f5f4", okBg: "#eef8f1", ok: "#17803f", warnBg: "#fff6e5", warn: "#8a5a00" };
+const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+// layout(config, nadpis, obsah, patička, { preheader }) – preheader = náhled v seznamu zpráv.
+function layout(config, title, rowsHtml, footerHtml = "", { preheader = "" } = {}) {
   const org = config.organization;
-  return `<!doctype html><html lang="cs"><body style="margin:0;background:#f4f6f5;font-family:Arial,Helvetica,sans-serif;color:#1d2a25">
-<div style="max-width:560px;margin:0 auto;padding:24px 16px"><div style="background:#fff;border:1px solid #d9e0dc;border-radius:10px;padding:24px">
-<p style="margin:0 0 4px;color:#5b6b64;font-size:13px">${esc(org.shortName)} · Místenka</p>
-<h1 style="margin:0 0 16px;font-size:22px">${esc(title)}</h1>${rowsHtml}${footerHtml}
-</div><p style="color:#7a8781;font-size:12px;margin:16px 0 0">Tato zpráva byla odeslána automaticky, neodpovídejte na ni.${org.contact?.email ? ` Kontakt: ${esc(org.contact.email)}` : ""}</p></div></body></html>`;
+  const contact = [org.contact?.email && `<a href="mailto:${esc(org.contact.email)}" style="color:${C.muted}">${esc(org.contact.email)}</a>`, org.contact?.phone && esc(org.contact.phone)].filter(Boolean).join(" · ");
+  return `<!doctype html><html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${esc(title)}</title></head>
+<body style="margin:0;padding:0;background:${C.soft};font-family:${FONT};color:${C.ink};-webkit-text-size-adjust:100%">
+<span style="display:none!important;visibility:hidden;opacity:0;height:0;width:0;overflow:hidden;mso-hide:all">${esc(preheader || title)}</span>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.soft}"><tr><td align="center" style="padding:24px 12px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">
+<tr><td style="background:${C.brand};border-radius:12px 12px 0 0;padding:18px 24px">
+  <span style="display:inline-block;width:28px;height:28px;line-height:28px;text-align:center;border-radius:7px;background:#fff;color:${C.brand};font-weight:700;font-size:18px;vertical-align:middle">⌁</span>
+  <span style="color:#fff;font-size:18px;font-weight:700;vertical-align:middle;margin-left:8px">Místenka</span>
+  <span style="color:#cfe5fb;font-size:13px;vertical-align:middle;margin-left:8px">${esc(org.shortName)}</span>
+</td></tr>
+<tr><td style="background:#fff;border:1px solid ${C.line};border-top:0;border-radius:0 0 12px 12px;padding:28px 24px 24px">
+  <h1 style="margin:0 0 16px;font-size:22px;line-height:1.25;color:${C.ink}">${esc(title)}</h1>
+  <div style="font-size:15px;line-height:1.55">${rowsHtml}${footerHtml}</div>
+</td></tr>
+<tr><td style="padding:16px 8px;color:${C.muted};font-size:12px;line-height:1.5;text-align:center">
+  ${esc(org.name || org.shortName)}${contact ? `<br>${contact}` : ""}<br>Tato zpráva byla odeslána automaticky, neodpovídejte na ni.
+</td></tr></table></td></tr></table></body></html>`;
 }
-const table = (rows) => `<table style="width:100%;border-collapse:collapse;margin:0 0 16px">${rows.map(([k, v]) => `<tr><td style="padding:6px 0;color:#5b6b64;width:45%">${esc(k)}</td><td style="padding:6px 0;font-weight:bold">${esc(v)}</td></tr>`).join("")}</table>`;
-const button = (href, label) => `<p style="margin:16px 0"><a href="${esc(href)}" style="display:inline-block;background:#1f6f4a;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px">${esc(label)}</a></p>`;
+const table = (rows) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 18px;font-size:14px">${rows.map(([k, v]) => `<tr><td style="padding:9px 12px 9px 0;color:${C.muted};border-bottom:1px solid ${C.line};width:42%;vertical-align:top">${esc(k)}</td><td style="padding:9px 0;font-weight:600;border-bottom:1px solid ${C.line}">${esc(v)}</td></tr>`).join("")}</table>`;
+const button = (href, label, secondary = false) => `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 18px"><tr><td style="border-radius:8px;background:${secondary ? "#fff" : C.brand};${secondary ? `border:1px solid ${C.brand};` : ""}"><a href="${esc(href)}" style="display:inline-block;padding:12px 22px;font-size:15px;font-weight:600;color:${secondary ? C.brand : "#fff"};text-decoration:none;border-radius:8px">${esc(label)}</a></td></tr></table>`;
+// Zvýrazněný blok (kód místenky, částka, termín).
+const highlight = (label, value, sub = "", tone = "brand") => {
+  const bg = tone === "warn" ? C.warnBg : tone === "ok" ? C.okBg : "#eef6fe";
+  const color = tone === "warn" ? C.warn : tone === "ok" ? C.ok : C.brandDark;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px"><tr><td style="background:${bg};border-radius:10px;padding:16px 18px">
+  <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:${C.muted}">${esc(label)}</div>
+  <div style="font-size:28px;font-weight:700;letter-spacing:.12em;color:${color};margin-top:4px">${esc(value)}</div>${sub ? `<div style="font-size:14px;color:${C.ink};margin-top:4px">${esc(sub)}</div>` : ""}</td></tr></table>`;
+};
+const checklist = (items) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px;font-size:14px">${items.map((item) => `<tr><td style="width:22px;vertical-align:top;color:${C.ok};font-weight:700;padding:3px 0">✓</td><td style="padding:3px 0">${esc(item)}</td></tr>`).join("")}</table>`;
+const note = (text) => `<p style="margin:0 0 16px;padding:12px 14px;background:${C.soft};border-radius:8px;font-size:13px;color:${C.muted}">${esc(text)}</p>`;
 const textBlock = (lines) => lines.filter((line) => line !== null).join("\n");
+// Doba lovu v den lovu podle revíru (fishingHours).
+function huntingHours(revir, isoDate) {
+  const month = Number(isoDate.slice(5, 7));
+  const rule = (revir.fishingHours || []).find((item) => item.months.includes(month));
+  return rule ? `${rule.from}–${rule.to}` : "";
+}
+const weekday = (iso) => ["neděle", "pondělí", "úterý", "středa", "čtvrtek", "pátek", "sobota"][new Date(`${iso}T12:00:00Z`).getUTCDay()];
 
 function paymentInstructions(config, { ticket, revir, links }) {
-  const rows = [["Revír", revir.name], ["Datum lovu", czDate(ticket.fishing_date)], ["Částka", czk(ticket.amount_due_halere)], ["Číslo účtu", `${config.payment.accountNumber}/${config.payment.bankCode}`], ["Variabilní symbol", ticket.variable_symbol], ["Zaplaťte do", czDateTime(ticket.reserved_until)]];
+  const rows = [["Revír", revir.name], ["Datum lovu", `${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)}`], ["Číslo účtu", `${config.payment.accountNumber}/${config.payment.bankCode}`], ["Variabilní symbol", ticket.variable_symbol], ["Zaplaťte do", czDateTime(ticket.reserved_until)]];
   return {
     subject: `Místenka ${ticket.code} – pokyny k platbě`,
-    html: layout(config, "Dokončete platbu místenky", `<p>Místo na revíru je pro vás rezervované. Místenku vystavíme po připsání platby.</p>${table(rows)}${button(links.payment, "Zobrazit QR platbu")}`),
-    text: textBlock(["Dokončete platbu místenky.", ...rows.map(([k, v]) => `${k}: ${v}`), `QR platba: ${links.payment}`])
+    html: layout(config, "Dokončete platbu místenky", `<p style="margin:0 0 16px">Místo na revíru <b>${esc(revir.name)}</b> je pro vás rezervované. Místenku vystavíme hned po připsání platby a pošleme vám ji e-mailem.</p>
+      ${highlight("K úhradě", czk(ticket.amount_due_halere), `VS ${ticket.variable_symbol}`)}${table(rows)}${button(links.payment, "Zobrazit QR platbu")}
+      ${note("Nejrychlejší je zaplatit načtením QR kódu v bankovní aplikaci – údaje se vyplní samy. Při ručním převodu nezapomeňte variabilní symbol.")}`, "", { preheader: `Zaplaťte ${czk(ticket.amount_due_halere)} do ${czDateTime(ticket.reserved_until)}, VS ${ticket.variable_symbol}` }),
+    text: textBlock(["Dokončete platbu místenky.", `Částka: ${czk(ticket.amount_due_halere)}`, ...rows.map(([k, v]) => `${k}: ${v}`), `QR platba: ${links.payment}`])
   };
 }
 
 function ticketIssued(config, { ticket, revir, links }) {
-  const rows = [["Kód místenky", ticket.code], ["Revír", revir.name], ...(revir.number ? [["Číslo revíru", revir.number]] : []), ...(ticketSubdistrictLabel(revir) ? [[revir.ticketSubdistricts.length > 1 ? "Podrevíry" : "Podrevír", ticketSubdistrictLabel(revir)]] : []), ["Datum lovu", czDate(ticket.fishing_date)], ["Rybář", `${ticket.first_name} ${ticket.last_name}`], ["Číslo členské legitimace", ticket.member_id]];
+  const sub = ticketSubdistrictLabel(revir);
+  const hours = huntingHours(revir, ticket.fishing_date);
+  const rows = [["Revír", [revir.name, revir.number].filter(Boolean).join(" · ")], ...(sub ? [[revir.ticketSubdistricts.length > 1 ? "Podrevíry" : "Podrevír", sub]] : []), ["Datum lovu", `${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)}`], ...(hours ? [["Doba lovu", hours]] : []), ["Rybář", `${ticket.first_name} ${ticket.last_name}`], ["Číslo členské legitimace", ticket.member_id]];
   return {
     subject: `Místenka ${ticket.code} – ${revir.name}, ${czDate(ticket.fishing_date)}`,
-    html: layout(config, "Vaše místenka je vystavena", `${table(rows)}<p>Místenka nenahrazuje rybářský lístek ani povolenku.</p>${button(links.ticket, "Zobrazit místenku")}<p>Po skončení lovu místenku odevzdejte a zapište úlovky:</p>${button(links.return, "Odevzdat místenku")}`),
-    text: textBlock(["Vaše místenka je vystavena.", ...rows.map(([k, v]) => `${k}: ${v}`), `Místenka: ${links.ticket}`, `Odevzdání: ${links.return}`])
+    html: layout(config, "Vaše místenka je vystavena", `${highlight("Kód místenky", ticket.code, `${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)} · ${revir.name}`, "ok")}${table(rows)}
+      ${button(links.ticket, "Zobrazit místenku a QR kód")}
+      <p style="margin:0 0 8px;font-weight:600">Než vyrazíte</p>${checklist(["Platný rybářský lístek a povolenka – místenka je nenahrazuje.", "Místenka v telefonu nebo vytištěná (QR kód pro kontrolu).", "Každý úlovek ihned zapište do povolenky."])}
+      <p style="margin:0 0 8px;font-weight:600">Po skončení lovu</p><p style="margin:0 0 8px">Místenku odevzdejte ještě týž den a zapište úlovky (nebo „bez úlovku“). Opožděně ji lze odevzdat do ${esc(revir.lateReturnDays)} dnů, pak se uzavře jako neodevzdaná.</p>
+      ${button(links.return, "Odevzdat místenku", true)}`, "", { preheader: `Kód ${ticket.code} · ${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)} · ${revir.name}${hours ? ` · lov ${hours}` : ""}` }),
+    text: textBlock(["Vaše místenka je vystavena.", `Kód místenky: ${ticket.code}`, ...rows.map(([k, v]) => `${k}: ${v}`), "Místenka nenahrazuje rybářský lístek ani povolenku.", `Místenka: ${links.ticket}`, `Odevzdání po lovu: ${links.return}`])
   };
 }
 
 function returnReminder(config, { ticket, revir, links, deadline }) {
   return {
     subject: `Místenka ${ticket.code} – nezapomeňte ji odevzdat`,
-    html: layout(config, "Odevzdejte prosím místenku", `<p>Lov na revíru ${esc(revir.name)} dne ${esc(czDate(ticket.fishing_date))} skončil a místenka ještě nebyla odevzdána.</p><p>Odevzdat ji můžete do <b>${esc(czDateTime(deadline))}</b>; odevzdání po skončení dne lovu se označí jako opožděné. <b>Po této lhůtě se místenka automaticky uzavře jako neodevzdaná, bez úlovku.</b></p>${button(links.return, "Odevzdat místenku")}`),
+    html: layout(config, "Odevzdejte prosím místenku", `<p style="margin:0 0 16px">Lov na revíru <b>${esc(revir.name)}</b> dne ${esc(czDate(ticket.fishing_date))} skončil a místenka <b>${esc(ticket.code)}</b> ještě nebyla odevzdána.</p>
+      ${highlight("Odevzdejte nejpozději", czDateTime(deadline), "Odevzdání po dni lovu se označí jako opožděné.", "warn")}${button(links.return, "Odevzdat místenku")}
+      ${note("Po této lhůtě se místenka automaticky uzavře jako neodevzdaná, bez úlovku. Pokud jste nic nechytili, zvolte při odevzdání „Bez úlovku“.")}`, "", { preheader: `Místenku ${ticket.code} odevzdejte do ${czDateTime(deadline)}` }),
     text: textBlock([`Místenka ${ticket.code} ještě nebyla odevzdána.`, `Odevzdání je možné do ${czDateTime(deadline)} (opožděně). Poté se místenka automaticky uzavře jako neodevzdaná, bez úlovku.`, `Odevzdat: ${links.return}`])
   };
 }

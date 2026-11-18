@@ -1,77 +1,202 @@
-// Jednostránkové PDF místenky bez externích knihoven (písmo Helvetica, text bez diakritiky).
+// PDF místenky bez externích knihoven: místenka se vykreslí na plátno (systémové písmo → plná česká diakritika),
+// vloží se do jednostránkového PDF (A4) jako obrázek JPEG a odkaz na kontrolu zůstane klikací.
 (function () {
-  const pdfText = (value) => String(value ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\x20-\x7E]/g, "").replace(/([\\()])/g, "\\$1");
+  const W = 1240; // A4 při ~150 DPI
+  const H = 1754;
+  const PT = 595 / W; // převod px plátna → body PDF
+  const FONT = '"Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+  const COL = { brand: "#0075de", brandDark: "#005bab", ink: "#252321", muted: "#6d6862", line: "#e6e4e0", soft: "#f6f5f4", okBg: "#eef8f1", ok: "#17803f" };
+  // Razítko pro místenky, které už neplatí pro lov.
+  const STAMPS = { expired_returned: ["ODEVZDANÁ", "#17803f"], seized: ["ZADRŽENÁ", "#b52f27"], cancelled: ["ZRUŠENÁ", "#b52f27"], closed_unreturned: ["NEODEVZDANÁ", "#b52f27"], payment_expired: ["NEZAPLACENÁ", "#b52f27"] };
 
-  function download({ ticket, revir, organization, checkUrl, hours }) {
-    const { czDate, qrMatrix } = window.Mistenka;
-    const content = [];
-    const text = (value, x, y, size, color = "0.15 0.14 0.13") => content.push(`${color} rg`, "BT", `/F1 ${size} Tf`, `${x} ${y} Td`, `(${pdfText(value)}) Tj`, "ET");
-    const rect = (x, y, w, h, color, stroke = false) => content.push(`${color} ${stroke ? "RG" : "rg"}`, `${x} ${y} ${w} ${h} re`, stroke ? "S" : "f");
-    const muted = "0.42 0.45 0.48";
-    const brand = "0.02 0.32 0.58";
-
-    rect(0, 0, 595, 842, "0.97 0.98 0.99");
-    rect(42, 48, 511, 746, "1 1 1");
-    rect(42, 730, 511, 64, brand);
-    text("MISTENKA", 68, 762, 20, "1 1 1");
-    text(organization.shortName, 68, 745, 9, "0.82 0.91 0.97");
-    const sub = window.Mistenka.subdistrictLabel(revir);
-    text(`${revir.name}${revir.number ? `  |  ${revir.number}` : ""}${sub ? `  |  ${(revir.ticketSubdistricts || []).length > 1 ? "podreviry" : "podrevir"} ${sub}` : ""}`, 68, 700, 11, brand);
-    text("DIGITALNI RYBARSKA MISTENKA", 68, 680, 8, muted);
-    rect(68, 602, 285, 58, "0.95 0.98 1");
-    text("KOD MISTENKY", 82, 643, 8, muted);
-    text(ticket.code, 82, 617, 25, brand);
-
-    // QR kód s odkazem na kontrolu místenky.
-    const qr = qrMatrix(checkUrl);
-    const box = 112;
-    const cell = box / (qr.size + 4);
-    const left = 392;
-    const top = 695;
-    rect(left, top - box, box, box, "1 1 1");
-    for (let row = 0; row < qr.size; row++) for (let col = 0; col < qr.size; col++) {
-      if (qr.isDark(row, col)) rect((left + (col + 2) * cell).toFixed(2), (top - (row + 3) * cell).toFixed(2), cell.toFixed(2), cell.toFixed(2), "0 0 0");
+  function roundRect(ctx, x, y, w, h, r, fill, stroke) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+  }
+  function text(ctx, value, x, y, { size = 24, weight = 400, color = COL.ink, align = "left", spacing = 0 } = {}) {
+    ctx.font = `${weight} ${size}px ${FONT}`;
+    ctx.fillStyle = color;
+    ctx.textAlign = align;
+    ctx.textBaseline = "alphabetic";
+    if ("letterSpacing" in ctx) ctx.letterSpacing = `${spacing}px`;
+    ctx.fillText(String(value ?? ""), x, y);
+    if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
+  }
+  // Zalomení textu do šířky; vrátí y pod posledním řádkem.
+  function wrap(ctx, value, x, y, maxWidth, { size = 22, lineHeight = 1.45, color = COL.ink, weight = 400 } = {}) {
+    ctx.font = `${weight} ${size}px ${FONT}`;
+    const words = String(value).split(/\s+/);
+    let line = "";
+    for (const word of words) {
+      const test = line ? `${line} ${word}` : word;
+      if (ctx.measureText(test).width > maxWidth && line) {
+        text(ctx, line, x, y, { size, color, weight });
+        y += size * lineHeight;
+        line = word;
+      } else line = test;
     }
-    text("Kontrola mistenky", 410, 570, 7, muted);
-
-    text("RYBAR", 68, 548, 8, muted);
-    text(`${ticket.firstName} ${ticket.lastName}`, 68, 528, 13);
-    text("DATUM LOVU", 68, 490, 8, muted);
-    text(czDate(ticket.date, { weekday: true }), 68, 470, 13);
-    text("CISLO CLENSKE LEGITIMACE", 330, 490, 8, muted);
-    text(ticket.memberId, 330, 470, 11);
-    rect(68, 425, 436, 1, "0.86 0.88 0.9");
-    text("PRAVIDLA LOVU", 68, 395, 11, brand);
-    const rules = ["Mistenka plati pouze pro uvedene datum lovu a revir."];
-    if (hours) rules.push(`Doba lovu v tento den: ${hours}.`);
-    rules.push("Odevzdejte ji ihned po ukonceni lovu v danem dni.", `Pozdejsi odevzdani do ${revir.lateReturnDays} dnu bude oznaceno jako opozdene, pak se mistenka uzavre.`, "Kazdy ulovek ihned zapisujte do povolenky.");
-    rules.forEach((rule, index) => text(`- ${rule}`, 78, 372 - index * 18, 9));
-    rect(68, 270, 436, 1, "0.86 0.88 0.9");
-    text("Mistenka nenahrazuje rybarsky listek ani povolenku.", 68, 242, 9, muted);
-    text(`Vystaveno elektronicky | ${organization.shortName}`, 68, 76, 8, muted);
-    text(checkUrl, 68, 61, 7, muted);
-
-    const stream = content.join("\n");
-    const objects = [
-      "<< /Type /Catalog /Pages 2 0 R >>",
-      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
-      `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
-      "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
-    ];
-    let pdf = "%PDF-1.4\n";
-    const offsets = [];
-    objects.forEach((object, index) => { offsets.push(pdf.length); pdf += `${index + 1} 0 obj\n${object}\nendobj\n`; });
-    const xref = pdf.length;
-    pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}`;
-    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-    const url = URL.createObjectURL(new Blob([pdf], { type: "application/pdf" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `mistenka-${ticket.code}.pdf`;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    if (line) { text(ctx, line, x, y, { size, color, weight }); y += size * lineHeight; }
+    return y;
+  }
+  function field(ctx, label, value, x, y, width) {
+    text(ctx, label.toUpperCase(), x, y, { size: 17, weight: 600, color: COL.muted, spacing: 1.5 });
+    return wrap(ctx, value, x, y + 36, width, { size: 27, weight: 600 });
   }
 
-  window.MistenkaPdf = { download };
+  function drawTicket({ ticket, revir, organization, checkUrl, hours }) {
+    const { czDate, qrMatrix, subdistrictLabel, subdistrictTitle, czk } = window.Mistenka;
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, W, H);
+
+    // Hlavička
+    const M = 80;
+    roundRect(ctx, M, 70, W - 2 * M, 120, 22, COL.brand);
+    roundRect(ctx, M + 34, 104, 52, 52, 12, "#fff");
+    text(ctx, "⌁", M + 60, 145, { size: 38, weight: 700, color: COL.brand, align: "center" });
+    text(ctx, "Místenka", M + 106, 142, { size: 38, weight: 700, color: "#fff" });
+    text(ctx, organization.shortName, W - M - 34, 128, { size: 22, color: "#d6e9fd", align: "right" });
+    text(ctx, "rybářská místenka", W - M - 34, 158, { size: 20, color: "#d6e9fd", align: "right" });
+
+    // Revír
+    let y = 268;
+    text(ctx, [revir.name, revir.number].filter(Boolean).join(" · "), M, y, { size: 40, weight: 700 });
+    const sub = subdistrictLabel(revir);
+    const kind = [revir.kind, revir.union].filter(Boolean).join(" · ");
+    y += 40;
+    if (sub || kind) text(ctx, [sub && `${subdistrictTitle(revir)} ${sub}`, kind].filter(Boolean).join("  ·  "), M, y, { size: 22, color: COL.muted });
+
+    // Kód + QR
+    y = 350;
+    const qrSize = 330;
+    const qrX = W - M - qrSize;
+    roundRect(ctx, M, y, qrX - M - 40, qrSize, 20, COL.okBg);
+    text(ctx, "KÓD MÍSTENKY", M + 36, y + 62, { size: 19, weight: 600, color: COL.muted, spacing: 2 });
+    text(ctx, ticket.code, M + 36, y + 160, { size: 96, weight: 700, color: COL.ok, spacing: 14 });
+    text(ctx, czDate(ticket.date, { weekday: true }), M + 36, y + 232, { size: 32, weight: 600 });
+    if (hours) text(ctx, `Doba lovu ${hours}`, M + 36, y + 280, { size: 24, color: COL.muted });
+
+    roundRect(ctx, qrX, y, qrSize, qrSize, 20, "#fff", COL.line);
+    const qr = qrMatrix(checkUrl);
+    const cell = (qrSize - 40) / qr.size;
+    ctx.fillStyle = "#000";
+    for (let r = 0; r < qr.size; r++) for (let c = 0; c < qr.size; c++) if (qr.isDark(r, c)) ctx.fillRect(qrX + 20 + c * cell, y + 20 + r * cell, Math.ceil(cell), Math.ceil(cell));
+    text(ctx, "Naskenujte pro kontrolu místenky", qrX + qrSize / 2, y + qrSize + 34, { size: 18, color: COL.muted, align: "center" });
+
+    // Údaje
+    y = 790;
+    ctx.fillStyle = COL.line;
+    ctx.fillRect(M, y - 50, W - 2 * M, 2);
+    const colW = (W - 2 * M - 40) / 2;
+    const left = field(ctx, "Rybář", `${ticket.firstName} ${ticket.lastName}`, M, y, colW);
+    const right = field(ctx, "Číslo členské legitimace", ticket.memberId, M + colW + 40, y, colW);
+    y = Math.max(left, right) + 34;
+    const price = ticket.voucherUsed ? "dárkový poukaz" : czk(ticket.priceHalere);
+    const issued = ticket.issuedAt ? new Date(ticket.issuedAt).toLocaleString("cs-CZ", { timeZone: "Europe/Prague", day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+    const left2 = field(ctx, "Cena", price, M, y, colW);
+    const right2 = field(ctx, "Vystaveno", issued, M + colW + 40, y, colW);
+    y = Math.max(left2, right2) + 40;
+
+    // Než vyrazíte / po lovu
+    ctx.fillStyle = COL.line;
+    ctx.fillRect(M, y - 20, W - 2 * M, 2);
+    y += 34;
+    text(ctx, "Než vyrazíte", M, y, { size: 26, weight: 700 });
+    y += 44;
+    const checks = ["Mějte u sebe platný rybářský lístek a povolenku – místenka je nenahrazuje.", "Místenka platí jen pro uvedený den a revír" + (sub ? ` (${subdistrictTitle(revir).toLowerCase()} ${sub}).` : "."), "Každý úlovek ihned zapište do povolenky."];
+    for (const item of checks) {
+      text(ctx, "✓", M, y, { size: 24, weight: 700, color: COL.ok });
+      y = wrap(ctx, item, M + 38, y, W - 2 * M - 38, { size: 22 }) + 6;
+    }
+    y += 18;
+    text(ctx, "Po skončení lovu", M, y, { size: 26, weight: 700 });
+    y += 44;
+    y = wrap(ctx, `Místenku odevzdejte ještě týž den: na webu zvolte „Vrátit místenku“, načtěte tento QR kód nebo zadejte kód ${ticket.code} a zapište úlovky (nebo „bez úlovku“). Opožděně ji lze odevzdat do ${revir.lateReturnDays} dnů, pak se uzavře jako neodevzdaná.`, M, y, W - 2 * M, { size: 22 });
+
+    // Patička
+    roundRect(ctx, M, H - 190, W - 2 * M, 110, 16, COL.soft);
+    text(ctx, organization.name || organization.shortName, M + 30, H - 145, { size: 19, weight: 600 });
+    const contact = [organization.contact?.email, organization.contact?.phone].filter(Boolean).join(" · ");
+    if (contact) text(ctx, contact, M + 30, H - 117, { size: 18, color: COL.muted });
+    text(ctx, checkUrl, M + 30, H - 92, { size: 16, color: COL.brand });
+
+    // Razítko stavu (místenka už neplatí pro lov)
+    const stamp = STAMPS[ticket.status];
+    if (stamp) {
+      // Přes blok s kódem, ne přes QR (ten musí zůstat čitelný).
+      ctx.save();
+      ctx.translate(M + (qrX - M - 40) / 2, 350 + qrSize / 2);
+      ctx.rotate(-0.14);
+      ctx.globalAlpha = 0.88;
+      // Písmo se zmenší, aby se razítko vešlo do bloku s kódem.
+      const maxW = qrX - M - 100;
+      const measure = (px) => { ctx.font = `800 ${px}px ${FONT}`; if ("letterSpacing" in ctx) ctx.letterSpacing = "4px"; const w = ctx.measureText(stamp[0]).width; if ("letterSpacing" in ctx) ctx.letterSpacing = "0px"; return w; };
+      const size = Math.min(72, Math.floor(72 * maxW / (measure(72) + 60)));
+      const tw = measure(size) + 60;
+      roundRect(ctx, -tw / 2, -size * 1.05, tw, size * 1.5, 14, "rgba(255,255,255,.75)");
+      ctx.strokeStyle = stamp[1];
+      ctx.lineWidth = 7;
+      ctx.strokeRect(-tw / 2, -size * 1.05, tw, size * 1.5);
+      text(ctx, stamp[0], 0, size * 0.32, { size, weight: 800, color: stamp[1], align: "center", spacing: 4 });
+      ctx.restore();
+    }
+    // Klikací oblasti v PDF (QR a odkaz) v pixelech plátna.
+    return { canvas, links: [{ x: qrX, y, w: qrSize, h: qrSize, url: checkUrl, top: 350 }, { x: M + 30, y: H - 110, w: W - 2 * M - 60, h: 26, url: checkUrl }] };
+  }
+
+  // Jednostránkové PDF s obrázkem JPEG (DCTDecode) a odkazy.
+  function buildPdf(jpegBytes, links) {
+    const enc = new TextEncoder();
+    const parts = [];
+    let length = 0;
+    const offsets = [];
+    const push = (part) => { const bytes = typeof part === "string" ? enc.encode(part) : part; parts.push(bytes); length += bytes.length; };
+    const obj = (n, body) => { offsets[n] = length; push(`${n} 0 obj\n${body}\nendobj\n`); };
+    const annots = links.map((_, i) => `${6 + i} 0 R`).join(" ");
+    push("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+    obj(1, "<< /Type /Catalog /Pages 2 0 R >>");
+    obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+    obj(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im1 4 0 R >> >> /Contents 5 0 R /Annots [${annots}] >>`);
+    offsets[4] = length;
+    push(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${W} /Height ${H} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`);
+    push(jpegBytes);
+    push("\nendstream\nendobj\n");
+    const draw = "q 595 0 0 842 0 0 cm /Im1 Do Q";
+    obj(5, `<< /Length ${draw.length} >>\nstream\n${draw}\nendstream`);
+    links.forEach((link, i) => {
+      const x1 = (link.x * PT).toFixed(1);
+      const y1 = (842 - (link.top ?? link.y) * PT - link.h * PT).toFixed(1);
+      const x2 = ((link.x + link.w) * PT).toFixed(1);
+      const y2 = (842 - (link.top ?? link.y) * PT).toFixed(1);
+      obj(6 + i, `<< /Type /Annot /Subtype /Link /Rect [${x1} ${y1} ${x2} ${y2}] /Border [0 0 0] /A << /S /URI /URI (${link.url.replace(/([\\()])/g, "\\$1")}) >> >>`);
+    });
+    const count = 6 + links.length;
+    const xref = length;
+    let table = `xref\n0 ${count}\n0000000000 65535 f \n`;
+    for (let n = 1; n < count; n++) table += `${String(offsets[n]).padStart(10, "0")} 00000 n \n`;
+    push(`${table}trailer\n<< /Size ${count} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+    return new Blob(parts, { type: "application/pdf" });
+  }
+
+  async function download(options) {
+    if (document.fonts?.ready) await document.fonts.ready;
+    const { canvas, links } = drawTicket(options);
+    const jpeg = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    const pdf = buildPdf(new Uint8Array(await jpeg.arrayBuffer()), links);
+    const url = URL.createObjectURL(pdf);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `mistenka-${options.ticket.code}.pdf`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  window.MistenkaPdf = { download, drawTicket };
 })();
