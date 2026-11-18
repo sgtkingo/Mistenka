@@ -79,4 +79,4 @@ Pilotní vývoj. Node verze implementuje úkoly A1–A6 z [docs/PLAN.md](docs/PL
 
 ## Licence
 
-Proprietární software, © 2026 Ing. Jiří Konečný. Všechna práva vyhrazena – užití pouze na základě písemné licenční smlouvy, viz [LICENSE.md](LICENSE.md). Šablona licenční smlouvy: [docs/LICENCNI_SMLOUVA.md](docs/LICENCNI_SMLOUVA.md).
+Proprietární software, © 2026 Ing. Jiří Konečný. Všechna práva vyhrazena – užití pouze na základě písemné licenční smlouvy, viz [LICENSE.md](LICENSE.md). Šablona licenční smlouvy: [docs/LICENCNI_SMLOUVA.md](docs/LICENCNI_SMLOUVA.md) (ke stažení jako [Word](docs/LICENCNI_SMLOUVA.docx)).
