@@ -56,6 +56,8 @@ async function loadWarden() {
     panel.classList.remove("hidden");
   }
 }
+// Funkce člena v organizaci (barvy jednotné v celém systému – common.js roleBadges).
+const memberRolesHtml = (roles = ["member"]) => window.Mistenka.roleBadges(roles);
 function renderWarden(view) {
   const panel = qs("#wardenPanel");
   const history = view.memberHistory.tickets;
@@ -63,9 +65,10 @@ function renderWarden(view) {
   const monthCount = history.filter((t) => t.inMonth).length;
   const seizure = view.seizure ? `<div class="status-error"><b>Zadrženo ${esc(czDateTime(view.seizure.at))}</b>${view.seizure.wardenName ? ` · ${esc(view.seizure.wardenName)}` : ""}<br>${esc(view.seizure.reason)}${view.seizure.place ? ` · ${esc(view.seizure.place)}` : ""}</div>` : "";
   panel.innerHTML = `
-    <div class="warden-head"><span class="section-kicker">Kontrola porybného</span><span class="badge badge-info">Porybný</span></div>
+    <div class="warden-head"><span class="section-kicker">Kontrola porybného</span></div>
     <dl class="summary-list">
       <div><dt>Rybář</dt><dd>${esc(`${view.firstName} ${view.lastName}`)}</dd></div>
+      <div><dt>Funkce</dt><dd class="member-roles">${memberRolesHtml(view.memberRoles)}</dd></div>
       <div><dt>Datum narození</dt><dd>${esc(czDate(view.birthDate))}</dd></div>
       <div><dt>Č. legitimace</dt><dd>${esc(view.memberId)}</dd></div>
       ${view.returnedAt ? `<div><dt>Úlovky na této místence</dt><dd>${esc(catchText(view))}</dd></div>` : ""}

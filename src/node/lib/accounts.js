@@ -393,12 +393,20 @@ function createAccounts({ db, config, appUrl }) {
     return { events: rows.map((r) => ({ id: r.id, at: r.at, action: r.action, actor: r.first_name ? `${r.first_name} ${r.last_name}` : r.actor_user_id ? `#${r.actor_user_id}` : "systém", targetType: r.target_type, targetId: r.target_id, detail: r.detail ? JSON.parse(r.detail) : null })) };
   }
 
-  function listUsers(ctx, { q = "" } = {}) {
+  // role: admin | manager | warden (účty s touto rolí) | member (rybáři bez další role) | "" (všichni).
+  const ROLE_FILTERS = {
+    admin: "',' || roles || ',' LIKE '%,admin,%'", manager: "',' || roles || ',' LIKE '%,manager,%'",
+    warden: "',' || roles || ',' LIKE '%,warden,%'", member: "roles = 'member'"
+  };
+  function listUsers(ctx, { q = "", role = "" } = {}) {
     requireManager(ctx);
+    if (role && !ROLE_FILTERS[role]) throw new ApiError(400, "invalid_roles", "Filtr role musí být admin, manager, warden nebo member.");
     const term = `%${String(q).trim().toLowerCase().slice(0, 100)}%`;
-    const rows = db.prepare(`SELECT * FROM users WHERE lower(email) LIKE ? OR lower(first_name || ' ' || last_name) LIKE ? OR member_id LIKE ?
+    const search = "(lower(email) LIKE ? OR lower(first_name || ' ' || last_name) LIKE ? OR member_id LIKE ?)";
+    const rows = db.prepare(`SELECT * FROM users WHERE ${search}${role ? ` AND ${ROLE_FILTERS[role]}` : ""}
       ORDER BY (roles != 'member') DESC, last_name, first_name LIMIT 100`).all(term, term, term);
-    return { users: rows.map(staffUser) };
+    const counts = Object.fromEntries(Object.entries(ROLE_FILTERS).map(([key, sql]) => [key, db.prepare(`SELECT COUNT(*) AS n FROM users WHERE ${sql}`).get().n]));
+    return { users: rows.map(staffUser), counts };
   }
 
   // Správce smí měnit jen roli porybného; správce a adminy jmenuje a odvolává admin.

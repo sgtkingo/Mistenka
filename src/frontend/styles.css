@@ -236,3 +236,26 @@ input.invalid{border-color:#c04438!important;background:#fff7f6}
 .qr-scan-video.barcode{aspect-ratio:4/3}
 .qr-scan-video.barcode .qr-scan-frame{inset:32% 6%;border-radius:8px}
 .qr-scan-video.barcode .qr-scan-frame::after{content:"";position:absolute;left:4%;right:4%;top:50%;height:2px;background:rgba(255,64,64,.85)}
+
+/* Uživatelé a role: záložky podle role */
+.role-tabs{flex-wrap:wrap;margin-bottom:16px}
+.tab-count{display:inline-block;min-width:20px;margin-left:4px;padding:1px 6px;border-radius:10px;background:#eef1f4;color:var(--muted);font-size:12px;font-weight:600}
+.tab.active .tab-count{background:#e3effb;color:var(--blue)}
+.member-roles{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+
+/* Funkce člena – jednotné barvy v celém systému: Admin oranžová, Správce červená, Porybný modrá, Rybář zelená */
+:root{--role-admin:#d9730d;--role-admin-bg:#fff1e2;--role-manager:#c8302a;--role-manager-bg:#fdeceb;--role-warden:#0b6bcb;--role-warden-bg:#e7f1fc;--role-member:#1a8245;--role-member-bg:#e8f6ed}
+.role-badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700;line-height:1.4;white-space:nowrap;border:1px solid transparent}
+.role-badge.role-admin{color:var(--role-admin);background:var(--role-admin-bg);border-color:#f6d2ab}
+.role-badge.role-manager{color:var(--role-manager);background:var(--role-manager-bg);border-color:#f3c3c0}
+.role-badge.role-warden{color:var(--role-warden);background:var(--role-warden-bg);border-color:#bcd8f5}
+.role-badge.role-member{color:var(--role-member);background:var(--role-member-bg);border-color:#bfe3cc}
+.role-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.role-dot.role-admin{background:var(--role-admin)}.role-dot.role-manager{background:var(--role-manager)}.role-dot.role-warden{background:var(--role-warden)}.role-dot.role-member{background:var(--role-member)}
+.role-tabs .tab[data-role="admin"].active{color:var(--role-admin);border-bottom-color:var(--role-admin)}
+.role-tabs .tab[data-role="manager"].active{color:var(--role-manager);border-bottom-color:var(--role-manager)}
+.role-tabs .tab[data-role="warden"].active{color:var(--role-warden);border-bottom-color:var(--role-warden)}
+.role-tabs .tab[data-role="member"].active{color:var(--role-member);border-bottom-color:var(--role-member)}
+.role-toggle.role-admin input{accent-color:var(--role-admin)}.role-toggle.role-manager input{accent-color:var(--role-manager)}.role-toggle.role-warden input{accent-color:var(--role-warden)}
+.role-toggle.role-admin:has(input:checked){color:var(--role-admin)}.role-toggle.role-manager:has(input:checked){color:var(--role-manager)}.role-toggle.role-warden:has(input:checked){color:var(--role-warden)}
+.user-roles .role-badge{font-size:11px;padding:1px 7px;margin-left:2px}

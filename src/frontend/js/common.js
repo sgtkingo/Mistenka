@@ -259,14 +259,14 @@
     });
     return jsQrPromise;
   }
-  // Vrátí funkci, která ze snímku videa přečte text QR kódu (nebo prázdný řetězec).
+  // Vrátí funkci, která ze snímku videa přečte QR kódy jako [{ text, format }] (tvar, který čeká scanWithCamera).
   async function qrDecoder(video) {
     if ("BarcodeDetector" in window) {
       try {
         const formats = await window.BarcodeDetector.getSupportedFormats?.();
         if (!formats || formats.includes("qr_code")) {
           const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
-          return async () => (await detector.detect(video)).map((r) => r.rawValue);
+          return async () => (await detector.detect(video)).map((r) => ({ text: r.rawValue, format: "qr_code" }));
         }
       } catch { /* přejde na jsQR */ }
     }
@@ -280,7 +280,7 @@
       canvas.height = Math.round(video.videoHeight * scale);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const result = jsQR(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height, { inversionAttempts: "dontInvert" });
-      return result ? [result.data] : [];
+      return result ? [{ text: result.data, format: "qr_code" }] : [];
     };
   }
   // Z textu QR vytáhne kód místenky: odkaz …status.html?code=KÓD, nebo samotný kód.
@@ -525,7 +525,12 @@
       } else if (event.key === "Escape") hide();
     });
   }
-  const ROLE_LABELS = { member: "Uživatel", warden: "Porybný", manager: "Správce", admin: "Admin" };
+  const ROLE_LABELS = { member: "Rybář", warden: "Porybný", manager: "Správce", admin: "Admin" };
+  // Funkce člena mají v celém systému stejné barvy (styles.css: .role-badge.role-*): Admin oranžová,
+  // Správce červená, Porybný modrá, Rybář zelená. Pořadí zobrazení: Admin, Správce, Porybný, Rybář.
+  const ROLE_ORDER = ["admin", "manager", "warden", "member"];
+  const roleBadge = (role) => `<span class="role-badge role-${esc(role)}">${esc(ROLE_LABELS[role] || role)}</span>`;
+  const roleBadges = (roles = [], { member = true } = {}) => ROLE_ORDER.filter((role) => roles.includes(role) && (member || role !== "member")).map(roleBadge).join(" ");
 
   // Odkaz na účet v hlavičce ([data-account-link]) a do správy ([data-manage-link]).
   function renderUserMenu(user) {
@@ -579,7 +584,7 @@
     ticket: '<path d="M3 9V7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a3 3 0 0 0 0 6v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a3 3 0 0 0 0-6z"/><path d="M13 5v2M13 11v2M13 17v2"/>'
   };
   const icon = (name, size = 16) => `<svg class="ico" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
-  window.Mistenka = { icon, qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest, attachQrScanner, attachMemberIdScanner, codeFromQr, memberIdFromBarcode };
+  window.Mistenka = { icon, qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest, attachQrScanner, attachMemberIdScanner, codeFromQr, memberIdFromBarcode, roleBadge, roleBadges };
 })();
 
 // Pole s číslem členské legitimace (max. 8 znaků): ponechá jen číslice, aby vložené „1234 5678“ nepřišlo o číslici.

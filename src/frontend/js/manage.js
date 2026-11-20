@@ -37,18 +37,29 @@ qsa(".manage-nav-item").forEach((item) => item.addEventListener("click", () => {
 // Správce mění jen roli porybného, admin i správce a adminy (server to vynucuje, UI jen nenabízí).
 const editableRoles = () => (hasRole(me, "admin") ? ["warden", "manager", "admin"] : ["warden"]);
 
-async function loadUsers(q = "") {
+// Záložky Admin / Správce / Porybný / Rybář (filtr na serveru, počty u záložek). Hledání platí v aktivní záložce.
+let userRole = "admin";
+let userQuery = "";
+const ROLE_EMPTY = { admin: "Žádný admin.", manager: "Žádný správce.", warden: "Zatím žádný porybný.", member: "Žádný rybář." };
+qsa("#roleTabs .tab").forEach((tab) => tab.addEventListener("click", () => {
+  userRole = tab.dataset.role;
+  qsa("#roleTabs .tab").forEach((other) => { other.classList.toggle("active", other === tab); other.setAttribute("aria-selected", String(other === tab)); });
+  loadUsers(userQuery);
+}));
+async function loadUsers(q = userQuery) {
+  userQuery = q;
   const list = qs("#userList");
   list.innerHTML = '<p class="muted">Načítám…</p>';
   try {
-    const { users } = await api("/manage/users", { query: { q } });
-    if (!users.length) { list.innerHTML = '<p class="muted">Nikoho jsme nenašli.</p>'; return; }
+    const { users, counts } = await api("/manage/users", { query: { q, role: userRole } });
+    qsa("#roleTabs .tab").forEach((tab) => { qs(".tab-count", tab).textContent = counts?.[tab.dataset.role] ?? ""; });
+    if (!users.length) { list.innerHTML = `<p class="muted">${q ? "Nikoho jsme nenašli." : ROLE_EMPTY[userRole]}</p>`; return; }
     const editable = editableRoles();
     list.innerHTML = `<table class="data-table"><thead><tr><th>Uživatel</th><th>Č. legitimace</th><th>Role</th><th></th></tr></thead><tbody>${users.map((user) => `
       <tr data-user="${esc(user.id)}">
-        <td data-label="Uživatel"><b>${esc(`${user.firstName} ${user.lastName}`)}</b><br><small class="muted-inline">${esc(user.email)}${user.emailVerified ? "" : " · neověřený"}${user.twoFactor ? " · 2FA" : ""}</small></td>
+        <td data-label="Uživatel"><b>${esc(`${user.firstName} ${user.lastName}`)}</b> <span class="user-roles">${window.Mistenka.roleBadges(user.roles, { member: Boolean(user.memberId) })}</span><br><small class="muted-inline">${esc(user.email)}${user.emailVerified ? "" : " · neověřený"}${user.twoFactor ? " · 2FA" : ""}</small></td>
         <td data-label="Legitimace">${user.memberId ? esc(user.memberId) : '<span class="muted-inline">účet pro správu</span>'}</td>
-        <td data-label="Role"><div class="role-toggles">${["warden", "manager", "admin"].map((role) => `<label class="role-toggle${editable.includes(role) ? "" : " locked"}"><input type="checkbox" value="${role}"${user.roles.includes(role) ? " checked" : ""}${editable.includes(role) && user.emailVerified ? "" : " disabled"}> ${esc(ROLE_LABELS[role])}</label>`).join("")}</div></td>
+        <td data-label="Role"><div class="role-toggles">${["warden", "manager", "admin"].map((role) => `<label class="role-toggle role-${role}${editable.includes(role) ? "" : " locked"}"><input type="checkbox" value="${role}"${user.roles.includes(role) ? " checked" : ""}${editable.includes(role) && user.emailVerified ? "" : " disabled"}> ${esc(ROLE_LABELS[role])}</label>`).join("")}</div></td>
         <td><button class="secondary-button save-roles" type="button" disabled>Uložit</button></td>
       </tr>`).join("")}</tbody></table>`;
     qsa("tr[data-user]", list).forEach((row) => {
@@ -651,8 +662,13 @@ function accountForm() {
   </form>`;
 }
 
-// ---------- notifikace (žádosti „Jsem porybný“) ----------
+// ---------- notifikace (žádosti ke schválení; zatím „Jsem porybný“) ----------
 const REQUEST_STATES = { pending: ["čeká na schválení", "warn"], approved: ["schváleno", "ok"], rejected: ["zamítnuto", "off"] };
+// Texty podle druhu notifikace – nový druh = nový záznam (server vrací kind).
+const NOTIFICATION_KINDS = {
+  warden_request: { title: "Žádost o funkci porybného", approved: "Schváleno – uživatel je porybný a dostal e-mail.", rejected: "Zamítnuto – žadatel dostal e-mail." }
+};
+const notificationKind = (kind) => NOTIFICATION_KINDS[kind] || { title: "Notifikace", approved: "Schváleno.", rejected: "Zamítnuto." };
 function updateNotificationCount(n) {
   const badge = qs("#notificationCount");
   badge.textContent = n;
@@ -669,9 +685,9 @@ async function loadNotifications() {
       const [label, tone] = REQUEST_STATES[n.status] || [n.status, "off"];
       const who = n.user ? `<b>${esc(n.user.name)}</b> <small class="muted-inline">${esc(n.user.email)}${n.user.memberId ? ` · legitimace ${esc(n.user.memberId)}` : ""}</small>` : '<span class="muted-inline">účet byl smazán</span>';
       const decided = n.decidedAt ? `<p class="field-help">${esc(label)} ${esc(czDateTime(n.decidedAt))}${n.decidedBy ? ` · ${esc(n.decidedBy)}` : ""}${n.decisionNote ? ` · „${esc(n.decisionNote)}“` : ""}</p>` : "";
-      return `<article class="notification-card" data-id="${n.id}">
+      return `<article class="notification-card" data-id="${n.id}" data-kind="${esc(n.kind)}">
         <div class="notification-head"><span class="badge badge-${tone}">${esc(label)}</span><span class="muted-inline">${esc(czDateTime(n.createdAt))}</span></div>
-        <p class="notification-title">Žádost o funkci porybného – ${who}</p>
+        <p class="notification-title">${esc(notificationKind(n.kind).title)} – ${who}</p>
         ${n.note ? `<p class="notification-note">„${esc(n.note)}“</p>` : ""}${decided}
         ${n.status === "pending" ? `<div class="row-actions"><input class="decision-note" maxlength="300" placeholder="Poznámka pro žadatele (volitelné)"><button class="primary-button decide" type="button" data-action="approve">Schválit</button><button class="secondary-button decide" type="button" data-action="reject">Zamítnout</button></div>` : ""}
       </article>`;
@@ -681,7 +697,8 @@ async function loadNotifications() {
       qsa("button", card).forEach((b) => { b.disabled = true; });
       try {
         await api(`/manage/notifications/${card.dataset.id}/${button.dataset.action}`, { method: "POST", body: { note: qs(".decision-note", card).value.trim() } });
-        showToast(button.dataset.action === "approve" ? "Schváleno – uživatel je porybný a dostal e-mail." : "Zamítnuto – žadatel dostal e-mail.");
+        const texts = notificationKind(card.dataset.kind);
+        showToast(button.dataset.action === "approve" ? texts.approved : texts.rejected);
       } catch (error) { showToast(error.message); }
       loadNotifications();
     }));
@@ -699,6 +716,9 @@ qs("#showAllNotifications").addEventListener("change", loadNotifications);
   qs("#loadingState").classList.add("hidden");
   qs("#portal").classList.remove("hidden");
   qsa(".admin-only").forEach((el) => el.classList.toggle("hidden", !hasRole(me, "admin")));
+  // Uživatelé a role: správce hlavně jmenuje porybné z rybářů → výchozí záložka Rybář, admin začíná u Admin.
+  userRole = hasRole(me, "admin") ? "admin" : "member";
+  qsa("#roleTabs .tab").forEach((tab) => { tab.classList.toggle("active", tab.dataset.role === userRole); tab.setAttribute("aria-selected", String(tab.dataset.role === userRole)); });
   qs("#rolesHelp").textContent = hasRole(me, "admin")
     ? "Jako admin jmenujete porybné, správce i další adminy. Posledního admina nelze odebrat. Role lze dát jen účtu s ověřeným e-mailem."
     : "Jako správce můžete jmenovat a odvolávat porybné. Správce a adminy jmenuje admin.";

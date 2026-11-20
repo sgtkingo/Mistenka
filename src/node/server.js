@@ -334,7 +334,7 @@ async function handleApi(req, res, url, ip) {
   if ((m = pathname.match(/^\/api\/manage\/blocks\/(\d+)\/lift$/)) && method === "POST") return send(res, 200, service.liftBlock(accounts.requireManager(ctx), m[1]));
   if (pathname === "/api/manage/notifications" && method === "GET") return send(res, 200, accounts.listNotifications(ctx));
   if ((m = pathname.match(/^\/api\/manage\/notifications\/(\d+)\/(approve|reject)$/)) && method === "POST") return send(res, 200, accounts.decideNotification(ctx, m[1], m[2], await readBody(req)));
-  if (pathname === "/api/manage/users" && method === "GET") return send(res, 200, accounts.listUsers(ctx, { q: url.searchParams.get("q") || "" }));
+  if (pathname === "/api/manage/users" && method === "GET") return send(res, 200, accounts.listUsers(ctx, { q: url.searchParams.get("q") || "", role: url.searchParams.get("role") || "" }));
   if (pathname === "/api/manage/users" && method === "POST") return send(res, 201, accounts.inviteStaff(ctx, await readBody(req)));
   if ((m = pathname.match(/^\/api\/manage\/users\/(\d+)\/roles$/)) && method === "PUT") return send(res, 200, accounts.setRoles(ctx, m[1], await readBody(req)));
 

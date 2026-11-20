@@ -413,7 +413,7 @@ final class App
         if ($match('#^/manage/blocks/(\d+)/lift$#') && $method === 'POST') return self::json(200, $svc->liftBlock($acc->requireManager($ctx), $m[1]));
         if ($path === '/manage/notifications' && $method === 'GET') return self::json(200, $acc->listNotifications($ctx));
         if ($match('#^/manage/notifications/(\d+)/(approve|reject)$#') && $method === 'POST') return self::json(200, $acc->decideNotification($ctx, $m[1], $m[2], self::body($request)));
-        if ($path === '/manage/users' && $method === 'GET') return self::json(200, $acc->listUsers($ctx, $q('q')));
+        if ($path === '/manage/users' && $method === 'GET') return self::json(200, $acc->listUsers($ctx, $q('q'), $q('role')));
         if ($path === '/manage/users' && $method === 'POST') return self::json(201, $acc->inviteStaff($ctx, self::body($request)));
         if ($match('#^/manage/users/(\d+)/roles$#') && $method === 'PUT') return self::json(200, $acc->setRoles($ctx, $m[1], self::body($request)));
 

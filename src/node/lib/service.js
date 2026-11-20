@@ -489,12 +489,19 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       firstName: ticket.first_name, lastName: ticket.last_name, birthDate: ticket.birth_date, memberId: ticket.member_id,
       returnedAt: ticket.returned_at, noCatch: Boolean(ticket.no_catch), catches: catchesOf(ticket.id),
       seizable: stateOf(ticket) === "active",
+      memberRoles: memberRolesOf(ticket),
       seizure, checks, memberHistory: { week, month, tickets: history },
       limits: limitsFor(ticket),
       blocked: activeBlock(ticket.member_id) ? blockShape(activeBlock(ticket.member_id)) : null
     };
   }
   const wardenName = (user) => `${user.first_name} ${user.last_name}`;
+  // Funkce držitele místenky (role jeho účtu – podle účtu místenky, jinak podle čísla legitimace). Bez účtu jen rybář.
+  function memberRolesOf(ticket) {
+    const account = (ticket.user_id && db.prepare("SELECT roles FROM users WHERE id = ?").get(ticket.user_id))
+      || (ticket.member_id && db.prepare("SELECT roles FROM users WHERE member_id = ?").get(ticket.member_id));
+    return account ? String(account.roles).split(",").filter(Boolean) : ["member"];
+  }
   // Každé otevření místenky porybným je kontrola; opakované otevření do 10 minut se nezapisuje znovu.
   function wardenCheck(code, warden) {
     const ticket = findTicket(code);

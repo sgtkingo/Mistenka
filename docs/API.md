@@ -242,7 +242,7 @@ Dokud neexistuje žádný admin, server při startu vypíše do konzole jednorá
 | `POST /me/2fa/setup` 👤 | – | `{ secret, otpauthUrl }` (TOTP, SHA-1, 6 číslic, 30 s); `409 two_factor_enabled` |
 | `POST /me/2fa/enable` 👤 | `{ otp }` | `{ user }`; `400 invalid_otp`, `409 two_factor_not_setup` |
 | `POST /me/2fa/disable` 👤 | `{ otp }` | `{ user }`; admin → `409 two_factor_required` |
-| `GET /manage/users?q=` 🛠 | – | `{ users: [<StaffUser>] }` (max. 100, hledá v e-mailu, jménu a čísle legitimace) |
+| `GET /manage/users?q=&role=` 🛠 | – | `{ users: [<StaffUser>], counts: { admin, manager, warden, member } }` (max. 100, hledá v e-mailu, jménu a čísle legitimace; `role` = `admin` \| `manager` \| `warden` – účty s touto rolí, `member` – rybáři bez další role; jinak `400 invalid_roles`) |
 | `POST /manage/users` 🛠 (jen admin) | `{ email, firstName, lastName, roles: ["manager"] \| ["admin"] }` | `201 { user: <StaffUser> }` – účet jen pro správu s ověřeným e-mailem; pozvaný dostane e-mail `staff_invite` s odkazem `account.html#invite=<token>` (72 h), heslo nastaví přes `POST /auth/password-reset/confirm`; `400 invalid_roles`, `403 forbidden_role`, `409 email_taken` |
 | `GET /manage/violations` 🛠 | – | `{ violations: [{ id, code, date, memberId, holder, label, period, from, to, count, maxCount, createdAt, blocked }] }` (posledních 200) |
 | `GET /manage/blocks` 🛠 | – | `{ blocks: [{ id, memberId, holder, reason, until, source: "manual" \| "auto", createdAt, liftedAt, active }] }` |
@@ -260,7 +260,11 @@ Dokud neexistuje žádný admin, server při startu vypíše do konzole jednorá
 // StaffUser = User bez birthDate, hasPassword, mfaRequired a wardenRequest
 ```
 
-## Notifikace: žádost „Jsem porybný“
+## Notifikace
+
+Žádosti a upozornění, které čekají na rozhodnutí správce (portál → **Notifikace**, e-mail na `organization.managerEmail`). Každá notifikace má `kind`; zatím existuje jediný druh `warden_request`, další mohou přibýt se stejnými endpointy (frontend zobrazí neznámý druh obecně).
+
+### Žádost „Jsem porybný“ (`warden_request`)
 
 Uživatel může při registraci nebo v účtu zaškrtnout **„Jsem porybný“** (smí jen porybný – rybářská stráž MO nebo státní rybářská stráž). Žádost dostane správce:
 
@@ -474,6 +478,7 @@ Plná kontrola. Každé otevření se zapíše do záznamu kontrol (`ticket_chec
 { "firstName": "Jan", "lastName": "Novák", "birthDate": "1980-05-15", "memberId": "12345678",
   "returnedAt": null, "noCatch": false, "catches": [],
   "seizable": true,                       // jen stav active
+  "memberRoles": ["member", "warden"],    // funkce držitele: role jeho účtu (podle účtu místenky nebo čísla legitimace), bez účtu ["member"]
   "seizure": null,                        // { at, reason, place, wardenName }
   "checks": [{ "wardenName": "Petr Strážný", "at": "…", "status": "active" }],   // nejnovější první, max. 20
   "memberHistory": {                      // vystavené místenky téhož čísla legitimace v týdnu (po–ne) a měsíci dne lovu

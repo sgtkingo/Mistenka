@@ -478,12 +478,19 @@ final class Accounts
         ], $rows)];
     }
 
-    public function listUsers(?array $ctx, string $q): array
+    // role: admin | manager | warden (účty s touto rolí) | member (rybáři bez další role) | "" (všichni).
+    private const ROLE_FILTERS = ['admin' => "FIND_IN_SET('admin', roles) > 0", 'manager' => "FIND_IN_SET('manager', roles) > 0", 'warden' => "FIND_IN_SET('warden', roles) > 0", 'member' => "roles = 'member'"];
+
+    public function listUsers(?array $ctx, string $q, string $role = ''): array
     {
         $this->requireManager($ctx);
+        if ($role !== '' && !isset(self::ROLE_FILTERS[$role])) throw new ApiError(400, 'invalid_roles', 'Filtr role musí být admin, manager, warden nebo member.');
         $term = '%' . Js::slice(Js::lower(trim($q)), 0, 100) . '%';
-        $rows = Db::all("SELECT * FROM {p}users WHERE LOWER(email) LIKE ? OR LOWER(CONCAT(first_name, ' ', last_name)) LIKE ? OR member_id LIKE ? ORDER BY (roles != 'member') DESC, last_name, first_name LIMIT 100", $term, $term, $term);
-        return ['users' => array_map([$this, 'staffUser'], $rows)];
+        $filter = $role !== '' ? ' AND ' . self::ROLE_FILTERS[$role] : '';
+        $rows = Db::all("SELECT * FROM {p}users WHERE (LOWER(email) LIKE ? OR LOWER(CONCAT(first_name, ' ', last_name)) LIKE ? OR member_id LIKE ?){$filter} ORDER BY (roles != 'member') DESC, last_name, first_name LIMIT 100", $term, $term, $term);
+        $counts = [];
+        foreach (self::ROLE_FILTERS as $key => $sql) $counts[$key] = (int) Db::val("SELECT COUNT(*) AS n FROM {p}users WHERE {$sql}");
+        return ['users' => array_map([$this, 'staffUser'], $rows), 'counts' => $counts];
     }
 
     // Správce smí měnit jen roli porybného; správce a adminy jmenuje a odvolává admin.

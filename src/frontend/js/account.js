@@ -167,7 +167,8 @@ function renderAccount() {
   show("authView", false);
   show("accountView");
   qs("#accountName").textContent = `${user.firstName} ${user.lastName}`;
-  qs("#roleBadges").innerHTML = user.roles.filter((role) => role !== "member").map((role) => `<span class="badge badge-info">${esc(ROLE_LABELS[role] || role)}</span>`).join("");
+  // Funkce účtu; „Rybář“ jen u účtu s číslem legitimace (účet jen pro správu rybářem není).
+  qs("#roleBadges").innerHTML = window.Mistenka.roleBadges(user.roles, { member: Boolean(user.memberId) });
   qsa("[data-manage-link]").forEach((el) => el.classList.toggle("hidden", !isStaff(user)));
   show("mfaWarning", user.mfaRequired);
   // Údaje

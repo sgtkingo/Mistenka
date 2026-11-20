@@ -501,6 +501,12 @@ test("role: správce jmenuje porybné, admin správce; admin musí mít 2FA; pos
   assert.equal(found.status, 200, JSON.stringify(found.data));
   const managerId = found.data.users[0].id;
   assert.ok(!("birthDate" in found.data.users[0]), "seznam neobsahuje datum narození");
+  // Filtr podle role (záložky Admin / Správce / Porybný / Rybář) + počty.
+  const admins = await call("GET", "/manage/users?role=admin", { session: admin.session });
+  assert.ok(admins.data.users.length >= 1 && admins.data.users.every((u) => u.roles.includes("admin")), JSON.stringify(admins.data));
+  assert.ok(admins.data.counts.admin >= 1 && "member" in admins.data.counts);
+  assert.ok((await call("GET", "/manage/users?role=member", { session: admin.session })).data.users.every((u) => u.roles.length === 1));
+  assert.equal((await call("GET", "/manage/users?role=boss", { session: admin.session })).data.code, "invalid_roles");
   const promoted = await call("PUT", `/manage/users/${managerId}/roles`, { body: { roles: ["manager"] }, session: admin.session });
   assert.deepEqual(promoted.data.user.roles, ["member", "manager"]);
   assert.equal((await call("PUT", `/manage/users/${managerId}/roles`, { body: { roles: ["boss"] }, session: admin.session })).data.code, "invalid_roles");
@@ -581,6 +587,10 @@ test("porybný: plná kontrola jen s rolí, údaje člena, místenky v týdnu a 
   assert.equal((await call("GET", `/warden/tickets/${monday.code}`, { session: warden.session })).data.checks.length, 1, "opakované otevření do 10 min se nezapisuje");
   const unpaid = await order();
   assert.equal((await call("GET", `/warden/tickets/${unpaid.ticket.code}`, { session: warden.session })).data.code, "not_issued");
+  // Funkce držitele: nákup bez účtu = rybář; místenka na legitimaci porybného ukáže i porybného.
+  assert.deepEqual(view.memberRoles, ["member"]);
+  const own = await paidTicket({ memberId: warden.memberId, date: "2026-06-11" });
+  assert.deepEqual((await call("GET", `/warden/tickets/${own.code}`, { session: warden.session })).data.memberRoles, ["member", "warden"]);
 });
 
 test("zadržení: jen platná místenka, lov končí, odevzdat je nutné i tak; e-mail držiteli a správci", async () => {

@@ -59,7 +59,7 @@
 
       <section class="panel-card manage-section hidden" id="section-notifications">
         <div class="panel-heading"><div><span class="section-kicker">Ke schválení</span><h1>Notifikace</h1></div><label class="checkbox-label"><input type="checkbox" id="showAllNotifications"> <span>Zobrazit i vyřízené</span></label></div>
-        <p class="panel-intro">Žádosti „Jsem porybný“: uživatel uvádí, že je porybný (stráž MO nebo státní). Schválením dostane roli porybného. Upozornění chodí také na e-mail správce z Nastavení, kde jde žádost rovnou schválit nebo zamítnout.</p>
+        <p class="panel-intro">Žádosti a upozornění, které čekají na rozhodnutí správce – například žádost „Jsem porybný“, kterou uživatel podá při registraci nebo v účtu. Notifikace chodí také na e-mail správce z Nastavení, odkud je jde rovnou otevřít, schválit nebo zamítnout.</p>
         <div id="notificationList"></div>
       </section>
 
@@ -98,6 +98,12 @@
             <button class="primary-button" type="submit">Poslat pozvánku</button>
           </form>
         </details>
+        <div class="tabs role-tabs" role="tablist" id="roleTabs">
+          <button class="tab active" type="button" role="tab" data-role="admin"><span class="role-dot role-admin"></span>Admin <span class="tab-count"></span></button>
+          <button class="tab" type="button" role="tab" data-role="manager"><span class="role-dot role-manager"></span>Správce <span class="tab-count"></span></button>
+          <button class="tab" type="button" role="tab" data-role="warden"><span class="role-dot role-warden"></span>Porybný <span class="tab-count"></span></button>
+          <button class="tab" type="button" role="tab" data-role="member"><span class="role-dot role-member"></span>Rybář <span class="tab-count"></span></button>
+        </div>
         <form class="code-row search-row" id="userSearch">
           <input id="userQuery" type="search" placeholder="Jméno, e-mail nebo číslo legitimace" maxlength="100" autocomplete="off">
           <button class="primary-button" type="submit">Hledat</button>

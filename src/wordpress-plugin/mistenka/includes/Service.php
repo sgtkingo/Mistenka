@@ -629,10 +629,18 @@ final class Service
         return array_merge($base, [
             'firstName' => $ticket['first_name'], 'lastName' => $ticket['last_name'], 'birthDate' => $ticket['birth_date'], 'memberId' => $ticket['member_id'],
             'returnedAt' => $ticket['returned_at'], 'noCatch' => (bool) $ticket['no_catch'], 'catches' => $this->catchesOf($ticket['id']),
-            'seizable' => $this->stateOf($ticket) === 'active', 'seizure' => $seizure, 'checks' => $checks,
+            'seizable' => $this->stateOf($ticket) === 'active', 'memberRoles' => $this->memberRolesOf($ticket), 'seizure' => $seizure, 'checks' => $checks,
             'memberHistory' => ['week' => $week, 'month' => $month, 'tickets' => $history],
             'limits' => $this->limitsFor($ticket), 'blocked' => $block ? $this->blockShape($block) : null,
         ]);
+    }
+
+    // Funkce držitele místenky (role jeho účtu – podle účtu místenky, jinak podle čísla legitimace). Bez účtu jen rybář.
+    private function memberRolesOf(array $ticket): array
+    {
+        $account = $ticket['user_id'] ? Db::row('SELECT roles FROM {p}users WHERE id = ?', $ticket['user_id']) : null;
+        if (!$account && $ticket['member_id'] !== '') $account = Db::row('SELECT roles FROM {p}users WHERE member_id = ?', $ticket['member_id']);
+        return $account ? array_values(array_filter(explode(',', (string) $account['roles']))) : ['member'];
     }
 
     private static function wardenName(array $user): string
