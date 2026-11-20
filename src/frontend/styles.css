@@ -192,3 +192,7 @@ input[type=checkbox],input[type=radio]{width:auto!important;margin:0!important;p
 .footer-credit a{color:inherit;text-decoration:underline;text-underline-offset:2px}
 .footer-credit a:hover{color:var(--blue)}
 @media(max-width:640px){footer{flex-wrap:wrap;justify-content:center;text-align:center}}
+
+/* Drobné ikony u odkazů a údajů */
+.ico{display:inline-block;flex:none;vertical-align:-3px;margin-right:6px;opacity:.85}
+#heroMeta .ico{color:var(--blue);opacity:1}

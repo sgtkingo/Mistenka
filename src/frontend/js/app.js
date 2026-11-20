@@ -1,4 +1,4 @@
-const { qs, qsa, esc, api, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, plural, subdistrictLabel, subdistrictTitle, normalizeMemberId, isMemberId, saveToken, rememberMemberId, showToast, applyBranding, initUserMenu, ticketState, parseCzDate, formatCzDate } = window.Mistenka;
+const { icon, qs, qsa, esc, api, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, plural, subdistrictLabel, subdistrictTitle, normalizeMemberId, isMemberId, saveToken, rememberMemberId, showToast, applyBranding, initUserMenu, ticketState, parseCzDate, formatCzDate } = window.Mistenka;
 
 const panels = { buy: qs("#buyPanel"), person: qs("#personPanel"), return: qs("#returnPanel"), check: qs("#checkPanel"), payment: qs("#paymentPanel") };
 let config = null;
@@ -41,7 +41,7 @@ function renderRevir() {
   document.title = `Místenka · ${revir.name}`;
   qsa("[data-revir-name]").forEach((el) => { el.textContent = revir.name; });
   if (config.reviry.length > 1) qs("#changeRevir").classList.remove("hidden");
-  const meta = [revir.area && `<span><strong>${esc(revir.area)}</strong> vodní plochy</span>`, revir.subdistrictCount && `<span><strong>${esc(revir.subdistrictCount)}</strong> ${plural(revir.subdistrictCount, "podrevír", "podrevíry", "podrevírů")}</span>`, `<span><strong>${esc(czk(Math.round(revir.priceCzk * 100)))} / den</strong></span>`].filter(Boolean);
+  const meta = [revir.area && `<span>${icon("water")}<strong>${esc(revir.area)}</strong> vodní plochy</span>`, revir.subdistrictCount && `<span>${icon("map")}<strong>${esc(revir.subdistrictCount)}</strong> ${plural(revir.subdistrictCount, "podrevír", "podrevíry", "podrevírů")}</span>`, `<span>${icon("ticket")}<strong>${esc(czk(Math.round(revir.priceCzk * 100)))} / den</strong></span>`].filter(Boolean);
   qs("#heroMeta").innerHTML = meta.join('<span class="meta-divider"></span>');
   const [first, ...rest] = revir.name.split(" ");
   qs("#artLabel").innerHTML = `${esc(first)}<br><span>${esc(rest.join(" "))}</span>`;
@@ -57,7 +57,7 @@ function renderRevir() {
   qs("#revirDetails").innerHTML = details.map(([icon, title, body]) => `<div><span class="detail-icon">${icon}</span><span><b>${title}</b><br>${body}</span></div>`).join("");
   const rulesHref = revirUrl("rules.html", revir, config);
   qsa(".rules-link").forEach((link) => { link.href = rulesHref; });
-  qs("#revirLinks").innerHTML = [revir.cardUrl && `<a class="map-link" href="${esc(revir.cardUrl)}" target="_blank" rel="noreferrer">Otevřít kartu revíru <span>↗</span></a>`, `<a class="map-link" href="${esc(rulesHref)}">Pravidla revíru <span>→</span></a>`].filter(Boolean).join("");
+  qs("#revirLinks").innerHTML = [revir.cardUrl && `<a class="map-link" href="${esc(revir.cardUrl)}" target="_blank" rel="noreferrer">Otevřít kartu revíru <span>↗</span></a>`, `<a class="map-link" href="${esc(rulesHref)}">${icon("doc")}Pravidla revíru <span>→</span></a>`].filter(Boolean).join("");
 }
 
 // ---------- důležité zprávy (nejvýš 3, přepínání tečkami) ----------
@@ -89,7 +89,7 @@ async function loadAnnouncements() {
 
 function renderContact() {
   const contact = config.organization.contact || {};
-  const parts = [contact.label && esc(contact.label), contact.email && `<a href="mailto:${esc(contact.email)}">${esc(contact.email)}</a>`, contact.phone && `<a href="tel:${esc(contact.phone.replace(/\s+/g, ""))}">${esc(contact.phone)}</a>`].filter(Boolean);
+  const parts = [contact.label && esc(contact.label), contact.email && `<a class="icon-link" href="mailto:${esc(contact.email)}">${icon("mail")}${esc(contact.email)}</a>`, contact.phone && `<a class="icon-link" href="tel:${esc(contact.phone.replace(/\s+/g, ""))}">${icon("phone")}${esc(contact.phone)}</a>`].filter(Boolean);
   qs("#contactLine").innerHTML = parts.join(" · ");
 }
 
