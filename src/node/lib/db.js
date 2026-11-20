@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
-const SCHEMA_VERSION = 13;
+const SCHEMA_VERSION = 15;
 
 // Sloupce tabulky users (sdílí vytvoření i migrace).
 const USERS_COLUMNS = `
@@ -107,6 +107,8 @@ function openDatabase(dataDir, { autoRecover = true } = {}) {
   addColumns("bank_transactions", [["resolution", "TEXT"], ["resolution_note", "TEXT"], ["resolved_at", "TEXT"], ["resolved_by", "INTEGER"]]);
   addColumns("member_blocks", [["cause", "TEXT"]]);
   addColumns("vouchers", [["created_at", "TEXT"], ["created_by", "INTEGER"], ["note", "TEXT"], ["voided_at", "TEXT"]]);
+  // Migrace 13 -> 14: odesílatel e-mailu (SMTP účet skupiny nebo výchozí).
+  addColumns("email_outbox", [["sender", "TEXT"]]);
   // Migrace 4 -> 5: zadržení místenky porybným.
   for (const [column, definition] of [["seized_at", "TEXT"], ["seized_by", "INTEGER"], ["seized_reason", "TEXT"], ["seized_place", "TEXT"]]) {
     if (ticketColumns.length && !ticketColumns.includes(column)) db.exec(`ALTER TABLE tickets ADD COLUMN ${column} ${definition}`);
@@ -373,7 +375,43 @@ function openDatabase(dataDir, { autoRecover = true } = {}) {
       body_text TEXT NOT NULL,
       created_at TEXT NOT NULL,
       sent_at TEXT,
-      error TEXT
+      error TEXT,
+      sender TEXT                              -- přes který účet odešel (název SMTP účtu / „výchozí“)
+    );
+    -- Žádosti „Jsem porybný“ (notifikace pro správce). unverified = čeká na ověření e-mailu žadatele.
+    CREATE TABLE IF NOT EXISTS warden_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      status TEXT NOT NULL,                    -- unverified | pending | approved | rejected
+      note TEXT,
+      created_at TEXT NOT NULL,
+      submitted_at TEXT,
+      decided_at TEXT,
+      decided_by INTEGER,
+      decided_via TEXT,                        -- portal | email
+      decision_note TEXT,
+      action_token_hash TEXT,                  -- odkaz z e-mailu správci (jednorázový, 7 dní)
+      action_expires_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS warden_requests_user ON warden_requests (user_id, id);
+    -- SMTP účty pro odesílání (Admin → Emailoví klienti). Heslo šifrované (AES-256-GCM), nikdy se nevrací do API.
+    CREATE TABLE IF NOT EXISTS email_accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      label TEXT NOT NULL,
+      from_email TEXT NOT NULL,
+      from_name TEXT,
+      host TEXT NOT NULL,
+      port INTEGER NOT NULL,
+      encryption TEXT NOT NULL,                -- ssl | tls | none
+      username TEXT,
+      password_enc TEXT,
+      verified_at TEXT,                        -- úspěšný testovací e-mail; změna připojení ověření ruší
+      verified_to TEXT,
+      last_error TEXT,
+      created_by INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT
     );
   `);
   db.exec("CREATE INDEX IF NOT EXISTS tickets_user ON tickets (user_id)");

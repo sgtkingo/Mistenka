@@ -29,6 +29,8 @@ qsa(".manage-nav-item").forEach((item) => item.addEventListener("click", () => {
   if (section === "limits") loadLimits();
   if (section === "announcements") loadAnnouncements();
   if (section === "seasons") loadSeasons();
+  if (section === "email") loadEmail();
+  if (section === "notifications") loadNotifications();
 }));
 
 // ---------- uživatelé a role ----------
@@ -549,7 +551,10 @@ const ACTION_LABELS = { roles_changed: "změna rolí", roles_forced: "role (př�
   payment_resolved: "vyřešení platby", member_blocked: "blokace člena", member_blocked_auto: "automatická blokace", member_unblocked: "zrušení blokace", backup_created: "záloha", backup_deleted: "smazání zálohy", season_created: "sezona", season_updated: "úprava sezony", season_deleted: "smazání sezony",
   closure_created: "uzavření revíru", closure_deleted: "zrušení uzavření", announcement_created: "nová zpráva", announcement_updated: "úprava zprávy", announcement_deleted: "smazání zprávy", vouchers_created: "nové poukazy", voucher_voided: "zneplatnění poukazu",
   stocking_created: "zarybnění", stocking_updated: "úprava zarybnění", stocking_deleted: "smazání zarybnění", stocking_budget_set: "rozpočet zarybnění", report_created: "uzávěrka", season_report_created: "uzávěrka sezony",
-  account_verified: "ověření účtu", account_deleted: "smazání účtu", password_reset: "obnova hesla", password_changed: "změna hesla", email_changed: "změna e-mailu", two_factor_enabled: "zapnutí 2FA", two_factor_disabled: "vypnutí 2FA" };
+  account_verified: "ověření účtu", account_deleted: "smazání účtu", password_reset: "obnova hesla", password_changed: "změna hesla", email_changed: "změna e-mailu", two_factor_enabled: "zapnutí 2FA", two_factor_disabled: "vypnutí 2FA",
+  email_account_created: "nový e-mailový účet", email_account_updated: "úprava e-mailového účtu", email_account_deleted: "smazání e-mailového účtu", email_account_verified: "ověření e-mailového účtu",
+  email_account_verify_failed: "neúspěšný test e-mailového účtu", email_senders_changed: "odesílatelé e-mailů",
+  warden_requested: "žádost o porybného", warden_request_approved: "schválení porybného", warden_request_rejected: "zamítnutí porybného" };
 async function loadAudit() {
   const list = qs("#auditList");
   try {
@@ -559,6 +564,130 @@ async function loadAudit() {
       <td data-label="Podrobnosti"><small class="muted-inline">${e.detail ? esc(JSON.stringify(e.detail).slice(0, 160)) : ""}</small></td></tr>`).join("")}</tbody></table>` : '<p class="muted">Žádné záznamy.</p>';
   } catch (error) { list.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
 }
+
+// ---------- e-mailoví klienti (SMTP účty) ----------
+// Admin účty zakládá, upravuje, testuje a maže; správce vybírá odesílatele skupin (jen ověřené účty).
+const ENCRYPTION_LABELS = { ssl: "SSL/TLS (465)", tls: "STARTTLS (587)", none: "bez šifrování" };
+async function loadEmail() {
+  const panel = qs("#emailPanel");
+  try {
+    const { accounts, senders, groups, fallback, canEdit, delivery } = await api("/manage/email/accounts");
+    const byId = new Map(accounts.map((a) => [a.id, a]));
+    const fallbackLabel = fallback.fromEmail ? `Výchozí – ${fallback.fromName ? `${fallback.fromName} ` : ""}<${fallback.fromEmail}>` : "Výchozí odesílání serveru";
+    const groupRow = (g) => {
+      const current = senders[g.id] ? byId.get(senders[g.id]) : null;
+      const options = [`<option value="">${esc(fallbackLabel)}</option>`, ...accounts.filter((a) => a.verified || a.id === senders[g.id]).map((a) => `<option value="${a.id}"${a.id === senders[g.id] ? " selected" : ""}>${esc(`${a.label} – ${a.fromEmail}`)}${a.verified ? "" : " (neověřený)"}</option>`)];
+      const warn = current && !current.verified ? '<small class="over-budget">Účet není ověřený – e-maily jdou výchozím způsobem, dokud ho admin znovu neotestuje.</small>' : "";
+      return `<div class="email-group"><label class="field-label" for="sender-${g.id}">${esc(g.label)}</label><select id="sender-${g.id}" data-group="${g.id}">${options.join("")}</select><small class="muted-inline">${esc(g.help)}</small>${warn}</div>`;
+    };
+    const status = (a) => (a.verified ? `<span class="badge badge-ok">ověřeno</span><br><small class="muted-inline">${esc(czDateTime(a.verifiedAt))} → ${esc(a.verifiedTo || "")}</small>`
+      : a.lastError ? `<span class="badge badge-warn">chyba</span><br><small class="muted-inline">${esc(a.lastError.slice(0, 160))}</small>` : '<span class="badge badge-off">neověřeno</span>');
+    const used = (a) => a.usedFor.map((id) => groups.find((g) => g.id === id)?.label || id).join(", ");
+    panel.innerHTML = `
+      ${delivery === "file" ? '<p class="field-help">Vývojový server: e-maily se neodesílají, ukládají se do složky <code>data/outbox</code> (i test účtu).</p>' : ""}
+      <h2 class="manage-h2">Odesílatelé podle druhu e-mailu</h2>
+      <form id="senderForm" class="settings-form" novalidate>${groups.map(groupRow).join("")}<button class="primary-button" type="submit">Uložit odesílatele</button></form>
+      <h2 class="manage-h2">Poštovní účty</h2>
+      ${canEdit ? `<details class="invite-box" id="accountBox"><summary>+ Přidat účet</summary>${accountForm()}</details>` : '<p class="field-help">Účty zakládá a ověřuje admin.</p>'}
+      ${accounts.length ? `<table class="data-table"><thead><tr><th>Účet</th><th>Server</th><th>Stav</th><th>Používá se pro</th>${canEdit ? "<th></th>" : ""}</tr></thead><tbody>${accounts.map((a) => `
+        <tr data-account="${a.id}"><td data-label="Účet"><b>${esc(a.label)}</b><br><small class="muted-inline">${esc(a.fromName ? `${a.fromName} <${a.fromEmail}>` : a.fromEmail)}</small></td>
+        <td data-label="Server">${esc(`${a.host}:${a.port}`)}<br><small class="muted-inline">${esc(ENCRYPTION_LABELS[a.encryption] || a.encryption)}${a.username ? ` · ${esc(a.username)}` : ""}</small></td>
+        <td data-label="Stav">${status(a)}</td><td data-label="Používá se pro">${esc(used(a)) || '<span class="muted-inline">—</span>'}</td>
+        ${canEdit ? '<td class="row-actions"><button class="text-button test-account" type="button">Otestovat</button><button class="text-button edit-account" type="button">Upravit</button><button class="text-button delete-account" type="button">Smazat</button></td>' : ""}</tr>`).join("")}</tbody></table>`
+        : '<p class="muted">Zatím žádný účet – všechny e-maily jdou výchozím způsobem.</p>'}`;
+
+    qs("#senderForm").addEventListener("submit", (event) => submitForm(event, async () => {
+      const body = Object.fromEntries(qsa("#senderForm select").map((select) => [select.dataset.group, select.value ? Number(select.value) : null]));
+      await api("/manage/email/senders", { method: "PUT", body });
+      showToast("Odesílatelé uloženi.");
+      loadEmail();
+    }));
+    if (!canEdit) return;
+    const form = qs("#accountForm");
+    form.addEventListener("submit", (event) => submitForm(event, async () => {
+      const id = form.dataset.id;
+      const body = { label: qs("#aLabel").value.trim(), fromEmail: qs("#aFrom").value.trim(), fromName: qs("#aName").value.trim(), host: qs("#aHost").value.trim(), port: Number(qs("#aPort").value), encryption: qs("#aEnc").value, username: qs("#aUser").value.trim(), password: qs("#aPass").value };
+      await api(id ? `/manage/email/accounts/${id}` : "/manage/email/accounts", { method: id ? "PUT" : "POST", body });
+      showToast(id ? "Účet upraven. Pokud se změnilo připojení, otestujte ho znovu." : "Účet přidán. Ověřte ho testovacím e-mailem.");
+      loadEmail();
+    }));
+    // Obvyklý port podle šifrování (jen pokud uživatel nezadal vlastní).
+    qs("#aEnc").addEventListener("change", (event) => { const port = qs("#aPort"); if (["465", "587", "25", ""].includes(port.value)) port.value = { ssl: 465, tls: 587, none: 25 }[event.target.value]; });
+    qsa("tr[data-account]", panel).forEach((row) => {
+      const account = byId.get(Number(row.dataset.account));
+      qs(".edit-account", row).addEventListener("click", () => {
+        qs("#accountBox").open = true;
+        form.dataset.id = account.id;
+        qs("#aLabel").value = account.label; qs("#aFrom").value = account.fromEmail; qs("#aName").value = account.fromName; qs("#aHost").value = account.host;
+        qs("#aPort").value = account.port; qs("#aEnc").value = account.encryption; qs("#aUser").value = account.username; qs("#aPass").value = "";
+        qs("#aPass").placeholder = account.hasPassword ? "beze změny" : "";
+        qs("#accountSubmit").textContent = "Uložit změny";
+        qs("#aLabel").focus();
+      });
+      qs(".test-account", row).addEventListener("click", async (event) => {
+        const to = window.prompt("Na jakou adresu poslat testovací e-mail?", me.email);
+        if (to === null) return;
+        event.currentTarget.disabled = true;
+        try { await api(`/manage/email/accounts/${account.id}/verify`, { method: "POST", body: { to: to.trim() } }); showToast(`Testovací e-mail odeslán na ${to.trim()}. Účet je ověřený.`); } catch (error) { showToast(error.message); }
+        loadEmail();
+      });
+      qs(".delete-account", row).addEventListener("click", async () => {
+        if (!window.confirm(`Smazat účet ${account.label}?${account.usedFor.length ? " Skupiny, které ho používají, přejdou na výchozí odesílání." : ""}`)) return;
+        try { await api(`/manage/email/accounts/${account.id}`, { method: "DELETE" }); showToast("Účet smazán."); loadEmail(); } catch (error) { showToast(error.message); }
+      });
+    });
+  } catch (error) { panel.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
+}
+function accountForm() {
+  const f = (id, label, attrs = "", req = false) => `<div><label class="field-label${req ? " req" : ""}" for="${id}">${label}</label><input id="${id}" ${attrs}></div>`;
+  return `<form id="accountForm" novalidate>
+    <div class="form-two-col">${f("aLabel", "Název účtu", 'maxlength="80" placeholder="např. Místenka – místenky"')}${f("aName", "Jméno odesílatele", 'maxlength="100" placeholder="Místenka – MO Karviná"')}</div>
+    <div class="form-two-col">${f("aFrom", "Adresa odesílatele", 'type="email" maxlength="200" placeholder="mistenka@…"', true)}${f("aHost", "Server SMTP", 'maxlength="253" placeholder="smtp.websupport.cz"', true)}</div>
+    <div class="form-two-col"><div><label class="field-label req" for="aEnc">Šifrování</label><select id="aEnc">${Object.entries(ENCRYPTION_LABELS).map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join("")}</select></div>${f("aPort", "Port", 'type="number" min="1" max="65535" value="465"', true)}</div>
+    <div class="form-two-col">${f("aUser", "Přihlašovací jméno", 'maxlength="200" autocomplete="off" placeholder="obvykle celá e-mailová adresa"')}${f("aPass", "Heslo", 'type="password" maxlength="500" autocomplete="new-password"')}</div>
+    <p class="field-help">Heslo se ukládá šifrovaně a už se nikdy nezobrazí. Adresa odesílatele musí patřit k tomuto poštovnímu účtu (SPF/DKIM), jinak e-maily skončí ve spamu.</p>
+    <p class="req-legend"><span class="required">*</span> povinné údaje</p>
+    <button class="primary-button" type="submit" id="accountSubmit">Přidat účet</button>
+  </form>`;
+}
+
+// ---------- notifikace (žádosti „Jsem porybný“) ----------
+const REQUEST_STATES = { pending: ["čeká na schválení", "warn"], approved: ["schváleno", "ok"], rejected: ["zamítnuto", "off"] };
+function updateNotificationCount(n) {
+  const badge = qs("#notificationCount");
+  badge.textContent = n;
+  badge.classList.toggle("hidden", !n);
+}
+async function loadNotifications() {
+  const list = qs("#notificationList");
+  try {
+    const { notifications, pending } = await api("/manage/notifications");
+    updateNotificationCount(pending);
+    const showAll = qs("#showAllNotifications").checked;
+    const rows = notifications.filter((n) => showAll || n.status === "pending");
+    list.innerHTML = rows.length ? rows.map((n) => {
+      const [label, tone] = REQUEST_STATES[n.status] || [n.status, "off"];
+      const who = n.user ? `<b>${esc(n.user.name)}</b> <small class="muted-inline">${esc(n.user.email)}${n.user.memberId ? ` · legitimace ${esc(n.user.memberId)}` : ""}</small>` : '<span class="muted-inline">účet byl smazán</span>';
+      const decided = n.decidedAt ? `<p class="field-help">${esc(label)} ${esc(czDateTime(n.decidedAt))}${n.decidedBy ? ` · ${esc(n.decidedBy)}` : ""}${n.decisionNote ? ` · „${esc(n.decisionNote)}“` : ""}</p>` : "";
+      return `<article class="notification-card" data-id="${n.id}">
+        <div class="notification-head"><span class="badge badge-${tone}">${esc(label)}</span><span class="muted-inline">${esc(czDateTime(n.createdAt))}</span></div>
+        <p class="notification-title">Žádost o funkci porybného – ${who}</p>
+        ${n.note ? `<p class="notification-note">„${esc(n.note)}“</p>` : ""}${decided}
+        ${n.status === "pending" ? `<div class="row-actions"><input class="decision-note" maxlength="300" placeholder="Poznámka pro žadatele (volitelné)"><button class="primary-button decide" type="button" data-action="approve">Schválit</button><button class="secondary-button decide" type="button" data-action="reject">Zamítnout</button></div>` : ""}
+      </article>`;
+    }).join("") : `<p class="muted">${showAll ? "Žádné notifikace." : "Nic nečeká na vyřízení."}</p>`;
+    qsa(".decide", list).forEach((button) => button.addEventListener("click", async () => {
+      const card = button.closest(".notification-card");
+      qsa("button", card).forEach((b) => { b.disabled = true; });
+      try {
+        await api(`/manage/notifications/${card.dataset.id}/${button.dataset.action}`, { method: "POST", body: { note: qs(".decision-note", card).value.trim() } });
+        showToast(button.dataset.action === "approve" ? "Schváleno – uživatel je porybný a dostal e-mail." : "Zamítnuto – žadatel dostal e-mail.");
+      } catch (error) { showToast(error.message); }
+      loadNotifications();
+    }));
+  } catch (error) { list.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
+}
+qs("#showAllNotifications").addEventListener("change", loadNotifications);
 
 // ---------- start ----------
 (async function init() {
@@ -575,6 +704,7 @@ async function loadAudit() {
     : "Jako správce můžete jmenovat a odvolávat porybné. Správce a adminy jmenuje admin.";
   loadTickets();
   api("/manage/payments").then(({ payments }) => updatePaymentCount(payments.length)).catch(() => {});
+  api("/manage/notifications").then(({ pending }) => updateNotificationCount(pending)).catch(() => {});
   // Odkaz přímo na sekci: manage.html#seasons
   const target = qs(`.manage-nav-item[data-section="${CSS.escape(location.hash.slice(1).split("/")[0])}"]`);
   if (target && !target.classList.contains("hidden")) target.click();

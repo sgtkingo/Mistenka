@@ -92,9 +92,9 @@
       <h3>Kontakty</h3>
       <div class="form-two-col">${field("cLabel", "Kontakt – popisek", c.label)}${field("cPhone", "Telefon", c.phone)}</div>
       <div class="form-two-col">${field("cEmail", "Veřejný e-mail", c.email, 'type="email"')}${field("oManager", "E-mail správce (upozornění: zadržení, limity)", o.managerEmail, 'type="email"')}</div>
-      <h3>Automatické e-maily rybářům</h3>
+      <h3>Výchozí odesílatel automatických e-mailů</h3>
       <div class="form-two-col">${field("eName", "Jméno odesílatele", d.email?.fromName, 'placeholder="Místenka – MO Karviná"')}${field("eEmail", "Adresa odesílatele", d.email?.fromEmail, 'type="email" placeholder="mistenka@…"')}</div>
-      <p class="field-help">Takto se v poště rybáře zobrazí, od koho přišla místenka, pokyny k platbě nebo připomínka. Adresa musí patřit k poštovnímu účtu, přes který server e-maily odesílá (jinak skončí ve spamu). Na tyto e-maily se neodpovídá – kontakt pro rybáře je výše.</p>
+      <p class="field-help">Použije se pro e-maily, kterým není přiřazen poštovní účet v sekci <b>Admin → Emailoví klienti</b>. Adresa musí patřit k poštovnímu účtu, přes který server odesílá (jinak skončí ve spamu). Na tyto e-maily se neodpovídá – kontakt pro rybáře je výše.</p>
       <h3>Veřejná kontrola místenky</h3>
       <div class="form-two-col"><div><label class="checkbox-label settings-check"><input type="checkbox" id="pcFull"${pc.showFullName !== false ? " checked" : ""}> <span>Zobrazit celé příjmení</span></label></div>${field("pcChars", "Viditelné číslice legitimace", pc.memberIdVisibleChars ?? 4, 'type="number" min="0" max="8"')}</div>
       <h3>Ochrana osobních údajů – lhůty uchování <a class="text-link" href="privacy.html" target="_blank">zobrazit zásady ↗</a></h3>

@@ -49,11 +49,17 @@ function createAccounts({ db, config, appUrl }) {
       hasPassword: Boolean(user.password_hash),
       twoFactor: Boolean(user.totp_enabled_at),
       mfaRequired: mfaRequired(user),
+      wardenRequest: latestWardenRequest(user.id),
       createdAt: user.created_at
     };
   }
+  // Poslední žádost „Jsem porybný“ (stav pro účet), nebo null.
+  function latestWardenRequest(userId) {
+    const r = db.prepare("SELECT * FROM warden_requests WHERE user_id = ? ORDER BY id DESC LIMIT 1").get(userId);
+    return r ? { id: r.id, status: r.status, createdAt: r.created_at, decidedAt: r.decided_at, decisionNote: r.decision_note || "" } : null;
+  }
   const staffUser = (user) => {
-    const { hasPassword, mfaRequired: _m, birthDate, ...rest } = publicUser(user);
+    const { hasPassword, mfaRequired: _m, birthDate, wardenRequest: _w, ...rest } = publicUser(user);
     return rest;
   };
 
@@ -96,6 +102,7 @@ function createAccounts({ db, config, appUrl }) {
     const now = iso(time.now());
     db.prepare("UPDATE users SET email_verified_at = ?, updated_at = ? WHERE id = ?").run(now, now, user.id);
     if (user.member_id) db.prepare("UPDATE tickets SET user_id = ? WHERE user_id IS NULL AND member_id = ? AND lower(email) = ?").run(user.id, user.member_id, user.email);
+    for (const request of db.prepare("SELECT * FROM warden_requests WHERE user_id = ? AND status = 'unverified'").all(user.id)) submitWardenRequest(request, userById(user.id));
   }
   // 2FA: pokud je zapnutá, je kód povinný při každém přihlášení.
   function checkOtp(user, otp) {
@@ -167,6 +174,8 @@ function createAccounts({ db, config, appUrl }) {
           .run(email, hash, firstName, lastName, birthDate, memberId, now, now);
         user = userById(Number(result.lastInsertRowid));
       }
+      db.prepare("DELETE FROM warden_requests WHERE user_id = ? AND status = 'unverified'").run(user.id);
+      if (input.wardenRequest === true) db.prepare("INSERT INTO warden_requests (user_id, status, created_at) VALUES (?, 'unverified', ?)").run(user.id, now);
       sendVerification(user);
       return { sent: true };
     });
@@ -303,6 +312,7 @@ function createAccounts({ db, config, appUrl }) {
     return transaction(db, () => {
       if (hasRole(user, "admin") && adminCount() <= 1) throw new ApiError(409, "last_admin", "Jste jediný admin. Před smazáním účtu jmenujte jiného admina.");
       db.prepare("UPDATE tickets SET user_id = NULL WHERE user_id = ?").run(user.id);
+      db.prepare("DELETE FROM warden_requests WHERE user_id = ?").run(user.id);
       db.prepare("UPDATE audit_events SET actor_user_id = NULL WHERE actor_user_id = ?").run(user.id);
       db.prepare("DELETE FROM users WHERE id = ?").run(user.id);
       audit(null, "account_deleted", "user", user.id);
@@ -438,6 +448,87 @@ function createAccounts({ db, config, appUrl }) {
     });
   }
 
+  // ---------- žádost „Jsem porybný“ a notifikace správcům ----------
+  // Žádost z registrace se odešle až po ověření e-mailu. Správce ji vyřídí v portálu (Notifikace), nebo
+  // odkazem z e-mailu (stránka request.html s potvrzením; token platí 7 dní a jde použít jen jednou).
+  const REQUEST_TOKEN_DAYS = 7;
+  function submitWardenRequest(request, user) {
+    const now = time.now();
+    const token = sec.randomToken();
+    db.prepare("UPDATE warden_requests SET status = 'pending', submitted_at = ?, action_token_hash = ?, action_expires_at = ? WHERE id = ?")
+      .run(iso(now), sec.sha256(token), iso(new Date(now.getTime() + REQUEST_TOKEN_DAYS * 86_400_000)), request.id);
+    audit(user.id, "warden_requested", "user", user.id, { requestId: request.id });
+    const to = config.organization.managerEmail;
+    if (!to) return;
+    const page = (action) => `${appUrl}/request.html#t=${token}&a=${action}`;
+    queueEmail(to, "warden_request", emails.wardenRequest(config, {
+      name: `${user.first_name} ${user.last_name}`, email: user.email, memberId: user.member_id, note: request.note || "",
+      links: { approve: page("approve"), reject: page("reject"), open: `${appUrl}/manage.html#notifications` }
+    }));
+  }
+  function requestWarden(ctx, input = {}) {
+    const user = requireUser(ctx);
+    if (hasRole(user, "warden")) throw new ApiError(409, "already_warden", "Funkci porybného už máte.");
+    const note = String(input.note || "").trim().slice(0, 300);
+    return transaction(db, () => {
+      if (db.prepare("SELECT 1 FROM warden_requests WHERE user_id = ? AND status IN ('pending', 'unverified')").get(user.id)) throw new ApiError(409, "request_pending", "Žádost už čeká na schválení správcem.");
+      const id = Number(db.prepare("INSERT INTO warden_requests (user_id, status, note, created_at) VALUES (?, 'unverified', ?, ?)").run(user.id, note || null, iso(time.now())).lastInsertRowid);
+      submitWardenRequest(db.prepare("SELECT * FROM warden_requests WHERE id = ?").get(id), user);
+      return { user: publicUser(userById(user.id)) };
+    });
+  }
+  function notificationShape(r) {
+    const user = userById(r.user_id);
+    const by = r.decided_by ? userById(r.decided_by) : null;
+    return {
+      id: r.id, kind: "warden_request", status: r.status, note: r.note || "", createdAt: r.submitted_at || r.created_at,
+      user: user ? { id: user.id, name: `${user.first_name} ${user.last_name}`, email: user.email, memberId: user.member_id || null, roles: rolesOf(user) } : null,
+      decidedAt: r.decided_at, decidedBy: by ? `${by.first_name} ${by.last_name}` : r.decided_via === "email" ? "odkazem z e-mailu" : "", decidedVia: r.decided_via || null, decisionNote: r.decision_note || ""
+    };
+  }
+  function listNotifications(ctx) {
+    requireManager(ctx);
+    const rows = db.prepare("SELECT * FROM warden_requests WHERE status != 'unverified' ORDER BY (status = 'pending') DESC, id DESC LIMIT 200").all();
+    return { notifications: rows.map(notificationShape), pending: rows.filter((r) => r.status === "pending").length };
+  }
+  // Schválení přidá roli porybného; žadatel dostane e-mail s výsledkem.
+  function decideRequest(request, action, note, actor, via) {
+    if (!["approve", "reject"].includes(action)) throw new ApiError(400, "invalid_action", "Akce musí být approve nebo reject.");
+    if (request.status !== "pending") throw new ApiError(409, "already_decided", "Žádost už je vyřízená.");
+    const user = userById(request.user_id);
+    const now = iso(time.now());
+    const status = action === "approve" && user ? "approved" : "rejected";
+    const cleanNote = String(note || "").trim().slice(0, 300);
+    db.prepare("UPDATE warden_requests SET status = ?, decided_at = ?, decided_by = ?, decided_via = ?, decision_note = ?, action_token_hash = NULL, action_expires_at = NULL WHERE id = ?")
+      .run(status, now, actor?.id ?? null, via, cleanNote || null, request.id);
+    if (status === "approved" && !hasRole(user, "warden")) {
+      const before = rolesOf(user);
+      const after = ROLES.filter((role) => role === "warden" || before.includes(role));
+      db.prepare("UPDATE users SET roles = ?, updated_at = ? WHERE id = ?").run(after.join(","), now, user.id);
+      audit(actor?.id ?? null, "roles_changed", "user", user.id, { from: before, to: after, requestId: request.id, via });
+    }
+    audit(actor?.id ?? null, status === "approved" ? "warden_request_approved" : "warden_request_rejected", "user", request.user_id, { requestId: request.id, via, note: cleanNote });
+    if (user) queueEmail(user.email, `warden_request_${status}`, emails.wardenRequestDecided(config, { approved: status === "approved", note: cleanNote, link: `${appUrl}/` }));
+    return notificationShape(db.prepare("SELECT * FROM warden_requests WHERE id = ?").get(request.id));
+  }
+  function decideNotification(ctx, id, action, { note } = {}) {
+    const actor = requireManager(ctx);
+    return transaction(db, () => {
+      const request = db.prepare("SELECT * FROM warden_requests WHERE id = ? AND status != 'unverified'").get(Number(id));
+      if (!request) throw new ApiError(404, "not_found", "Notifikace neexistuje.");
+      return { notification: decideRequest(request, action, note, actor, "portal") };
+    });
+  }
+  function requestByToken(token) {
+    const row = token ? db.prepare("SELECT * FROM warden_requests WHERE action_token_hash = ?").get(sec.sha256(String(token))) : null;
+    if (!row || new Date(row.action_expires_at) <= time.now()) throw new ApiError(400, "invalid_link", "Odkaz je neplatný, vypršel, nebo už je žádost vyřízená. Otevřete notifikace v portálu.");
+    return row;
+  }
+  const viewRequestByToken = ({ token } = {}) => ({ notification: notificationShape(requestByToken(token)) });
+  function decideRequestByToken({ token, action, note } = {}) {
+    return transaction(db, () => ({ notification: decideRequest(requestByToken(token), String(action || ""), note, null, "email") }));
+  }
+
   // ---------- průvodce prvním spuštěním ----------
   // Dokud není žádný admin, server vypíše do konzole jednorázový odkaz (setup.html#<token>).
   // Kdo nemá přístup ke konzoli serveru, admina nezaloží. Admin vzniká rovnou se zapnutou 2FA.
@@ -500,6 +591,7 @@ function createAccounts({ db, config, appUrl }) {
     const now = time.now();
     const unverified = db.prepare("DELETE FROM users WHERE email_verified_at IS NULL AND created_at <= ? AND id NOT IN (SELECT user_id FROM tickets WHERE user_id IS NOT NULL)")
       .run(iso(new Date(now.getTime() - UNVERIFIED_HOURS * 3600_000))).changes;
+    db.prepare("DELETE FROM warden_requests WHERE user_id NOT IN (SELECT id FROM users)").run();
     db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(iso(now));
     db.prepare("DELETE FROM auth_tokens WHERE expires_at <= ? OR used_at <= ?").run(iso(now), iso(new Date(now.getTime() - 86_400_000)));
     return { unverified };
@@ -509,7 +601,8 @@ function createAccounts({ db, config, appUrl }) {
     resolveSession, register, verifyEmail, login, requestMagicLink, magicLogin, requestPasswordReset, resetPassword, logout,
     me, updateProfile, confirmEmailChange, changePassword, deleteAccount, twoFactorSetup, twoFactorEnable, twoFactorDisable,
     listUsers, setRoles, inviteStaff, requireWarden, requireManager, requireAdmin, listAudit, confirmOtp, notifyAutoRestore, forceRoles, cleanup, requireUser,
-    setupStatus, createSetupToken, setupTwoFactor, completeSetup
+    setupStatus, createSetupToken, setupTwoFactor, completeSetup,
+    requestWarden, listNotifications, decideNotification, viewRequestByToken, decideRequestByToken
   };
 }
 

@@ -19,6 +19,7 @@
     <div class="manage-layout hidden" id="portal">
       <nav class="manage-nav" aria-label="Sekce správy">
         <span class="section-kicker" data-org-short></span>
+        <button class="manage-nav-item" type="button" data-section="notifications">Notifikace <span class="nav-count hidden" id="notificationCount"></span></button>
         <span class="manage-nav-group">Prodej</span>
         <button class="manage-nav-item active" type="button" data-section="tickets">Místenky</button>
         <button class="manage-nav-item" type="button" data-section="payments">Platby <span class="nav-count hidden" id="paymentCount"></span></button>
@@ -36,6 +37,7 @@
         <span class="manage-nav-group">Organizace</span>
         <button class="manage-nav-item" type="button" data-section="settings">Nastavení</button>
         <span class="manage-nav-group admin-only hidden">Admin</span>
+        <button class="manage-nav-item admin-only hidden" type="button" data-section="email">Emailoví klienti</button>
         <button class="manage-nav-item admin-only hidden" type="button" data-section="backups">Zálohy</button>
         <button class="manage-nav-item admin-only hidden" type="button" data-section="audit">Audit změn</button>
       </nav>
@@ -53,6 +55,12 @@
         <p class="field-help" id="ticketTotal"></p>
         <div id="ticketTable"></div>
         <button class="secondary-button hidden" type="button" id="moreTickets">Načíst další</button>
+      </section>
+
+      <section class="panel-card manage-section hidden" id="section-notifications">
+        <div class="panel-heading"><div><span class="section-kicker">Ke schválení</span><h1>Notifikace</h1></div><label class="checkbox-label"><input type="checkbox" id="showAllNotifications"> <span>Zobrazit i vyřízené</span></label></div>
+        <p class="panel-intro">Žádosti „Jsem porybný“: uživatel uvádí, že je porybný (stráž MO nebo státní). Schválením dostane roli porybného. Upozornění chodí také na e-mail správce z Nastavení, kde jde žádost rovnou schválit nebo zamítnout.</p>
+        <div id="notificationList"></div>
       </section>
 
       <section class="panel-card manage-section hidden" id="section-payments">
@@ -106,7 +114,7 @@
         <details class="invite-box">
           <summary>+ Zablokovat člena</summary>
           <form id="blockForm" novalidate>
-            <div class="form-two-col"><div><label class="field-label req" for="blockMemberId">Číslo členské legitimace</label><input id="blockMemberId" inputmode="numeric" maxlength="10"></div><div><label class="field-label" for="blockUntil">Do <span class="optional">(d.m.rrrr, prázdné = do zrušení)</span></label><input id="blockUntil" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div></div>
+            <div class="form-two-col"><div><label class="field-label req" for="blockMemberId">Číslo členské legitimace</label><input id="blockMemberId" inputmode="numeric" maxlength="8"></div><div><label class="field-label" for="blockUntil">Do <span class="optional">(d.m.rrrr, prázdné = do zrušení)</span></label><input id="blockUntil" class="date-input" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></div></div>
             <label class="field-label req" for="blockReason">Důvod</label><input id="blockReason" maxlength="500">
             <p class="req-legend"><span class="required">*</span> povinné údaje</p>
             <button class="primary-button" type="submit">Zablokovat</button>
@@ -183,6 +191,12 @@
       <section class="panel-card manage-section hidden" id="section-reports">
         <div class="panel-heading no-print"><div><span class="section-kicker">Hospodaření</span><h1>Přehledy a uzávěrky</h1></div></div>
         <div id="reportsPanel"></div>
+      </section>
+
+      <section class="panel-card manage-section hidden" id="section-email">
+        <div class="panel-heading"><div><span class="section-kicker">Admin</span><h1>Emailoví klienti</h1></div></div>
+        <p class="panel-intro">Poštovní účty (SMTP), přes které Místenka odesílá e-maily. Účet nejdřív ověřte testovacím e-mailem, pak ho vyberte jako odesílatele pro skupinu e-mailů. Skupina bez účtu odesílá výchozím způsobem serveru.</p>
+        <div id="emailPanel"></div>
       </section>
 
       <section class="panel-card manage-section hidden" id="section-backups">

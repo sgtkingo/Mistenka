@@ -1120,7 +1120,9 @@ test("zálohy: jen admin; ruční záloha jde stáhnout; denní se drží 2; po 
   assert.ok(manual.data.backup.sizeBytes > 0);
   const download = await fetch(url(`/manage/backups/${manual.data.backup.id}/download`), { headers: { Cookie: session.cookie } });
   assert.equal(download.status, 200);
-  assert.equal(Buffer.from(await download.arrayBuffer()).subarray(0, 15).toString(), "SQLite format 3", "platná databáze SQLite");
+  const bytes = Buffer.from(await download.arrayBuffer());
+  // Node: kopie databáze SQLite; WordPress: export tabulek pluginu (JSON komprimovaný gzipem).
+  assert.ok(bytes.subarray(0, 15).toString() === "SQLite format 3" || (bytes[0] === 0x1f && bytes[1] === 0x8b), "platná záloha (SQLite nebo gzip)");
   assert.equal((await fetch(url(`/manage/backups/${manual.data.backup.id}/download`), { headers: { Cookie: manager.session.cookie } })).status, 403);
 
   // Denní zálohy: každý den jedna, drží se poslední dvě (bez nastavené sezony = celý rok v sezoně).
@@ -1234,6 +1236,111 @@ test("pravidla porušení: po pozdních odevzdáních a po zadržení automatick
   assert.equal(seizureBlock.cause, "seizure");
   assert.equal(seizureBlock.until, "2026-12-31", "bez počtu dní = do konce roku");
   await call("POST", "/manage/settings/reset", { body: { scope: "organization" }, session });
+});
+
+// ---------- žádost „Jsem porybný“ (notifikace) ----------
+test("jsem porybný: žádost z registrace i z účtu, schválení v portálu a odkazem z e-mailu, e-mail žadateli", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const manager = await managerAccount();
+  // Z registrace: správce se o žádosti dozví až po ověření e-mailu žadatele.
+  const body = accountBody({ wardenRequest: true });
+  await call("POST", "/auth/register", { body });
+  assert.ok(!(await call("GET", "/manage/notifications", { session: manager.session })).data.notifications.some((n) => n.user?.email === body.email), "neověřený účet ještě nežádá");
+  const session = {};
+  const verified = await call("POST", "/auth/verify", { body: { token: await linkToken(body.email, "account_verify", "verify") }, session });
+  assert.equal(verified.data.user.wardenRequest.status, "pending");
+  assert.equal((await call("POST", "/me/warden-request", { body: {}, session })).data.code, "request_pending");
+  const list = await call("GET", "/manage/notifications", { session: manager.session });
+  assert.equal(list.status, 200, JSON.stringify(list.data));
+  const request = list.data.notifications.find((n) => n.user?.email === body.email);
+  assert.equal(request.status, "pending");
+  assert.ok(list.data.pending >= 1);
+  const member = await verifiedAccount();
+  assert.equal((await call("GET", "/manage/notifications", { session: member.session })).data.code, "forbidden_role");
+
+  // Odkaz z e-mailu správci: náhled a rozhodnutí bez přihlášení, jen jednou.
+  const mail = await lastEmail("spravce-mo@example.cz", "warden_request");
+  assert.ok(mail && mail.text.includes(body.email), "e-mail správci");
+  const token = mail.text.match(/request\.html#t=([A-Za-z0-9_-]+)&a=approve/)[1];
+  assert.equal((await call("POST", "/requests/view", { body: { token } })).data.notification.user.email, body.email);
+  assert.equal((await call("POST", "/requests/decide", { body: { token, action: "maybe" } })).data.code, "invalid_action");
+  const approved = await call("POST", "/requests/decide", { body: { token, action: "approve" } });
+  assert.equal(approved.status, 200, JSON.stringify(approved.data));
+  assert.equal(approved.data.notification.status, "approved");
+  assert.equal((await call("POST", "/requests/decide", { body: { token, action: "reject" } })).data.code, "invalid_link", "odkaz jde použít jen jednou");
+  assert.deepEqual((await call("GET", "/auth/me", { session })).data.user.roles, ["member", "warden"]);
+  assert.ok(await lastEmail(body.email, "warden_request_approved"), "e-mail žadateli");
+  assert.equal((await call("POST", "/me/warden-request", { body: {}, session })).data.code, "already_warden");
+
+  // Z účtu: zamítnutí v portálu.
+  const other = await verifiedAccount();
+  const asked = await call("POST", "/me/warden-request", { body: { note: "Rybářská stráž MO" }, session: other.session });
+  assert.equal(asked.status, 200, JSON.stringify(asked.data));
+  const pending = (await call("GET", "/manage/notifications", { session: manager.session })).data.notifications.find((n) => n.user?.email === other.email);
+  assert.equal(pending.note, "Rybářská stráž MO");
+  const rejected = await call("POST", `/manage/notifications/${pending.id}/reject`, { body: { note: "Nejste v seznamu stráže" }, session: manager.session });
+  assert.equal(rejected.data.notification.status, "rejected");
+  assert.equal(rejected.data.notification.decidedVia, "portal");
+  assert.equal((await call("POST", `/manage/notifications/${pending.id}/approve`, { body: {}, session: manager.session })).data.code, "already_decided");
+  assert.ok(await lastEmail(other.email, "warden_request_rejected"));
+  const me = (await call("GET", "/auth/me", { session: other.session })).data.user;
+  assert.deepEqual(me.roles, ["member"]);
+  assert.equal(me.wardenRequest.status, "rejected");
+  assert.equal(me.wardenRequest.decisionNote, "Nejste v seznamu stráže");
+});
+
+// ---------- e-mailoví klienti (SMTP účty) ----------
+test("e-mailoví klienti: účty spravuje admin, heslo se nevrací, odesílatelem skupiny může být jen ověřený účet", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const manager = await managerAccount();
+  const admin = await verifiedAccount();
+  await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: ["admin"] } });
+  await enableTwoFactor(admin.session, T0 + 30_000);
+  await setClock("2026-06-10T08:00:00Z");
+  const session = admin.session;
+  const body = { label: "Místenka", fromEmail: "mistenka@example.cz", fromName: "Místenka MO Test", host: "smtp.example.cz", port: 465, encryption: "ssl", username: "mistenka@example.cz", password: "smtp-tajne-heslo" };
+  assert.equal((await call("POST", "/manage/email/accounts", { body, session: manager.session })).data.code, "forbidden_role", "účty zakládá jen admin");
+  for (const [overrides, code] of [[{ fromEmail: "x" }, "invalid_email"], [{ host: "smtp example" }, "invalid_host"], [{ port: 0 }, "invalid_port"], [{ encryption: "starttls" }, "invalid_encryption"]]) {
+    assert.equal((await call("POST", "/manage/email/accounts", { body: { ...body, ...overrides }, session })).data.code, code, JSON.stringify(overrides));
+  }
+  const created = await call("POST", "/manage/email/accounts", { body, session });
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  const account = created.data.account;
+  assert.equal(account.hasPassword, true);
+  assert.equal(account.verified, false);
+  assert.ok(!JSON.stringify(created.data).includes("smtp-tajne-heslo"), "heslo se nevrací");
+
+  const listed = await call("GET", "/manage/email/accounts", { session: manager.session });
+  assert.equal(listed.status, 200, JSON.stringify(listed.data));
+  assert.equal(listed.data.canEdit, false, "správce účty jen vidí");
+  assert.deepEqual(listed.data.groups.map((g) => g.id), ["tickets", "accounts", "notices"]);
+  assert.ok(listed.data.accounts.some((a) => a.id === account.id) && !JSON.stringify(listed.data).includes("smtp-tajne-heslo"));
+  assert.equal((await call("POST", `/manage/email/accounts/${account.id}/verify`, { body: {}, session: manager.session })).data.code, "forbidden_role");
+  assert.equal((await call("PUT", "/manage/email/senders", { body: { tickets: account.id }, session: manager.session })).data.code, "account_not_verified", "neověřený účet nejde přiřadit");
+
+  const verified = await call("POST", `/manage/email/accounts/${account.id}/verify`, { body: { to: admin.email }, session });
+  assert.equal(verified.status, 200, JSON.stringify(verified.data));
+  assert.equal(verified.data.account.verified, true);
+  assert.equal(verified.data.account.verifiedTo, admin.email);
+  const assigned = await call("PUT", "/manage/email/senders", { body: { tickets: account.id, accounts: null }, session: manager.session });
+  assert.equal(assigned.status, 200, JSON.stringify(assigned.data));
+  assert.equal(assigned.data.senders.tickets, account.id);
+  assert.equal(assigned.data.senders.accounts, null);
+
+  // E-maily skupiny „Místenky“ odejdou přes přiřazený účet (detail místenky ukazuje odesílatele).
+  const t = await paidTicket();
+  await call("POST", "/dev/jobs");
+  const detail = (await call("GET", `/manage/tickets/${t.code}`, { session: manager.session })).data;
+  assert.ok(detail.emails.length >= 2 && detail.emails.every((e) => e.sentAt && e.sender === "Místenka"), JSON.stringify(detail.emails));
+
+  // Změna připojení zruší ověření; prázdné heslo = beze změny.
+  const edited = await call("PUT", `/manage/email/accounts/${account.id}`, { body: { ...body, password: "", port: 587, encryption: "tls" }, session });
+  assert.equal(edited.status, 200, JSON.stringify(edited.data));
+  assert.equal(edited.data.account.verified, false);
+  assert.equal(edited.data.account.hasPassword, true);
+  assert.equal((await call("DELETE", `/manage/email/accounts/${account.id}`, { session })).status, 200);
+  assert.equal((await call("GET", "/manage/email/accounts", { session })).data.senders.tickets, null, "smazaný účet se odebere ze skupin");
+  await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: [] } });
 });
 
 // ---------- průvodce prvním spuštěním a pozvání správce ----------

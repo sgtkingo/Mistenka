@@ -8,10 +8,11 @@ Webová aplikace pro online prodej, kontrolu a odevzdání rybářských místen
 | --- | --- |
 | `src/frontend/` | uživatelské rozhraní (HTML, JS, CSS) – **jediná kopie**, sdílená oběma servery |
 | `src/node/` | Node.js server se SQLite pro lokální vývoj |
-| `src/wordpress-plugin/` | PHP plugin pro WordPress – produkční nasazení |
+| `src/wordpress-plugin/` | PHP plugin pro WordPress – produkční nasazení ([návod](src/wordpress-plugin/README.md)) |
 | `config/organization.json` | konfigurace MO: kontakty, účet, revíry (cena, kapacita, pravidla) |
 | `config/species/` | pravidla druhů ryb organizace: seznam druhů, lovné míry, hájení, denní limity |
 | `test/` | sdílené testy API pro Node i PHP |
+| `dev/wordpress/` | Docker: WordPress 7.1.4 + PHP 8.3 pro vývoj a testy pluginu |
 | `docs/` | smlouva API (`API.md`), plán (`PLAN.md`), zadání a design |
 
 Obě implementace musí dodržet [docs/API.md](docs/API.md) a projít stejnými testy. Frontend se liší jen prefixem API v `src/frontend/js/env.js`.
@@ -27,7 +28,7 @@ npm test        # sdílené testy API (spustí vlastní server s testovací konf
 ```
 
 - Platby jsou v konfiguraci nastavené na falešnou banku (`"provider": "fake"`). Na platební stránce je tlačítko **Simulovat příchozí platbu**.
-- E-maily se neodesílají, ukládají se do `data/outbox/` (HTML a text).
+- E-maily se neodesílají, ukládají se do `data/outbox/` (HTML a text). Poštovní účty pro WordPress se nastavují v portálu (Admin → Emailoví klienti).
 - Další proměnné prostředí jsou popsané v hlavičce [src/node/server.js](src/node/server.js).
 
 ## Účty a role
@@ -36,7 +37,7 @@ Registrace a přihlášení na `account.html` (heslem nebo odkazem z e-mailu; od
 
 **První admin:** dokud žádný není, server při startu vypíše jednorázový odkaz na průvodce (`setup.html#…`, platí 60 minut). V průvodci vyplníte údaje, heslo a rovnou nastavíte dvoufázové ověření. Admin je účet jen pro správu, bez čísla legitimace.
 
-Další správce a adminy admin **pozve** v portálu (Uživatelé a role → Pozvat), porybné jmenuje správce i admin. Nouzové příkazy:
+Další správce a adminy admin **pozve** v portálu (Uživatelé a role → Pozvat), porybné jmenuje správce i admin. Uživatel může sám požádat zaškrtnutím **„Jsem porybný“** (při registraci nebo v účtu); žádost přijde do portálu (Notifikace) a e-mailem správci, který ji schválí nebo zamítne i přímo z e-mailu. Nouzové příkazy:
 
 ```bash
 npm run user -- list                      # přehled účtů
@@ -73,9 +74,18 @@ Identifikátor revíru (`id`) se ukládá k místenkám, po spuštění ho nemě
 
 Rybář platí převodem podle QR platby (SPAYD) s jedinečným variabilním symbolem. Místenka se vystaví po spárování platby. Napojení na skutečný účet: `"provider": "fio"` v konfiguraci a token Fio API (jen pro čtení) v proměnné `FIO_TOKEN`. Adaptér pro Fio je připravený, ale zatím neověřený proti skutečnému účtu.
 
+## WordPress
+
+Produkční plugin je v `src/wordpress-plugin/mistenka`: `python scripts/build-plugin.py` → `dist/mistenka.zip`. Instalace, konstanty ve wp-config.php, cron a lokální Docker: [src/wordpress-plugin/README.md](src/wordpress-plugin/README.md).
+
+```bash
+cd dev/wordpress && docker compose up -d && sh setup.sh && sh reset.sh
+node test/api.test.js --base "http://localhost:8088/?rest_route=/mistenka/v1"   # z kořene repozitáře
+```
+
 ## Stav projektu
 
-Pilotní vývoj. Node verze implementuje úkoly A1–A6 z [docs/PLAN.md](docs/PLAN.md); převod do WordPress pluginu je další krok.
+Pilotní vývoj. Node verze i WordPress plugin implementují úkoly A1–A6 a B1–B7 z [docs/PLAN.md](docs/PLAN.md) a procházejí stejnými 47 testy API. Další krok: nasazení pluginu na `test.rybarikarvina.cz` a ruční průchod s malou skutečnou platbou.
 
 ## Licence
 

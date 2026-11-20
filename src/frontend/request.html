@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
+  <title>Místenka · Žádost o funkci porybného</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="Místenka, domů"><span class="brand-mark" aria-hidden="true">⌁</span><span>Místenka</span></a>
+    <div class="user-menu"><a class="login-button" href="manage.html#notifications">Notifikace v portálu</a><a class="login-button" data-account-link href="account.html">Přihlásit se</a></div>
+  </header>
+  <main class="status-page">
+    <section class="panel-card status-shell">
+      <div class="panel-heading"><div><span class="section-kicker">Notifikace</span><h1>Žádost o funkci porybného</h1></div></div>
+      <div id="requestLoading" class="status-loading">Načítám žádost…</div>
+      <div id="requestContent" class="hidden"></div>
+      <div id="requestError" class="hidden status-error"></div>
+    </section>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="js/env.js"></script>
+  <script src="js/common.js"></script>
+  <script src="js/request.js"></script>
+</body>
+</html>

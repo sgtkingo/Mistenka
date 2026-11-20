@@ -293,45 +293,145 @@
     return /^[A-Z0-9]{6}$/i.test(value) ? value.toUpperCase() : "";
   }
   const CAMERA_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 4 7.2 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.2L15 4H9Zm3 4.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9Zm0 2a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z"/></svg>';
-  async function scanQr() {
+  // Společný dialog s kamerou: decoderFactory(video) vrací funkci → [{ text, format }], parse(text) → hodnota nebo "".
+  // onMiss(text, format) může vrátit nápovědu, když se načte kód, který nevyhovuje.
+  function scanWithCamera({ title, hint, wide = false, decoderFactory, parse, onMiss = () => "" }) {
     const overlay = document.createElement("div");
     overlay.className = "qr-scan-overlay";
-    overlay.innerHTML = `<div class="qr-scan-box" role="dialog" aria-label="Načíst QR kód místenky"><div class="qr-scan-video"><video playsinline muted></video><span class="qr-scan-frame"></span></div>
-      <p>Namiřte kameru na QR kód místenky.</p><button type="button" class="secondary-button">Zrušit</button></div>`;
+    overlay.innerHTML = `<div class="qr-scan-box" role="dialog" aria-label="${esc(title)}"><div class="qr-scan-video${wide ? " barcode" : ""}"><video playsinline muted></video><span class="qr-scan-frame"></span></div>
+      <p class="qr-scan-hint">${esc(hint)}</p><button type="button" class="secondary-button">Zrušit</button></div>`;
     document.body.append(overlay);
     const video = overlay.querySelector("video");
+    const hintEl = overlay.querySelector(".qr-scan-hint");
     let stream = null;
     let stopped = false;
     const stop = () => { stopped = true; stream?.getTracks().forEach((t) => t.stop()); overlay.remove(); };
     return new Promise((resolve) => {
-      const finish = (code) => { stop(); resolve(code); };
-      overlay.querySelector("button").addEventListener("click", () => finish(""));
-      overlay.addEventListener("click", (e) => { if (e.target === overlay) finish(""); });
+      const finish = (result) => { stop(); resolve(result); };
+      overlay.querySelector("button").addEventListener("click", () => finish(null));
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) finish(null); });
       (async () => {
         try {
-          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+          // Vyšší rozlišení pomáhá u tenkých čar čárového kódu.
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: wide ? 1920 : 1280 } }, audio: false });
           if (stopped) return stream.getTracks().forEach((t) => t.stop());
           video.srcObject = stream;
           await video.play();
-          const decode = await qrDecoder(video);
+          const decode = await decoderFactory(video);
           const tick = async () => {
             if (stopped) return;
             try {
-              for (const text of await decode()) {
-                const code = codeFromQr(text);
-                if (code) return finish(code);
+              for (const { text, format } of await decode()) {
+                const value = parse(text);
+                if (value) return finish({ value, format });
+                const miss = onMiss(text, format);
+                if (miss) hintEl.textContent = miss;
               }
             } catch { /* snímek ještě není připravený */ }
             setTimeout(tick, 200);
           };
           tick();
         } catch (error) {
-          finish("");
-          showToast(error.name === "NotAllowedError" ? "Přístup ke kameře byl zamítnut. Povolte ho v prohlížeči, nebo kód opište." : "Kameru se nepodařilo spustit. Kód opište ručně.");
+          finish(null);
+          showToast(error.name === "NotAllowedError" ? "Přístup ke kameře byl zamítnut. Povolte ho v prohlížeči, nebo údaj opište." : error.message?.startsWith("Čtečku") ? error.message : "Kameru se nepodařilo spustit. Údaj opište ručně.");
         }
       })();
     });
   }
+  async function scanQr() {
+    const result = await scanWithCamera({ title: "Načíst QR kód místenky", hint: "Namiřte kameru na QR kód místenky.", decoderFactory: qrDecoder, parse: codeFromQr });
+    return result?.value || "";
+  }
+
+  // ---------- čárový kód členské legitimace (8 číslic pod čárovým kódem) ----------
+  // Legitimace ČRS má čárový kód Code 128 s 8 číslicemi (ověřeno skenem skutečné legitimace 11/2026).
+  // Dekódování: BarcodeDetector, jinak knihovna ZXing (vendor/zxing.min.js, načte se až při prvním skenování –
+  // Safari na iPhonu, Firefox).
+  const BARCODE_FORMATS = ["code_128"];
+  const FORMAT_LABELS = { code_128: "Code 128", code_39: "Code 39", code_93: "Code 93", ean_8: "EAN-8", ean_13: "EAN-13", itf: "ITF (2 z 5 prokládaný)", codabar: "Codabar", upc_a: "UPC-A", upc_e: "UPC-E", qr_code: "QR" };
+  const formatLabel = (format) => FORMAT_LABELS[String(format || "").toLowerCase()] || String(format || "neznámý formát");
+  let zxingPromise = null;
+  function loadZxing() {
+    zxingPromise ||= new Promise((resolve, reject) => {
+      if (window.ZXing) return resolve(window.ZXing);
+      const script = document.createElement("script");
+      script.src = new URL("../vendor/zxing.min.js", document.currentScript?.src || qs('script[src*="common.js"]')?.src || location.href).href;
+      script.onload = () => resolve(window.ZXing);
+      script.onerror = () => { zxingPromise = null; reject(new Error("Čtečku čárových kódů se nepodařilo načíst.")); };
+      document.head.append(script);
+    });
+    return zxingPromise;
+  }
+  async function barcodeDecoder(video) {
+    if ("BarcodeDetector" in window) {
+      try {
+        const supported = (await window.BarcodeDetector.getSupportedFormats?.()) || BARCODE_FORMATS; // bez Code 128 → ZXing
+        const formats = BARCODE_FORMATS.filter((f) => supported.includes(f));
+        if (formats.length) {
+          const detector = new window.BarcodeDetector({ formats });
+          return async () => (await detector.detect(video)).map((r) => ({ text: r.rawValue, format: r.format }));
+        }
+      } catch { /* přejde na ZXing */ }
+    }
+    const ZXing = await loadZxing();
+    const F = ZXing.BarcodeFormat;
+    const hints = new Map();
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [F.CODE_128]);
+    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+    const reader = new ZXing.MultiFormatReader();
+    reader.setHints(hints);
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    return async () => {
+      if (!video.videoWidth) return [];
+      // Jen prostřední pás snímku (rámeček v dialogu) – rychlejší a přesnější.
+      const sw = video.videoWidth;
+      const sh = Math.round(video.videoHeight * 0.4);
+      const sy = Math.round((video.videoHeight - sh) / 2);
+      const scale = Math.min(1, 1280 / sw);
+      canvas.width = Math.round(sw * scale);
+      canvas.height = Math.round(sh * scale);
+      ctx.drawImage(video, 0, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      try {
+        const result = reader.decodeWithState(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(canvas))));
+        return [{ text: result.getText(), format: String(F[result.getBarcodeFormat()] || "").toLowerCase() }];
+      } catch { return []; }
+    };
+  }
+  const memberIdFromBarcode = (text) => { const digits = String(text || "").replace(/\D/g, ""); return /^\d{8}$/.test(digits) && String(text).replace(/[\s-]/g, "").length === 8 ? digits : ""; };
+  async function scanMemberId() {
+    return scanWithCamera({
+      title: "Načíst číslo členské legitimace", hint: "Namiřte kameru na čárový kód na titulní straně legitimace, kód držte vodorovně v rámečku.", wide: true,
+      decoderFactory: barcodeDecoder, parse: memberIdFromBarcode,
+      onMiss: (text, format) => `Načten kód ${formatLabel(format)} „${String(text).slice(0, 20)}“ – to není 8místné číslo legitimace. Zkuste to znovu.`
+    });
+  }
+  // Ikona kamery u pole s číslem legitimace; po načtení vyplní číslo a ukáže formát kódu.
+  function attachMemberIdScanner(input) {
+    if (!input || input.dataset.scanner || !qrScanSupported()) return;
+    input.dataset.scanner = "1";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "qr-scan-button";
+    button.title = "Načíst čárový kód legitimace kamerou";
+    button.setAttribute("aria-label", "Načíst číslo členské legitimace kamerou");
+    button.innerHTML = CAMERA_ICON;
+    const wrap = document.createElement("span");
+    wrap.className = "qr-input-wrap member-scan-wrap";
+    input.before(wrap);
+    wrap.append(input, button);
+    button.addEventListener("click", async () => {
+      const result = await scanMemberId();
+      if (!result) return;
+      input.value = result.value;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("blur"));
+      showToast(`Číslo legitimace ${result.value} načteno (${formatLabel(result.format)}).`);
+    });
+  }
+  // Všechna pole s číslem legitimace (memberId, regMemberId, pMemberId, …) dostanou čtečku automaticky.
+  const attachMemberIdScanners = () => qsa("input").filter((el) => /^(memberId|[a-zA-Z]+MemberId)$/.test(el.id)).forEach(attachMemberIdScanner);
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", attachMemberIdScanners); else attachMemberIdScanners();
   // Přidá ikonu kamery k poli s kódem místenky; po načtení vyplní kód a zavolá onCode(code).
   function attachQrScanner(input, onCode) {
     if (!input || !qrScanSupported()) return;
@@ -433,6 +533,23 @@
       el.textContent = user ? `${user.firstName} ${user.lastName}` : "Přihlásit se";
       el.title = user ? "Můj účet" : "Přihlášení a registrace";
       el.href = "account.html";
+      // Rychlé odhlášení vpravo vedle jména.
+      let quick = el.nextElementSibling?.classList.contains("logout-quick") ? el.nextElementSibling : null;
+      if (!quick) {
+        quick = document.createElement("button");
+        quick.type = "button";
+        quick.className = "login-button logout-quick hidden";
+        quick.title = "Odhlásit se";
+        quick.innerHTML = `${icon("logout")}<span>Odhlásit</span>`;
+        quick.addEventListener("click", async () => {
+          quick.disabled = true;
+          try { await api("/auth/logout", { method: "POST" }); } catch { /* odhlásit lokálně i při chybě */ }
+          setSession(null);
+          location.href = "./";
+        });
+        el.after(quick);
+      }
+      quick.classList.toggle("hidden", !user);
     });
     qsa("[data-manage-link]").forEach((el) => el.classList.toggle("hidden", !isStaff(user)));
   }
@@ -458,8 +575,28 @@
     phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>',
     water: '<path d="M2 12c2-1.5 4-1.5 6 0s4 1.5 6 0 4-1.5 6 0"/><path d="M2 17c2-1.5 4-1.5 6 0s4 1.5 6 0 4-1.5 6 0"/><path d="M2 7c2-1.5 4-1.5 6 0s4 1.5 6 0 4-1.5 6 0"/>',
     map: '<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
+    logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/>',
     ticket: '<path d="M3 9V7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a3 3 0 0 0 0 6v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a3 3 0 0 0 0-6z"/><path d="M13 5v2M13 11v2M13 17v2"/>'
   };
   const icon = (name, size = 16) => `<svg class="ico" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
-  window.Mistenka = { icon, qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest, attachQrScanner, codeFromQr };
+  window.Mistenka = { icon, qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest, attachQrScanner, attachMemberIdScanner, codeFromQr, memberIdFromBarcode };
 })();
+
+// Pole s číslem členské legitimace (max. 8 znaků): ponechá jen číslice, aby vložené „1234 5678“ nepřišlo o číslici.
+document.addEventListener("input", (event) => {
+  const el = event.target;
+  if (!(el instanceof HTMLInputElement) || !/^(memberId|[a-zA-Z]+MemberId)$/.test(el.id)) return;
+  const digits = el.value.replace(/\D/g, "").slice(0, 8);
+  if (digits !== el.value) el.value = digits;
+}, true);
+// Vložení ze schránky: mezery a pomlčky se odstraní ještě před oříznutím na maxlength.
+document.addEventListener("paste", (event) => {
+  const el = event.target;
+  if (!(el instanceof HTMLInputElement) || !/^(memberId|[a-zA-Z]+MemberId)$/.test(el.id)) return;
+  event.preventDefault();
+  const pasted = (event.clipboardData?.getData("text") || "").replace(/\D/g, "");
+  const start = el.selectionStart ?? el.value.length;
+  const end = el.selectionEnd ?? el.value.length;
+  el.value = (el.value.slice(0, start) + pasted + el.value.slice(end)).replace(/\D/g, "").slice(0, 8);
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+}, true);

@@ -33,6 +33,7 @@
         <div class="otp-field hidden" id="loginOtpField">
           <label class="field-label req" for="loginOtp">Kód z ověřovací aplikace</label>
           <input id="loginOtp" class="otp-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456">
+          <p class="otp-hint"><svg class="ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg><span>Váš účet chrání dvoufázové ověření. Otevřete ověřovací aplikaci v telefonu a opište aktuální šestimístný kód.</span></p>
         </div>
         <button class="primary-button full-width" type="submit">Přihlásit se</button>
         <div class="auth-links">
@@ -44,13 +45,14 @@
       <form id="registerForm" class="auth-form hidden" novalidate>
         <p class="panel-intro">S účtem se vám formulář místenky vyplní sám a uvidíte historii svých místenek. Nakupovat můžete i bez účtu.</p>
         <div class="form-two-col"><div><label class="field-label" for="regFirstName">Jméno <span class="required">*</span></label><input id="regFirstName" autocomplete="given-name" maxlength="100"></div><div><label class="field-label" for="regLastName">Příjmení <span class="required">*</span></label><input id="regLastName" autocomplete="family-name" maxlength="100"></div></div>
-        <div class="form-two-col"><div><label class="field-label" for="regBirthDate">Datum narození <span class="required">*</span></label><input id="regBirthDate" type="text" class="date-input" inputmode="numeric" placeholder="dd.mm.rrrr" maxlength="10" autocomplete="bday"></div><div><label class="field-label" for="regMemberId">Číslo členské legitimace <span class="required">*</span></label><input id="regMemberId" inputmode="numeric" maxlength="10" placeholder="8 číslic pod čárovým kódem" autocomplete="off"></div></div>
+        <div class="form-two-col"><div><label class="field-label" for="regBirthDate">Datum narození <span class="required">*</span></label><input id="regBirthDate" type="text" class="date-input" inputmode="numeric" placeholder="dd.mm.rrrr" maxlength="10" autocomplete="bday"></div><div><label class="field-label" for="regMemberId">Číslo členské legitimace <span class="required">*</span></label><input id="regMemberId" inputmode="numeric" maxlength="8" placeholder="8 číslic pod čárovým kódem" autocomplete="off"></div></div>
         <label class="field-label" for="regEmail">E-mail <span class="required">*</span></label>
         <input id="regEmail" type="email" autocomplete="email" maxlength="200">
         <div class="form-two-col"><div><label class="field-label" for="regPassword">Heslo <span class="optional">(volitelné, alespoň 8 znaků)</span></label>
         <input id="regPassword" type="password" autocomplete="new-password" maxlength="200"></div><div><label class="field-label" for="regPassword2">Heslo znovu</label>
         <input id="regPassword2" type="password" autocomplete="new-password" maxlength="200"></div></div>
         <p class="field-help">Bez hesla se budete přihlašovat odkazem, který vám pošleme e-mailem.</p>
+        <label class="checkbox-label warden-label"><input type="checkbox" id="regWarden"> <span>Jsem porybný</span><span class="info-tip" tabindex="0" role="img" aria-label="O tuto funkci může žádat jen porybný – člen rybářské stráže místní organizace, nebo státní rybářská stráž. Žádost schvaluje správce organizace. Po schválení uvidíte při kontrole místenky plné údaje rybáře a můžete místenku zadržet." data-tip="O tuto funkci může žádat jen porybný – člen rybářské stráže místní organizace, nebo státní rybářská stráž. Žádost schvaluje správce organizace. Po schválení uvidíte při kontrole místenky plné údaje rybáře a můžete místenku zadržet.">i</span></label>
         <label class="checkbox-label consent-label"><input type="checkbox" id="regConsent"> <span>Beru na vědomí <a href="privacy.html" target="_blank" data-privacy>zásady zpracování osobních údajů</a> a chci si založit účet. Účet můžete kdykoli smazat.</span></label>
         <button class="primary-button full-width" type="submit">Zaregistrovat se</button>
       </form>
@@ -64,14 +66,16 @@
         <div class="otp-field hidden" id="resetOtpField">
           <label class="field-label req" for="resetOtp">Kód z ověřovací aplikace</label>
           <input id="resetOtp" class="otp-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456">
+          <p class="otp-hint"><svg class="ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg><span>Váš účet chrání dvoufázové ověření. Otevřete ověřovací aplikaci v telefonu a opište aktuální šestimístný kód.</span></p>
         </div>
         <button class="primary-button full-width" type="submit">Uložit heslo a přihlásit se</button>
       </form>
 
       <form id="magicOtpForm" class="auth-form hidden" novalidate>
-        <p class="panel-intro">Váš účet má zapnuté dvoufázové ověření. Zadejte kód z ověřovací aplikace.</p>
+        
         <label class="field-label req" for="magicOtp">Kód z ověřovací aplikace</label>
         <input id="magicOtp" class="otp-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456">
+        <p class="otp-hint"><svg class="ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg><span>Váš účet chrání dvoufázové ověření. Otevřete ověřovací aplikaci v telefonu a opište aktuální šestimístný kód.</span></p>
         <button class="primary-button full-width" type="submit">Přihlásit se</button>
       </form>
     </section>
@@ -100,12 +104,13 @@
         <p class="panel-intro" id="profileIntro">Použijeme je k předvyplnění místenky. Na již vystavených místenkách se nezmění.</p>
         <form id="profileForm" novalidate>
           <div class="form-two-col"><div><label class="field-label req" for="pFirstName">Jméno</label><input id="pFirstName" autocomplete="given-name" maxlength="100"></div><div><label class="field-label req" for="pLastName">Příjmení</label><input id="pLastName" autocomplete="family-name" maxlength="100"></div></div>
-          <div class="form-two-col"><div><label class="field-label member-req" for="pBirthDate">Datum narození <span class="optional staff-optional hidden">(volitelné)</span></label><input id="pBirthDate" type="text" class="date-input" inputmode="numeric" placeholder="dd.mm.rrrr" maxlength="10" autocomplete="bday"></div><div><label class="field-label member-req" for="pMemberId">Číslo členské legitimace <span class="optional staff-optional hidden">(volitelné)</span></label><input id="pMemberId" inputmode="numeric" maxlength="10" autocomplete="off"></div></div>
+          <div class="form-two-col"><div><label class="field-label member-req" for="pBirthDate">Datum narození <span class="optional staff-optional hidden">(volitelné)</span></label><input id="pBirthDate" type="text" class="date-input" inputmode="numeric" placeholder="dd.mm.rrrr" maxlength="10" autocomplete="bday"></div><div><label class="field-label member-req" for="pMemberId">Číslo členské legitimace <span class="optional staff-optional hidden">(volitelné)</span></label><input id="pMemberId" inputmode="numeric" maxlength="8" autocomplete="off"></div></div>
           <label class="field-label req" for="pEmail">E-mail</label>
           <input id="pEmail" type="email" autocomplete="email" maxlength="200">
           <p class="field-help" id="emailHelp">Změnu e-mailu potvrdíte odkazem, který pošleme na novou adresu.</p>
           <button class="primary-button" type="submit">Uložit údaje</button>
         </form>
+        <div class="warden-box hidden" id="wardenBox"></div>
       </section>
 
       <section class="panel-card account-card">

@@ -129,6 +129,13 @@ Vše nejdřív v Node verzi. WordPress (WP uživatelé s vlastními rolemi, při
 
 ### Převod do WordPress pluginu
 
+> **Stav 20. 11. 2026: plugin `src/wordpress-plugin/mistenka` (v1.0.0) hotový**, prochází všemi 47 sdílenými testy API proti WordPressu 7.1.4 / PHP 8.3 v Dockeru (`dev/wordpress`). Rozhodnutí:
+> - Účty, relace a 2FA jsou vlastní tabulky pluginu (stejně jako Node), ne uživatelé WordPressu – rybáři se nedostanou do wp-admin a chování je 1:1. Prvního admina zakládá průvodce, odkaz generuje administrátor webu v Nastavení → Místenka.
+> - E-maily: nativní odesílání přes PHPMailer z WordPressu, víc SMTP účtů (portál → Admin → Emailoví klienti, ověření testovacím e-mailem, hesla šifrovaná), odesílatel podle skupiny e-mailů; WP Mail SMTP už není potřeba. Funkce doplněna i do Node verze.
+> - Frontend na subdoméně: blok `.htaccess` jen pro host aplikace (statické soubory přímo z Apache), záložně servíruje PHP.
+> - Zálohy ve WordPressu = export tabulek pluginu (JSON + gzip) do datové složky mimo web; automatická obnova poškozené DB je jen v Node (MySQL hlídá hosting).
+> - Nově (obě verze): žádost „Jsem porybný“ → Notifikace v portálu + e-mail správci se schválením z e-mailu.
+
 1. Plugin `src/wordpress-plugin/mistenka` (demo plugin zůstává jako šablona a pak se odstraní): aktivace vytvoří tabulky přes `dbDelta()`, odinstalace je volitelně smaže.
 2. REST `mistenka/v1` podle `docs/API.md`; `$wpdb->prepare()`, transakce pro kapacitu, poukazy a párování.
 3. Frontend převzatý z kořene repozitáře, vykreslený na `mistenka.rybarikarvina.cz` (detekce hostu jako v demo pluginu).
@@ -140,7 +147,7 @@ Vše nejdřív v Node verzi. WordPress (WP uživatelé s vlastními rolemi, při
 - ~~Kontrola místenek: volná, nebo jen přihlášený porybný~~ → rozhodnuto: veřejná kontrola s minimem údajů + přihlášený porybný s plnými údaji a zadržením (B2).
 - Číslo účtu Fio a souhlas s API tokenem jen pro čtení; kdo bude řešit nespárované platby a vracení peněz.
 - Cena, denní kapacita, délka rezervace před zaplacením, pravidla storna.
-- Odesílatel e-mailů: WP Mail SMTP má zapnuté „Force From Email“, takže z `mistenka@` jdou i systémové e-maily webu (obnova hesla apod.). Případně zřídit obecnou adresu webu.
+- ~~Odesílatel e-mailů přes WP Mail SMTP~~ → plugin odesílá vlastními SMTP účty z portálu (víc adres). Po nasazení zvážit vypnutí „Force From Email“ ve WP Mail SMTP, nebo plugin odebrat, pokud ho web jinak nepotřebuje.
 
 ## Závěr
 

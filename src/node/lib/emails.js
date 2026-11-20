@@ -47,7 +47,7 @@ const highlight = (label, value, sub = "", tone = "brand") => {
   <div style="font-size:28px;font-weight:700;letter-spacing:.12em;color:${color};margin-top:4px">${esc(value)}</div>${sub ? `<div style="font-size:14px;color:${C.ink};margin-top:4px">${esc(sub)}</div>` : ""}</td></tr></table>`;
 };
 const checklist = (items) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px;font-size:14px">${items.map((item) => `<tr><td style="width:22px;vertical-align:top;color:${C.ok};font-weight:700;padding:3px 0">✓</td><td style="padding:3px 0">${esc(item)}</td></tr>`).join("")}</table>`;
-const note = (text) => `<p style="margin:0 0 16px;padding:12px 14px;background:${C.soft};border-radius:8px;font-size:13px;color:${C.muted}">${esc(text)}</p>`;
+const noteBox = (text) => `<p style="margin:0 0 16px;padding:12px 14px;background:${C.soft};border-radius:8px;font-size:13px;color:${C.muted}">${esc(text)}</p>`;
 const textBlock = (lines) => lines.filter((line) => line !== null).join("\n");
 // Doba lovu v den lovu podle revíru (fishingHours).
 function huntingHours(revir, isoDate) {
@@ -63,7 +63,7 @@ function paymentInstructions(config, { ticket, revir, links }) {
     subject: `Místenka ${ticket.code} – pokyny k platbě`,
     html: layout(config, "Dokončete platbu místenky", `<p style="margin:0 0 16px">Místo na revíru <b>${esc(revir.name)}</b> je pro vás rezervované. Místenku vystavíme hned po připsání platby a pošleme vám ji e-mailem.</p>
       ${highlight("K úhradě", czk(ticket.amount_due_halere), `VS ${ticket.variable_symbol}`)}${table(rows)}${button(links.payment, "Zobrazit QR platbu")}
-      ${note("Nejrychlejší je zaplatit načtením QR kódu v bankovní aplikaci – údaje se vyplní samy. Při ručním převodu nezapomeňte variabilní symbol.")}`, "", { preheader: `Zaplaťte ${czk(ticket.amount_due_halere)} do ${czDateTime(ticket.reserved_until)}, VS ${ticket.variable_symbol}` }),
+      ${noteBox("Nejrychlejší je zaplatit načtením QR kódu v bankovní aplikaci – údaje se vyplní samy. Při ručním převodu nezapomeňte variabilní symbol.")}`, "", { preheader: `Zaplaťte ${czk(ticket.amount_due_halere)} do ${czDateTime(ticket.reserved_until)}, VS ${ticket.variable_symbol}` }),
     text: textBlock(["Dokončete platbu místenky.", `Částka: ${czk(ticket.amount_due_halere)}`, ...rows.map(([k, v]) => `${k}: ${v}`), `QR platba: ${links.payment}`])
   };
 }
@@ -88,7 +88,7 @@ function returnReminder(config, { ticket, revir, links, deadline }) {
     subject: `Místenka ${ticket.code} – nezapomeňte ji odevzdat`,
     html: layout(config, "Odevzdejte prosím místenku", `<p style="margin:0 0 16px">Lov na revíru <b>${esc(revir.name)}</b> dne ${esc(czDate(ticket.fishing_date))} skončil a místenka <b>${esc(ticket.code)}</b> ještě nebyla odevzdána.</p>
       ${highlight("Odevzdejte nejpozději", czDateTime(deadline), "Odevzdání po dni lovu se označí jako opožděné.", "warn")}${button(links.return, "Odevzdat místenku")}
-      ${note("Po této lhůtě se místenka automaticky uzavře jako neodevzdaná, bez úlovku. Pokud jste nic nechytili, zvolte při odevzdání „Bez úlovku“.")}`, "", { preheader: `Místenku ${ticket.code} odevzdejte do ${czDateTime(deadline)}` }),
+      ${noteBox("Po této lhůtě se místenka automaticky uzavře jako neodevzdaná, bez úlovku. Pokud jste nic nechytili, zvolte při odevzdání „Bez úlovku“.")}`, "", { preheader: `Místenku ${ticket.code} odevzdejte do ${czDateTime(deadline)}` }),
     text: textBlock([`Místenka ${ticket.code} ještě nebyla odevzdána.`, `Odevzdání je možné do ${czDateTime(deadline)} (opožděně). Poté se místenka automaticky uzavře jako neodevzdaná, bez úlovku.`, `Odevzdat: ${links.return}`])
   };
 }
@@ -196,6 +196,30 @@ function closureNotice(config, { ticket, revir, closure, links }) {
   };
 }
 
+// ---------- žádost „Jsem porybný“ ----------
+function wardenRequest(config, { name, email, memberId, note, links }) {
+  const rows = [["Žadatel", name], ["E-mail", email], ["Č. legitimace", memberId || "—"], ...(note ? [["Poznámka", note]] : [])];
+  return {
+    subject: `Žádost o funkci porybného – ${name}`,
+    html: layout(config, "Žádost o funkci porybného", `<p>Uživatel Místenky uvádí, že je porybný (rybářská stráž MO nebo státní rybářská stráž), a žádá o funkci porybného v aplikaci. Po schválení uvidí při kontrole místenky plné údaje a bude moct místenku zadržet.</p>${table(rows)}
+      <table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 18px"><tr><td style="padding-right:8px">${button(links.approve, "Schválit")}</td><td>${button(links.reject, "Zamítnout", true)}</td></tr></table>
+      <p style="margin:0 0 16px"><a href="${esc(links.open)}" style="color:${C.brand}">Otevřít notifikace v portálu</a></p>
+      ${noteBox("Tlačítka otevřou stránku s potvrzením rozhodnutí. Odkaz platí 7 dní a lze ho použít jen jednou; žádost můžete vyřídit i v portálu (Notifikace).")}`, "", { preheader: `${name} žádá o funkci porybného` }),
+    text: textBlock(["Žádost o funkci porybného.", ...rows.map(([k, v]) => `${k}: ${v}`), `Schválit: ${links.approve}`, `Zamítnout: ${links.reject}`, `Portál: ${links.open}`])
+  };
+}
+function wardenRequestDecided(config, { approved, note, link }) {
+  const title = approved ? "Funkce porybného schválena" : "Žádost o funkci porybného zamítnuta";
+  const intro = approved
+    ? "Vaše žádost byla schválena. Po přihlášení uvidíte při kontrole místenky plné údaje rybáře a můžete místenku zadržet."
+    : "Vaše žádost o funkci porybného nebyla schválena. Pokud jde o omyl, kontaktujte správce organizace.";
+  return {
+    subject: `Místenka – ${title.toLowerCase()}`,
+    html: layout(config, title, `<p>${esc(intro)}</p>${note ? table([["Poznámka správce", note]]) : ""}${approved ? button(link, "Otevřít Místenku") : ""}`),
+    text: textBlock([title, intro, note ? `Poznámka správce: ${note}` : null, approved ? link : null])
+  };
+}
+
 // ---------- účty ----------
 const validFor = (minutes) => (minutes >= 120 ? `${Math.round(minutes / 60)} hodin` : `${minutes} minut`);
 function accountMail(config, { subject, title, intro, link, label, minutes, outro }) {
@@ -214,17 +238,19 @@ const emailChange = (config, { link, minutes }) => accountMail(config, { subject
 const staffInvite = (config, { link, minutes, roleLabel }) => accountMail(config, { subject: `Místenka – pozvánka do správy (${roleLabel})`, title: "Pozvánka do správy Místenky", intro: `Byli jste pozváni jako ${roleLabel} organizace ${config.organization.shortName}. Kliknutím na tlačítko si nastavíte heslo a přihlásíte se.`, link, label: "Nastavit heslo", minutes, outro: "Pokud pozvánku nečekáte, zprávu ignorujte – bez nastavení hesla se účet nepoužije." });
 const accountDeleted = (config) => accountMail(config, { subject: "Místenka – účet byl smazán", title: "Váš účet byl smazán", intro: "Účet a jeho přihlašovací údaje jsme smazali. Vystavené místenky uchováváme po dobu stanovenou pro evidenci, už ale nejsou spojené s účtem.", outro: "Pokud jste účet nemazali vy, kontaktujte prosím organizaci." });
 
-// Vývojové doručení: e-maily se ukládají jako soubory do data/outbox/.
+// Vývojové doručení: e-maily se ukládají jako soubory do data/outbox/ (i ty, které by šly přes SMTP účet).
 function createFileMailer(dir) {
   fs.mkdirSync(dir, { recursive: true });
   return {
-    async send({ id, to, subject, html, text }) {
+    delivery: "file",
+    async send({ id, to, subject, html, text, from, account }) {
       const base = path.join(dir, `${String(id).padStart(5, "0")}`);
+      const sender = from?.email ? `${from.name ? `${from.name} ` : ""}<${from.email}>` : "(výchozí)";
       fs.writeFileSync(`${base}.html`, html);
-      fs.writeFileSync(`${base}.txt`, `To: ${to}\nSubject: ${subject}\n\n${text}\n`);
+      fs.writeFileSync(`${base}.txt`, `From: ${sender}${account ? ` · přes ${account.label} (${account.host}:${account.port})` : ""}\nTo: ${to}\nSubject: ${subject}\n\n${text}\n`);
       console.log(`[e-mail] ${to} · ${subject} → ${base}.html`);
     }
   };
 }
 
-module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, ticketCancelled, paymentSettingsChanged, seasonReport, databaseAutoRestored, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, createFileMailer, czDate };
+module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, ticketCancelled, paymentSettingsChanged, seasonReport, databaseAutoRestored, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, wardenRequest, wardenRequestDecided, createFileMailer, czDate };

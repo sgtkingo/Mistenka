@@ -12,6 +12,7 @@
 //   MISTENKA_JOBS_INTERVAL_MS interval plánovaných úloh (0 = vypnuto)
 //   MISTENKA_RATE_LIMIT=0     vypne omezení počtu požadavků (jen pro testy)
 //   FIO_TOKEN=...             token Fio API (jen při payment.provider = "fio")
+//   MISTENKA_SECRET_KEY=...   klíč pro šifrování hesel SMTP účtů (jinak se vygeneruje DATA_DIR/secret.key)
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -26,6 +27,7 @@ const { createSettings } = require("./lib/settings");
 const { createReports } = require("./lib/reports");
 const { createBackups } = require("./lib/backups");
 const { createRetention } = require("./lib/retention");
+const { createMailAccounts } = require("./lib/mail-accounts");
 const time = require("./lib/time");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -41,7 +43,8 @@ const provider = createProvider(config);
 const mailer = createFileMailer(path.join(DATA_DIR, "outbox"));
 const settings = createSettings({ db, config }); // nastavení z portálu (B5) přepíše hodnoty ze souboru
 const operations = createOperations({ db, config, appUrl: APP_URL });
-const service = createService({ db, config, provider, mailer, appUrl: APP_URL, operations, settings });
+const mailAccounts = createMailAccounts({ db, config, dataDir: DATA_DIR, mailer }); // SMTP účty (Admin → Emailoví klienti)
+const service = createService({ db, config, provider, mailer, appUrl: APP_URL, operations, settings, mailAccounts });
 const accounts = createAccounts({ db, config, appUrl: APP_URL });
 const reports = createReports({ db, config, appUrl: APP_URL });
 const backups = createBackups({ db, dataDir: DATA_DIR, onRestored: () => settings.reload() });
@@ -105,7 +108,7 @@ const clearCookie = { "Set-Cookie": `${SESSION_COOKIE}=; Max-Age=0; ${cookieAttr
 // Odpověď s novou relací: { user, csrf } + cookie.
 const sendLogin = (res, { user, session }) => send(res, 200, { user, csrf: session.csrf }, sessionCookie(session));
 // Endpointy, které relaci vytvářejí nebo ji nepotřebují (bez kontroly CSRF).
-const CSRF_EXEMPT = new Set(["/api/auth/login", "/api/auth/register", "/api/auth/verify", "/api/auth/magic-link", "/api/auth/magic", "/api/auth/password-reset", "/api/auth/password-reset/confirm", "/api/auth/email/confirm", "/api/jobs/run", "/api/setup", "/api/setup/2fa"]);
+const CSRF_EXEMPT = new Set(["/api/auth/login", "/api/auth/register", "/api/auth/verify", "/api/auth/magic-link", "/api/auth/magic", "/api/auth/password-reset", "/api/auth/password-reset/confirm", "/api/auth/email/confirm", "/api/jobs/run", "/api/setup", "/api/setup/2fa", "/api/requests/view", "/api/requests/decide"]);
 
 const credentialsOf = (req) => ({ token: req.headers["x-mistenka-token"] || "", memberId: req.headers["x-mistenka-member-id"] || "" });
 
@@ -207,6 +210,18 @@ async function handleApi(req, res, url, ip) {
   if (pathname === "/api/me/delete" && method === "POST") return send(res, 200, accounts.deleteAccount(ctx, await readBody(req)), clearCookie);
   if (pathname === "/api/me/tickets" && method === "GET") return send(res, 200, { tickets: service.ticketsForUser(accounts.requireUser(ctx)) });
   if (pathname === "/api/me/limits" && method === "GET") return send(res, 200, service.limitsForMember(accounts.requireUser(ctx), url.searchParams.get("revirId") || ""));
+  if (pathname === "/api/me/warden-request" && method === "POST") return send(res, 200, accounts.requestWarden(ctx, await readBody(req)));
+  // Žádost „Jsem porybný“ z odkazu v e-mailu správci (bez přihlášení, token z request.html).
+  if ((pathname === "/api/requests/view" || pathname === "/api/requests/decide") && method === "POST") {
+    if (rateLimited(ip, "auth_fail", 10, 10 * 60_000, false)) throw new ApiError(429, "rate_limited", "Příliš mnoho neúspěšných pokusů, zkuste to později.");
+    const body = await readBody(req);
+    try {
+      return send(res, 200, pathname.endsWith("/view") ? accounts.viewRequestByToken(body) : accounts.decideRequestByToken(body));
+    } catch (error) {
+      if (error.code === "invalid_link") rateLimited(ip, "auth_fail", 10, 10 * 60_000);
+      throw error;
+    }
+  }
   if (pathname === "/api/me/2fa/setup" && method === "POST") return send(res, 200, accounts.twoFactorSetup(ctx));
   if (pathname === "/api/me/2fa/enable" && method === "POST") return send(res, 200, accounts.twoFactorEnable(ctx, await readBody(req)));
   if (pathname === "/api/me/2fa/disable" && method === "POST") return send(res, 200, accounts.twoFactorDisable(ctx, await readBody(req)));
@@ -268,6 +283,15 @@ async function handleApi(req, res, url, ip) {
     return send(res, 200, backups.restore(admin, m[1], body));
   }
   if ((m = pathname.match(/^\/api\/manage\/backups\/(\d+)$/)) && method === "DELETE") return send(res, 200, backups.remove(accounts.requireAdmin(ctx), m[1]));
+  // E-mailoví klienti: účty spravuje admin, odesílatele skupin vybírá správce.
+  if (pathname === "/api/manage/email/accounts" && method === "GET") return send(res, 200, mailAccounts.list(accounts.requireManager(ctx)));
+  if (pathname === "/api/manage/email/accounts" && method === "POST") return send(res, 201, mailAccounts.create(accounts.requireManager(ctx), await readBody(req)));
+  if ((m = pathname.match(/^\/api\/manage\/email\/accounts\/(\d+)$/))) {
+    if (method === "PUT") return send(res, 200, mailAccounts.update(accounts.requireManager(ctx), m[1], await readBody(req)));
+    if (method === "DELETE") return send(res, 200, mailAccounts.remove(accounts.requireManager(ctx), m[1]));
+  }
+  if ((m = pathname.match(/^\/api\/manage\/email\/accounts\/(\d+)\/verify$/)) && method === "POST") return send(res, 200, await mailAccounts.verify(accounts.requireManager(ctx), m[1], await readBody(req)));
+  if (pathname === "/api/manage/email/senders" && method === "PUT") return send(res, 200, mailAccounts.setSenders(accounts.requireManager(ctx), await readBody(req)));
   if (pathname === "/api/manage/audit" && method === "GET") return send(res, 200, accounts.listAudit(ctx, { limit: url.searchParams.get("limit"), action: url.searchParams.get("action") || "" }));
 
   // Zarybnění, přehledy, uzávěrky (B6).
@@ -308,6 +332,8 @@ async function handleApi(req, res, url, ip) {
   if (pathname === "/api/manage/blocks" && method === "GET") { accounts.requireManager(ctx); return send(res, 200, service.listBlocks()); }
   if (pathname === "/api/manage/blocks" && method === "POST") return send(res, 201, service.createBlock(accounts.requireManager(ctx), await readBody(req)));
   if ((m = pathname.match(/^\/api\/manage\/blocks\/(\d+)\/lift$/)) && method === "POST") return send(res, 200, service.liftBlock(accounts.requireManager(ctx), m[1]));
+  if (pathname === "/api/manage/notifications" && method === "GET") return send(res, 200, accounts.listNotifications(ctx));
+  if ((m = pathname.match(/^\/api\/manage\/notifications\/(\d+)\/(approve|reject)$/)) && method === "POST") return send(res, 200, accounts.decideNotification(ctx, m[1], m[2], await readBody(req)));
   if (pathname === "/api/manage/users" && method === "GET") return send(res, 200, accounts.listUsers(ctx, { q: url.searchParams.get("q") || "" }));
   if (pathname === "/api/manage/users" && method === "POST") return send(res, 201, accounts.inviteStaff(ctx, await readBody(req)));
   if ((m = pathname.match(/^\/api\/manage\/users\/(\d+)\/roles$/)) && method === "PUT") return send(res, 200, accounts.setRoles(ctx, m[1], await readBody(req)));

@@ -37,7 +37,7 @@ function catchProblem(species, length, fishingDate) {
   return null;
 }
 
-function createService({ db, config, provider, mailer, appUrl, operations, settings }) {
+function createService({ db, config, provider, mailer, appUrl, operations, settings, mailAccounts }) {
   // ---------- pomocné ----------
   function makeCode() {
     for (;;) {
@@ -597,8 +597,8 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     const checks = db.prepare("SELECT warden_name, at, status FROM ticket_checks WHERE ticket_id = ? ORDER BY at DESC").all(ticket.id).map((c) => ({ wardenName: c.warden_name, at: c.at, status: c.status }));
     const violations = db.prepare("SELECT label, period, period_from, period_to, count, max_count FROM limit_violations WHERE ticket_id = ? ORDER BY id").all(ticket.id)
       .map((v) => ({ label: v.label, period: v.period, from: v.period_from, to: v.period_to, count: v.count, maxCount: v.max_count }));
-    const sentEmails = db.prepare("SELECT kind, to_email, subject, created_at, sent_at, error FROM email_outbox WHERE ticket_id = ? ORDER BY id").all(ticket.id)
-      .map((e) => ({ kind: e.kind, to: e.to_email, subject: e.subject, createdAt: e.created_at, sentAt: e.sent_at, error: e.error }));
+    const sentEmails = db.prepare("SELECT kind, to_email, subject, created_at, sent_at, error, sender FROM email_outbox WHERE ticket_id = ? ORDER BY id").all(ticket.id)
+      .map((e) => ({ kind: e.kind, to: e.to_email, subject: e.subject, createdAt: e.created_at, sentAt: e.sent_at, error: e.error, sender: e.sender || null }));
     const cancellation = ticket.cancelled_at ? { at: ticket.cancelled_at, reason: ticket.cancel_reason || "zrušeno držitelem před zaplacením", byManager: Boolean(ticket.cancelled_by) } : null;
     return { ticket: { ...ownerTicket(ticket), variableSymbol: ticket.variable_symbol, account: Boolean(ticket.user_id), rulesVersion: ticket.rules_version || null }, payments, checks, violations, emails: sentEmails, cancellation, cancellable: ["pending_payment", "payment_expired", "future", "active", "expired_unreturned", "seized"].includes(stateOf(ticket)) };
   }
@@ -797,12 +797,14 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     return closed;
   }
 
+  // Odesílatel podle skupiny e-mailu (SMTP účet z portálu, jinak výchozí) – viz mail-accounts.js.
   async function deliverOutbox() {
     const pending = db.prepare("SELECT * FROM email_outbox WHERE sent_at IS NULL ORDER BY id LIMIT 20").all();
     for (const mail of pending) {
       try {
-        await mailer.send({ id: mail.id, to: mail.to_email, subject: mail.subject, html: mail.body_html, text: mail.body_text });
-        db.prepare("UPDATE email_outbox SET sent_at = ?, error = NULL WHERE id = ?").run(iso(time.now()), mail.id);
+        const sender = mailAccounts ? mailAccounts.senderFor(mail.kind) : { from: null, account: null, label: "výchozí" };
+        await mailer.send({ id: mail.id, to: mail.to_email, subject: mail.subject, html: mail.body_html, text: mail.body_text, from: sender.from, account: sender.account });
+        db.prepare("UPDATE email_outbox SET sent_at = ?, error = NULL, sender = ? WHERE id = ?").run(iso(time.now()), sender.label, mail.id);
       } catch (error) {
         db.prepare("UPDATE email_outbox SET error = ? WHERE id = ?").run(String(error.message).slice(0, 500), mail.id);
       }

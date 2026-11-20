@@ -45,6 +45,7 @@ qs("#loginForm").addEventListener("submit", (event) => {
       loggedIn(await api("/auth/login", { method: "POST", body }));
     } catch (error) {
       if (error.code === "otp_required" || error.code === "invalid_otp") { show("loginOtpField"); qs("#loginOtp").focus(); }
+      if (error.code === "otp_required") return clearMessage(); // výzva ke kódu není chyba – nápověda je u pole
       message(error.message, "error");
     }
   });
@@ -72,7 +73,7 @@ qs("#registerForm").addEventListener("submit", (event) => {
     const memberId = normalizeMemberId(qs("#regMemberId").value);
     const body = {
       firstName: qs("#regFirstName").value.trim(), lastName: qs("#regLastName").value.trim(), birthDate: parseCzDate(qs("#regBirthDate").value),
-      memberId, email: qs("#regEmail").value.trim(), password: qs("#regPassword").value || undefined, consent: qs("#regConsent").checked
+      memberId, email: qs("#regEmail").value.trim(), password: qs("#regPassword").value || undefined, consent: qs("#regConsent").checked, wardenRequest: qs("#regWarden").checked || undefined
     };
     if (!body.firstName || !body.lastName || !body.email) return message("Vyplňte jméno, příjmení a e-mail.", "error");
     if (!body.birthDate) return message("Zadejte datum narození ve tvaru den.měsíc.rok, např. 3.2.1988.", "error");
@@ -99,6 +100,7 @@ qs("#resetForm").addEventListener("submit", (event) => {
       loggedIn(await api("/auth/password-reset/confirm", { method: "POST", body: { token: pendingResetToken, password: qs("#resetPassword").value, otp: qs("#resetOtp").value.trim() || undefined } }), "Heslo je uložené, jste přihlášeni.");
     } catch (error) {
       if (error.code === "otp_required" || error.code === "invalid_otp") { show("resetOtpField"); qs("#resetOtp").focus(); }
+      if (error.code === "otp_required") return clearMessage(); // výzva ke kódu není chyba – nápověda je u pole
       message(error.message, "error");
     }
   });
@@ -174,6 +176,7 @@ function renderAccount() {
   qs("#pBirthDate").value = formatCzDate(user.birthDate);
   qs("#pMemberId").value = user.memberId;
   qs("#pEmail").value = user.email;
+  renderWardenBox();
   // Účet správce nemusí mít rybářské údaje (číslo legitimace, datum narození).
   qsa(".staff-optional").forEach((el) => el.classList.toggle("hidden", !isStaff(user)));
   qsa(".member-req").forEach((el) => el.classList.toggle("req", !isStaff(user)));
@@ -333,3 +336,85 @@ qs("#logoutButton").addEventListener("click", (event) => busy(event.currentTarge
   setSessionUser(user);
   if (user) renderAccount(); else renderAuth();
 })();
+
+// ---------- živá kontrola formulářů (registrace, nové heslo) ----------
+// Během psaní neutrální nápověda; chyba, jakmile je jasná (nebo po opuštění pole); ✓ po splnění.
+function liveHint(input) {
+  let hint = input.nextElementSibling?.classList.contains("live-hint") ? input.nextElementSibling : null;
+  if (!hint) {
+    hint = document.createElement("small");
+    hint.className = "live-hint";
+    hint.setAttribute("aria-live", "polite");
+    input.after(hint);
+  }
+  return (tone, text) => {
+    hint.textContent = text || "";
+    hint.className = `live-hint${tone ? ` is-${tone}` : ""}`;
+    input.classList.toggle("invalid", tone === "error");
+    input.setAttribute("aria-invalid", tone === "error" ? "true" : "false");
+  };
+}
+function liveCheck(input, check, deps = []) {
+  const render = liveHint(input);
+  let touched = false;
+  const run = () => { const [tone, text] = check(input.value, { focused: document.activeElement === input, touched }) || []; render(tone, text); };
+  input.addEventListener("input", run);
+  input.addEventListener("blur", () => { touched = true; run(); });
+  deps.forEach((dep) => dep.addEventListener("input", () => { if (input.value) run(); }));
+  return run;
+}
+const memberIdCheck = (value, { focused }) => {
+  const digits = normalizeMemberId(value);
+  if (!digits) return null;
+  if (/\D/.test(digits)) return ["error", "Zadejte jen číslice (mezery nevadí)."];
+  if (digits.length > 8) return ["error", `Číslo má 8 číslic, zadáno ${digits.length}.`];
+  if (digits.length < 8) return focused ? ["muted", `Ještě ${8 - digits.length} ${digits.length === 7 ? "číslice" : "číslic"}.`] : ["error", `Číslo musí mít 8 číslic (zadáno ${digits.length}).`];
+  return ["ok", "✓ 8 číslic"];
+};
+function passwordChecks(first, second, { optional }) {
+  liveCheck(first, (value, { focused }) => {
+    if (!value) return optional ? null : (focused ? null : ["error", "Zadejte heslo."]);
+    if (value.length < 8) return focused ? ["muted", `Ještě ${8 - value.length} ${8 - value.length === 1 ? "znak" : 8 - value.length < 5 ? "znaky" : "znaků"}.`] : ["error", "Heslo musí mít alespoň 8 znaků."];
+    return ["ok", "✓ Dostatečně dlouhé"];
+  });
+  liveCheck(second, (value, { focused }) => {
+    if (!value) return null;
+    if (value === first.value) return first.value.length >= 8 ? ["ok", "✓ Hesla se shodují"] : null;
+    if (focused && first.value.startsWith(value)) return ["muted", "Pište dál…"];
+    return ["error", "Hesla se neshodují."];
+  }, [first]);
+}
+liveCheck(qs("#regMemberId"), memberIdCheck);
+passwordChecks(qs("#regPassword"), qs("#regPassword2"), { optional: true });
+passwordChecks(qs("#resetPassword"), qs("#resetPassword2"), { optional: false });
+liveCheck(qs("#pMemberId"), memberIdCheck);
+
+// ---------- „Jsem porybný“: žádost o funkci porybného (schvaluje správce) ----------
+const WARDEN_TIP = '<span class="info-tip" tabindex="0" role="img" aria-label="O tuto funkci může žádat jen porybný – člen rybářské stráže místní organizace, nebo státní rybářská stráž. Žádost schvaluje správce organizace. Po schválení uvidíte při kontrole místenky plné údaje rybáře a můžete místenku zadržet." data-tip="O tuto funkci může žádat jen porybný – člen rybářské stráže místní organizace, nebo státní rybářská stráž. Žádost schvaluje správce organizace. Po schválení uvidíte při kontrole místenky plné údaje rybáře a můžete místenku zadržet.">i</span>';
+function renderWardenBox() {
+  const box = qs("#wardenBox");
+  const request = user.wardenRequest;
+  if (user.roles.includes("warden")) { box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  if (request && (request.status === "pending" || request.status === "unverified")) {
+    box.innerHTML = `<p class="warden-state"><span aria-hidden="true">⏳</span> Žádost o funkci porybného čeká na schválení správcem. O výsledku vám pošleme e-mail.</p>`;
+    return;
+  }
+  const rejected = request?.status === "rejected" ? `<p class="field-help">Poslední žádost byla zamítnuta${request.decisionNote ? `: ${esc(request.decisionNote)}` : "."}</p>` : "";
+  box.innerHTML = `<label class="checkbox-label warden-label"><input type="checkbox" id="wardenAsk"> <span>Jsem porybný</span>${WARDEN_TIP}</label>${rejected}
+    <form id="wardenForm" class="hidden" novalidate><label class="field-label" for="wardenNote">Poznámka pro správce <span class="optional">(např. MO / státní stráž, číslo průkazu)</span></label><input id="wardenNote" maxlength="300">
+    <button class="secondary-button" type="submit">Požádat o funkci porybného</button></form>`;
+  qs("#wardenAsk").addEventListener("change", (event) => show("wardenForm", event.target.checked));
+  qs("#wardenForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    busy(event.submitter, async () => {
+      try {
+        const result = await api("/me/warden-request", { method: "POST", body: { note: qs("#wardenNote").value.trim() } });
+        user = result.user;
+        setSessionUser(user);
+        renderWardenBox();
+        showToast("Žádost odeslána správci ke schválení.");
+      } catch (error) { showToast(error.message); }
+    });
+  });
+}

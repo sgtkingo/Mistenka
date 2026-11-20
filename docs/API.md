@@ -188,13 +188,13 @@ Sada oprávnění (`roles: ["member", …]`), ne žebříček. `member` má kaž
 
 - Admin **musí** mít zapnutou 2FA; bez ní vrací všechny `/manage/*` `403 mfa_required` a `user.mfaRequired = true`. Pro ostatní je 2FA volitelná, ale když ji mají zapnutou, kód je povinný při každém přihlášení (heslem, odkazem, obnovou hesla).
 - Posledního admina nelze odebrat ani smazat (`409 last_admin`). Role kromě `member` lze dát jen účtu s ověřeným e-mailem (`409 user_not_verified`).
-- Prvního admina zakládá **průvodce prvním spuštěním** (viz níže); ve WordPressu je adminem administrátor webu, který plugin aktivoval.
+- Prvního admina zakládá **průvodce prvním spuštěním** (viz níže); ve WordPressu odkaz na průvodce vygeneruje administrátor webu v Nastavení → Místenka.
 - **Účet jen pro správu:** `memberId` a `birthDate` jsou u účtu s rolí `manager`/`admin` volitelné (`staffOnly: true`, když číslo legitimace chybí). Běžný uživatel je mít musí. Správce si je může doplnit a pak z účtu kupovat místenky.
 
 ### Přihlášení, relace a CSRF
 
 - Relace je v cookie `mistenka_session` (`HttpOnly`, `SameSite=Lax`, na HTTPS `Secure`), na serveru jen SHA-256 hash. Platnost 30 dní, pro správce a adminy 12 hodin.
-- Každá **měnící** žádost (ne `GET`) s platnou relací musí mít hlavičku `X-Mistenka-Csrf` s hodnotou `csrf` z `GET /auth/me` nebo z odpovědi na přihlášení; jinak `403 csrf_failed`. Výjimkou jsou endpointy, které relaci vytvářejí (`/auth/login`, `/auth/register`, `/auth/verify`, `/auth/magic-link`, `/auth/magic`, `/auth/password-reset`, `/auth/password-reset/confirm`, `/auth/email/confirm`). WordPress tuto hlavičku ověří jako nonce `wp_rest`.
+- Každá **měnící** žádost (ne `GET`) s platnou relací musí mít hlavičku `X-Mistenka-Csrf` s hodnotou `csrf` z `GET /auth/me` nebo z odpovědi na přihlášení; jinak `403 csrf_failed`. Výjimkou jsou endpointy, které relaci vytvářejí nebo ji nepotřebují (`/auth/login`, `/auth/register`, `/auth/verify`, `/auth/magic-link`, `/auth/magic`, `/auth/password-reset`, `/auth/password-reset/confirm`, `/auth/email/confirm`, `/setup`, `/requests/view`, `/requests/decide`). WordPress plugin má vlastní účty, relace i CSRF token (tabulky pluginu) – rybáři nejsou uživateli WordPressu a cookie přihlášení do WordPressu se nepoužívá.
 - Odpovědi neprozrazují existenci účtu: `register` pro existující ověřený e-mail vrátí totéž a pošle e-mail `account_exists`; `magic-link` a `password-reset` vrací vždy `{ sent: true }`. Výjimka: obsazené číslo legitimace → `409 member_id_taken`.
 - Odkazy z e-mailů vedou na `account.html#<druh>=<token>` (token ve fragmentu). Jsou jednorázové; nový odkaz stejného účelu ruší starý. Neplatný, použitý nebo prošlý → `400 invalid_link`.
 
@@ -211,7 +211,7 @@ Sada oprávnění (`roles: ["member", …]`), ne žebříček. `member` má kaž
 
 ### Průvodce prvním spuštěním
 
-Dokud neexistuje žádný admin, server při startu vypíše do konzole jednorázový odkaz `setup.html#<token>` (platí 60 min, každý start vytvoří nový a předchozí zneplatní; nouzově `npm run user -- setup`). Kdo nemá přístup ke konzoli, admina nezaloží. Admin vzniká rovnou s ověřeným e-mailem a zapnutou 2FA; pak je průvodce vypnutý.
+Dokud neexistuje žádný admin, server při startu vypíše do konzole jednorázový odkaz `setup.html#<token>` (platí 60 min, každý start vytvoří nový a předchozí zneplatní; nouzově `npm run user -- setup`). Ve WordPressu odkaz vygeneruje administrátor webu tlačítkem v Nastavení → Místenka. Kdo nemá přístup ke konzoli ani k administraci webu, admina nezaloží. Admin vzniká rovnou s ověřeným e-mailem a zapnutou 2FA; pak je průvodce vypnutý.
 
 | Endpoint | Tělo | Odpověď / chyby |
 | --- | --- | --- |
@@ -219,14 +219,12 @@ Dokud neexistuje žádný admin, server při startu vypíše do konzole jednorá
 | `POST /setup/2fa` | `{ token }` | `{ secret, otpauthUrl }`; `400 invalid_setup_token`, `404 setup_closed` |
 | `POST /setup` | `{ token, email, firstName, lastName, password, otp }` | `{ user, csrf }` + cookie; `400 invalid_otp`, `weak_password`, …; `409 two_factor_not_setup`, `email_taken`; `404 setup_closed` |
 
-Ve WordPressu průvodce není (admin = administrátor webu).
-
 ### Endpointy účtu
 
 | Endpoint | Tělo | Odpověď / chyby |
 | --- | --- | --- |
 | `GET /auth/me` | – | `{ user: <User> \| null, csrf }` (vždy `200`) |
-| `POST /auth/register` | `{ email, firstName, lastName, birthDate, memberId, password?, consent: true }` | `{ sent: true }`; `400 invalid_email`, `invalid_name`, `invalid_birth_date`, `invalid_member_id`, `weak_password`, `consent_required`; `409 member_id_taken` |
+| `POST /auth/register` | `{ email, firstName, lastName, birthDate, memberId, password?, consent: true, wardenRequest? }` (`wardenRequest: true` = „Jsem porybný“, žádost se odešle po ověření e-mailu) | `{ sent: true }`; `400 invalid_email`, `invalid_name`, `invalid_birth_date`, `invalid_member_id`, `weak_password`, `consent_required`; `409 member_id_taken` |
 | `POST /auth/verify` | `{ token }` | `{ user, csrf }` + cookie; `400 invalid_link` |
 | `POST /auth/login` | `{ email, password, otp? }` | `{ user, csrf }` + cookie; `401 invalid_credentials`, `401 otp_required`, `401 invalid_otp`, `403 email_not_verified` (pošle nový ověřovací odkaz) |
 | `POST /auth/magic-link` | `{ email }` | `{ sent: true }` |
@@ -239,6 +237,7 @@ Ve WordPressu průvodce není (admin = administrátor webu).
 | `PUT /me/password` 👤 | `{ currentPassword, newPassword }` (`currentPassword` jen pokud účet heslo má) | `{ user }`; `400 wrong_password`; odhlásí ostatní relace |
 | `POST /me/delete` 👤 | `{ confirm: true, password? }` | `{ deleted: true }` + smaže cookie; místenky zůstanou bez vazby na účet; `400 confirm_required`, `wrong_password`; `409 last_admin` |
 | `GET /me/tickets` 👤 | – | `{ tickets: [<OwnerTicket>] }`, nejnovější den lovu první |
+| `POST /me/warden-request` 👤 | `{ note? }` | `{ user }` – žádost „Jsem porybný“ (viz Notifikace); `409 already_warden`, `request_pending` |
 | `GET /me/limits?revirId=` 👤 | – | `{ date, revirId, limits: [...], blocked }` – týdenní a měsíční limity člena k dnešku (bez čísla legitimace prázdné) |
 | `POST /me/2fa/setup` 👤 | – | `{ secret, otpauthUrl }` (TOTP, SHA-1, 6 číslic, 30 s); `409 two_factor_enabled` |
 | `POST /me/2fa/enable` 👤 | `{ otp }` | `{ user }`; `400 invalid_otp`, `409 two_factor_not_setup` |
@@ -256,8 +255,65 @@ Ve WordPressu průvodce není (admin = administrátor webu).
 ```jsonc
 // User
 { "id": 7, "email": "eva@example.cz", "firstName": "Eva", "lastName": "Nováková", "birthDate": "1988-02-03", "memberId": "12345678",
-  "staffOnly": false, "roles": ["member", "warden"], "emailVerified": true, "hasPassword": true, "twoFactor": false, "mfaRequired": false, "createdAt": "…" }
-// StaffUser = User bez birthDate, hasPassword a mfaRequired
+  "staffOnly": false, "roles": ["member", "warden"], "emailVerified": true, "hasPassword": true, "twoFactor": false, "mfaRequired": false,
+  "wardenRequest": null /* poslední žádost „Jsem porybný“: { id, status: "pending" | "approved" | "rejected", createdAt, decidedAt, decisionNote } */, "createdAt": "…" }
+// StaffUser = User bez birthDate, hasPassword, mfaRequired a wardenRequest
+```
+
+## Notifikace: žádost „Jsem porybný“
+
+Uživatel může při registraci nebo v účtu zaškrtnout **„Jsem porybný“** (smí jen porybný – rybářská stráž MO nebo státní rybářská stráž). Žádost dostane správce:
+
+- v manažerském portálu, sekce **Notifikace** (správce i admin; počet čekajících je v menu),
+- e-mailem `warden_request` na `organization.managerEmail` s tlačítky **Schválit** / **Zamítnout** a odkazem do portálu. Tlačítka vedou na `request.html#t=<token>&a=approve|reject`, kde se rozhodnutí teprve potvrdí (samotné otevření odkazu nic nemění – poštovní skenery odkazy otevírají). Token platí 7 dní a jde použít jen jednou.
+
+Žádost z registrace se odešle až po ověření e-mailu. Schválení přidá roli `warden` (zapíše se do auditu jako změna rolí); žadatel dostane e-mail `warden_request_approved` / `warden_request_rejected` s případnou poznámkou správce.
+
+| Endpoint | Tělo | Odpověď / chyby |
+| --- | --- | --- |
+| `GET /manage/notifications` 🛠 | – | `{ notifications: [<Notification>], pending }` – čekající první, max. 200 |
+| `POST /manage/notifications/{id}/approve`, `/reject` 🛠 | `{ note? }` | `{ notification }`; `404`, `409 already_decided` |
+| `POST /requests/view` | `{ token }` | `{ notification }` – náhled z odkazu v e-mailu (bez přihlášení); `400 invalid_link` (neplatný, prošlý nebo vyřízený) |
+| `POST /requests/decide` | `{ token, action: "approve" \| "reject", note? }` | `{ notification }`; `400 invalid_action`, `invalid_link` |
+
+Neúspěšné pokusy s tokenem se počítají do limitu neúspěšných přihlášení (10 / 10 min).
+
+```jsonc
+// Notification
+{ "id": 3, "kind": "warden_request", "status": "pending", "note": "Rybářská stráž MO", "createdAt": "…",
+  "user": { "id": 7, "name": "Eva Nováková", "email": "…", "memberId": "12345678", "roles": ["member"] },
+  "decidedAt": null, "decidedBy": "", "decidedVia": null /* portal | email */, "decisionNote": "" }
+```
+
+## E-mailoví klienti (SMTP účty)
+
+Portál → **Admin → Emailoví klienti**. Organizace může mít víc poštovních účtů; každá skupina e-mailů má svého odesílatele:
+
+| Skupina | E-maily |
+| --- | --- |
+| `tickets` – Místenky | `payment_instructions`, `ticket_issued`, `return_reminder`, `ticket_closed`, `ticket_seized`, `ticket_cancelled`, `closure_notice`, `member_blocked` |
+| `accounts` – Účty | `account_verify`, `account_exists`, `magic_link`, `password_reset`, `email_change`, `staff_invite`, `account_deleted`, `warden_request_approved`, `warden_request_rejected` |
+| `notices` – Upozornění správcům | `warden_request`, `seizure_notice`, `limit_exceeded`, `season_report`, `payment_settings_changed`, `database_auto_restored` |
+
+- Účty zakládá, upravuje, testuje a maže **jen admin**; odesílatele skupin může vybrat správce i admin (API), v UI je sekce jen pro admina.
+- Odesílatelem skupiny může být jen **ověřený** účet = úspěšně odeslaný testovací e-mail. Změna adresy odesílatele, serveru, portu, šifrování, přihlašovacího jména nebo hesla ověření zruší; neověřený přiřazený účet se nepoužije (skupina odesílá výchozím způsobem), dokud ho admin znovu neotestuje.
+- Skupina bez účtu odesílá výchozím způsobem serveru s odesílatelem `email.fromEmail` / `fromName` z nastavení organizace (WordPress: `wp_mail()`).
+- Heslo se ukládá šifrovaně (AES-256-GCM, klíč `MISTENKA_SECRET_KEY`, jinak vygenerovaný soubor v datové složce) a **nikdy se nevrací** do API. Prázdné heslo při úpravě = beze změny.
+- WordPress odesílá nativně přes PHPMailer, který je součástí WordPressu (každý e-mail vlastní instance s údaji svého účtu) – nezávisle na pluginech typu WP Mail SMTP. Node e-maily neodesílá (`data/outbox/`), test účtu jen zapíše soubor.
+
+| Endpoint | Tělo | Odpověď / chyby |
+| --- | --- | --- |
+| `GET /manage/email/accounts` 🛠 | – | `{ accounts: [<EmailAccount>], senders: { tickets, accounts, notices }, groups: [{ id, label, help }], fallback: { fromEmail, fromName }, delivery: "smtp" \| "file", canEdit }` |
+| `POST /manage/email/accounts` 🛠 (jen admin) | `{ label?, fromEmail, fromName?, host, port, encryption: "ssl" \| "tls" \| "none", username?, password? }` | `201 { account }`; `400 invalid_email`, `invalid_host`, `invalid_port`, `invalid_encryption`, `invalid_label`; `403 forbidden_role` |
+| `PUT /manage/email/accounts/{id}` 🛠 (jen admin) | totéž | `{ account }`; `404` |
+| `DELETE /manage/email/accounts/{id}` 🛠 (jen admin) | – | `{ deleted: true }`; skupiny, které účet používaly, přejdou na výchozí odesílání |
+| `POST /manage/email/accounts/{id}/verify` 🛠 (jen admin) | `{ to? }` (výchozí e-mail admina) | `{ account }` s `verified: true`; `400 smtp_failed` se zprávou serveru (uloží se do `lastError`) |
+| `PUT /manage/email/senders` 🛠 | `{ tickets?, accounts?, notices? }` (id účtu nebo `null` = výchozí) | jako `GET`; `404`, `409 account_not_verified` |
+
+```jsonc
+// EmailAccount
+{ "id": 1, "label": "Místenka", "fromEmail": "mistenka@…", "fromName": "Místenka – MO Karviná", "host": "smtp.websupport.cz", "port": 465, "encryption": "ssl",
+  "username": "mistenka@…", "hasPassword": true, "verified": true, "verifiedAt": "…", "verifiedTo": "admin@…", "lastError": null, "usedFor": ["tickets"], "createdAt": "…", "updatedAt": "…" }
 ```
 
 ## Provoz (B4)
@@ -381,14 +437,15 @@ Jen `admin` (jinak `403 forbidden_role`; bez 2FA `403 mfa_required`).
 - **Denní záloha** během sezony (dnes je otevřená některá sezona, nebo žádná sezona není nastavená): plánovaná úloha jednou za den (Praha); drží se **poslední a aktuální** (2), starší se smažou.
 - **Po každé uzávěrce sezony** jedna trvalá záloha (`kind: "season"`, poznámka = název uzávěrky).
 - **Ruční** záloha admina, trvalá do smazání.
-- Node: konzistentní kopie SQLite (`VACUUM INTO`) do `DATA_DIR/backups/`. WordPress: export tabulek pluginu do chráněného adresáře mimo veřejný přístup, stejná pravidla. - **Obnova z portálu** (`POST /manage/backups/{id}/restore` `{ confirm: "OBNOVIT", otp }`): znovu se ověří kód 2FA (`401 otp_required` / `invalid_otp`), bez potvrzení `400 confirm_required`, poškozená záloha `409 backup_corrupt`. Nejdřív vznikne pojistná záloha (`kind: "pre-restore"`), záloha se převede na aktuální schéma a data se přepíší v jedné transakci; nepřepisují se přihlášení (`sessions`), seznam záloh a technická metadata. Nastavení se znovu načte. Odpověď `{ restored, file, safetyBackup, rows }`.
-- **Automatická obnova při startu**: pokud kontrola integrity databáze selže, server ji odloží do `DATA_DIR/corrupt/`, nahradí nejnovější platnou zálohou, zapíše do auditu (`database_auto_restored`) a pošle všem adminům e-mail `database_auto_restored`. Bez platné zálohy server nenastartuje.
+- Node: konzistentní kopie SQLite (`VACUUM INTO`) do `DATA_DIR/backups/`. WordPress: export všech tabulek pluginu (konzistentní snímek) jako JSON komprimovaný gzipem (`*.json.gz`) do datové složky mimo veřejný přístup (`MISTENKA_DATA_DIR`, výchozí `wp-content/mistenka-data` s `.htaccess` deny), stejná pravidla.
+- **Obnova z portálu** (`POST /manage/backups/{id}/restore` `{ confirm: "OBNOVIT", otp }`): znovu se ověří kód 2FA (`401 otp_required` / `invalid_otp`), bez potvrzení `400 confirm_required`, poškozená záloha `409 backup_corrupt`. Nejdřív vznikne pojistná záloha (`kind: "pre-restore"`), záloha se převede na aktuální schéma a data se přepíší v jedné transakci; nepřepisují se přihlášení (`sessions`), seznam záloh a technická metadata. Nastavení se znovu načte. Odpověď `{ restored, file, safetyBackup, rows }`.
+- **Automatická obnova při startu** (jen Node/SQLite; MySQL ve WordPressu hlídá hosting): pokud kontrola integrity databáze selže, server ji odloží do `DATA_DIR/corrupt/`, nahradí nejnovější platnou zálohou, zapíše do auditu (`database_auto_restored`) a pošle všem adminům e-mail `database_auto_restored`. Bez platné zálohy server nenastartuje.
 
 | Endpoint | Tělo | Odpověď |
 | --- | --- | --- |
 | `GET /manage/backups` | – | `{ backups: [{ id, kind: "daily" \| "season" \| "manual", file, sizeBytes, note, reportId, createdAt, exists }], dailyKeep: 2, totalBytes }` |
 | `POST /manage/backups` | `{ note? }` | `201 { backup }` |
-| `GET /manage/backups/{id}/download` | – | soubor zálohy (`application/vnd.sqlite3`) |
+| `GET /manage/backups/{id}/download` | – | soubor zálohy (Node `application/vnd.sqlite3`, WordPress `application/gzip`) |
 | `DELETE /manage/backups/{id}` | – | `{ deleted: true }` |
 | `GET /manage/audit?limit=200&action=` | – | `{ events: [{ id, at, action, actor, targetType, targetId, detail }] }` – změny rolí, nastavení, plateb, zadržení, blokace, zálohy … |
 
@@ -515,9 +572,11 @@ V tomto pořadí; Node je spouští v intervalu, WordPress cron hostingu přes `
 | `payment_settings_changed` | admin změnil platební údaje (všem adminům) | – |
 | `closure_notice` | mimořádné uzavření revíru na den místenky | `status.html?code=…` |
 | `staff_invite` | admin pozval správce/admina | `account.html#invite=<token>` |
+| `warden_request` | žádost „Jsem porybný“, na `organization.managerEmail` | `request.html#t=<token>&a=approve\|reject`, `manage.html#notifications` |
+| `warden_request_approved` / `_rejected` | správce žádost vyřídil (žadateli) | – |
 | `account_deleted` | smazání účtu | – |
 
-Odesílají se přes frontu (tabulka `email_outbox`). Node je ukládá do `data/outbox/`, WordPress odešle přes `wp_mail()`.
+Odesílají se přes frontu (tabulka `email_outbox`, sloupec `sender` = přes který účet odešel; detail místenky ho ukazuje). Node je ukládá do `data/outbox/`, WordPress je odešle přes SMTP účet skupiny (viz E-mailoví klienti), jinak přes `wp_mail()`; e-maily vzniklé během požadavku odejdou hned po odeslání odpovědi, ostatní plánovanou úlohou. Neodeslaný e-mail se zkusí znovu nejvýš jednou za hodinu (2 dny).
 
 ## Vývojové endpointy
 
