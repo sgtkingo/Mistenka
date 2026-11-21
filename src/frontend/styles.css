@@ -326,3 +326,4 @@ body.season-closed .action-card[data-panel="buy"]{display:none}body.season-close
 .toast[data-tone=warning]{background:#c2610c}.toast[data-tone=warning]::before{content:"!";font:700 13px/1 Inter,sans-serif}
 .toast[data-tone=error]{background:#c8302a}.toast[data-tone=error]::before{content:"×";font:700 16px/1 Inter,sans-serif}
 .info-box.info-success{background:#eef8f1;border-color:#bfe3cb;color:#17703a}.info-box.info-warning{background:#fff6e5;border-color:#f3d9a4;color:#8a4b00}
+.test-mode-banner{margin:0 0 20px;font-size:14px;line-height:1.5}

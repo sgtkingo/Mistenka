@@ -128,6 +128,8 @@ qs("#printTicket").addEventListener("click", () => window.print());
   try {
     config = await loadConfig();
     applyBranding(config);
+    // Falešná banka (testovací web): jasně říct, že místenky nejsou platné.
+    qs("#testModeBanner").classList.toggle("hidden", config.payment.mode !== "fake");
     if (!/^[A-Z0-9]{6}$/.test(code)) throw new Error("Chybí platný kód objednávky.");
     if (!credentials.token && !credentials.memberId && !(await loadSession())) throw new Error("Objednávku otevřete odkazem z e-mailu, nebo ji zkontrolujte na stránce kontroly místenky.");
     ticket = await api(`/orders/${code}`, credentials);
