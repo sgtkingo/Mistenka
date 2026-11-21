@@ -30,6 +30,8 @@ Produkční implementace Místenky. Chování je stejné jako u Node verze v `sr
    define('MISTENKA_SECRET_KEY', '…dlouhý náhodný řetězec…');  // šifrování hesel SMTP účtů (doporučeno; jinak soubor v datové složce)
    // volitelně:
    // define('MISTENKA_APP_URL', 'https://mistenka.rybarikarvina.cz');
+   // define('MISTENKA_GITHUB_TOKEN', '…');  // hlášení chyb → GitHub issues (s MISTENKA_GITHUB_REPO)
+   // define('MISTENKA_GITHUB_REPO', 'vlastnik/repozitar');
    // define('MISTENKA_DATA_DIR', '/cesta/mimo/web/mistenka-data');  // výchozí wp-content/mistenka-data (+ .htaccess deny)
    ```
 

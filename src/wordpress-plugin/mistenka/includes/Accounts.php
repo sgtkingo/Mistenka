@@ -11,6 +11,8 @@ final class Accounts
     private const STAFF_ROLES = ['manager', 'admin'];
     // Před spuštěním služby (první otevřená sezona) se registrovat ani přihlásit nemohou rybáři – jen správa.
     private const NOT_LAUNCHED = 'Místenka zatím nebyla spuštěna – registrace a přihlášení se otevřou s první sezonou.';
+    // Při uzavřené sezoně (dnes není otevřená žádná sezona) se přihlásí jen správci a admini.
+    private const SEASON_CLOSED = 'Sezona je uzavřená – přihlásit se teď mohou jen správci a admini. Místenku vrátíte i bez přihlášení (kód místenky a číslo legitimace).';
     private const SESSION_DAYS = 30;
     private const STAFF_SESSION_HOURS = 12;
     private const UNVERIFIED_HOURS = 48;
@@ -208,14 +210,24 @@ final class Accounts
     }
 
     // ---------- registrace a přihlášení ----------
+    // Kdo se smí přihlásit: správa vždy; rybáři jen po spuštění služby a při otevřené sezoně.
+    private static function closedReason(): ?array
+    {
+        if (!Db::serviceLaunched()) return ['service_not_launched', self::NOT_LAUNCHED];
+        if (!Db::seasonOpen(Time::pragueToday())) return ['season_closed', self::SEASON_CLOSED];
+        return null;
+    }
+
     private static function requireLaunchedFor(array $user): void
     {
-        if (!Db::serviceLaunched() && !self::isStaff($user)) throw new ApiError(409, 'service_not_launched', self::NOT_LAUNCHED);
+        $closed = self::isStaff($user) ? null : self::closedReason();
+        if ($closed) throw new ApiError(409, $closed[0], $closed[1]);
     }
 
     public function register(array $input): array
     {
-        if (!Db::serviceLaunched()) throw new ApiError(409, 'service_not_launched', self::NOT_LAUNCHED);
+        $closed = self::closedReason();
+        if ($closed) throw new ApiError(409, $closed[0], $closed[1]);
         $email = Validate::normalizeEmail(Validate::email($input['email'] ?? null));
         $memberId = Validate::memberId($input['memberId'] ?? null);
         [$firstName, $lastName] = Validate::name($input['firstName'] ?? null, $input['lastName'] ?? null);
@@ -281,7 +293,7 @@ final class Accounts
     {
         Validate::email($input['email'] ?? null);
         $user = $this->userByEmail($input['email']);
-        if ($user && (Db::serviceLaunched() || self::isStaff($user))) Db::transaction(fn() => $this->queueEmail($user['email'], 'magic_link', Emails::magicLink($this->app->config, $this->link('login', $this->issueAuthToken($user, 'magic_link')), self::TOKEN_MINUTES['magic_link'])));
+        if ($user && (self::isStaff($user) || !self::closedReason())) Db::transaction(fn() => $this->queueEmail($user['email'], 'magic_link', Emails::magicLink($this->app->config, $this->link('login', $this->issueAuthToken($user, 'magic_link')), self::TOKEN_MINUTES['magic_link'])));
         return ['sent' => true];
     }
 
@@ -301,7 +313,7 @@ final class Accounts
     {
         Validate::email($input['email'] ?? null);
         $user = $this->userByEmail($input['email']);
-        if ($user && (Db::serviceLaunched() || self::isStaff($user))) Db::transaction(fn() => $this->queueEmail($user['email'], 'password_reset', Emails::passwordReset($this->app->config, $this->link('reset', $this->issueAuthToken($user, 'password_reset')), self::TOKEN_MINUTES['password_reset'])));
+        if ($user && (self::isStaff($user) || !self::closedReason())) Db::transaction(fn() => $this->queueEmail($user['email'], 'password_reset', Emails::passwordReset($this->app->config, $this->link('reset', $this->issueAuthToken($user, 'password_reset')), self::TOKEN_MINUTES['password_reset'])));
         return ['sent' => true];
     }
 

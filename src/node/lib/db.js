@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
-const SCHEMA_VERSION = 17;
+const SCHEMA_VERSION = 18;
 
 // Sloupce tabulky users (sdílí vytvoření i migrace).
 const USERS_COLUMNS = `
@@ -383,6 +383,27 @@ function openDatabase(dataDir, { autoRecover = true } = {}) {
       error TEXT,
       sender TEXT                              -- přes který účet odešel (název SMTP účtu / „výchozí“)
     );
+    -- Hlášení chyb z webu (tlačítko s broukem). Snímek obrazovky jako data URL, záznam událostí jako JSON.
+    CREATE TABLE IF NOT EXISTS bug_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TEXT NOT NULL,
+      user_id INTEGER,
+      contact_email TEXT,
+      description TEXT NOT NULL,
+      url TEXT,
+      user_agent TEXT,
+      viewport TEXT,
+      client_time TEXT,
+      log TEXT,
+      screenshot TEXT,
+      status TEXT NOT NULL DEFAULT 'new',      -- new | in_progress | resolved | wontfix
+      priority TEXT NOT NULL DEFAULT 'normal', -- low | normal | high | critical
+      note TEXT,
+      github_url TEXT,
+      resolved_at TEXT,
+      updated_at TEXT,
+      updated_by INTEGER
+    );
     -- Žádosti „Jsem porybný“ (notifikace pro správce). unverified = čeká na ověření e-mailu žadatele.
     CREATE TABLE IF NOT EXISTS warden_requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -443,7 +464,9 @@ function transaction(db, fn) {
 
 // Spuštění služby: čerstvá instalace je zavřená (sezona uzavřena, registrace a přihlášení rybářů vypnuté),
 // dokud správce ručně neotevře první sezonu. Stav se drží v meta (při obnově ze zálohy se nemění).
+// Je dnes otevřená některá sezona? Při uzavřené sezoně se přihlásí jen správci a admini.
+const seasonOpen = (db, today) => Boolean(db.prepare("SELECT 1 FROM seasons WHERE deleted_at IS NULL AND opens_on <= ? AND (closes_on IS NULL OR closes_on >= ?) LIMIT 1").get(today, today));
 const serviceLaunched = (db) => Boolean(db.prepare("SELECT value FROM meta WHERE key = 'service_launched_at'").get()?.value);
 const markLaunched = (db, at) => db.prepare("INSERT INTO meta (key, value) VALUES ('service_launched_at', ?) ON CONFLICT (key) DO NOTHING").run(at);
 
-module.exports = { openDatabase, transaction, integrityProblem, serviceLaunched, markLaunched };
+module.exports = { openDatabase, transaction, integrityProblem, serviceLaunched, markLaunched, seasonOpen };

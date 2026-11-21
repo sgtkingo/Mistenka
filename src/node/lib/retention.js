@@ -33,6 +33,9 @@ function createRetention({ db, config, backups }) {
       report.paymentsAnonymized = db.prepare("UPDATE bank_transactions SET counter_account = NULL, counter_name = NULL, message = NULL WHERE created_at <= ? AND (counter_account IS NOT NULL OR counter_name IS NOT NULL OR message IS NOT NULL)").run(iso(yearsAgo(p.accountingYears))).changes;
       // Odeslané e-maily (obsahují osobní údaje) po emailDays dnech.
       report.emailsDeleted = db.prepare("DELETE FROM email_outbox WHERE sent_at IS NOT NULL AND created_at <= ?").run(iso(new Date(time.now().getTime() - p.emailDays * 86_400_000))).changes;
+      // Hlášení chyb: snímek obrazovky (může obsahovat osobní údaje) po 90 dnech, vyřízená hlášení rok po vyřízení.
+      report.bugScreenshotsDeleted = db.prepare("UPDATE bug_reports SET screenshot = NULL WHERE screenshot IS NOT NULL AND created_at <= ?").run(iso(new Date(time.now().getTime() - 90 * 86_400_000))).changes;
+      report.bugReportsDeleted = db.prepare("DELETE FROM bug_reports WHERE resolved_at IS NOT NULL AND resolved_at <= ?").run(iso(yearsAgo(1))).changes;
       // Audit po auditYears letech.
       report.auditDeleted = db.prepare("DELETE FROM audit_events WHERE at <= ?").run(iso(yearsAgo(p.auditYears))).changes;
       db.prepare("INSERT INTO meta (key, value) VALUES ('last_retention', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(today);

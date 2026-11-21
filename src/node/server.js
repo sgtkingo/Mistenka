@@ -12,12 +12,13 @@
 //   MISTENKA_JOBS_INTERVAL_MS interval plánovaných úloh (0 = vypnuto)
 //   MISTENKA_RATE_LIMIT=0     vypne omezení počtu požadavků (jen pro testy)
 //   FIO_TOKEN=...             token Fio API (jen při payment.provider = "fio")
+//   MISTENKA_GITHUB_TOKEN, MISTENKA_GITHUB_REPO   hlášení chyb → GitHub issues (token s právem issues, "vlastník/repozitář")
 //   MISTENKA_SECRET_KEY=...   klíč pro šifrování hesel SMTP účtů (jinak se vygeneruje DATA_DIR/secret.key)
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const { loadConfig, publicConfig } = require("./lib/config");
-const { openDatabase, serviceLaunched } = require("./lib/db");
+const { openDatabase, serviceLaunched, seasonOpen } = require("./lib/db");
 const { createProvider } = require("./lib/payments");
 const { createFileMailer } = require("./lib/emails");
 const { createService, ApiError } = require("./lib/service");
@@ -29,6 +30,7 @@ const { createBackups } = require("./lib/backups");
 const { createRetention } = require("./lib/retention");
 const { createMailAccounts } = require("./lib/mail-accounts");
 const { createSmtpMailer } = require("./lib/smtp");
+const { createBugs } = require("./lib/bugs");
 const time = require("./lib/time");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -50,6 +52,8 @@ const mailAccounts = createMailAccounts({ db, config, dataDir: DATA_DIR, mailer 
 const service = createService({ db, config, provider, mailer, appUrl: APP_URL, operations, settings, mailAccounts });
 const accounts = createAccounts({ db, config, appUrl: APP_URL });
 const reports = createReports({ db, config, appUrl: APP_URL });
+// Hlášení chyb; GitHub issue jen s MISTENKA_GITHUB_TOKEN a MISTENKA_GITHUB_REPO (vlastník/repozitář).
+const bugs = createBugs({ db, config, appUrl: APP_URL, github: { token: process.env.MISTENKA_GITHUB_TOKEN || "", repo: process.env.MISTENKA_GITHUB_REPO || "" } });
 const backups = createBackups({ db, dataDir: DATA_DIR, onRestored: () => settings.reload() });
 if (db.autoRestored) accounts.notifyAutoRestore(db.autoRestored);
 reports.onSeasonReport((report) => backups.afterSeasonReport(report)); // trvalá záloha po každé uzávěrce
@@ -79,13 +83,13 @@ function send(res, status, body, headers = {}) {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", ...headers });
   res.end(JSON.stringify(body));
 }
-function readBody(req) {
+function readBody(req, maxBytes = 64 * 1024) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
     req.on("data", (chunk) => {
       size += chunk.length;
-      if (size > 64 * 1024) { reject(new ApiError(413, "payload_too_large", "Požadavek je příliš velký.")); req.destroy(); return; }
+      if (size > maxBytes) { reject(new ApiError(413, "payload_too_large", "Požadavek je příliš velký.")); req.destroy(); return; }
       chunks.push(chunk);
     });
     req.on("end", () => {
@@ -138,10 +142,15 @@ async function handleApi(req, res, url, ip) {
   const user = ctx?.user || null;
 
   if (pathname === "/api/config" && method === "GET") {
-    return send(res, 200, publicConfig(config, { today: time.pragueToday(), now: time.now().toISOString(), devMode: DEV, service: { launched: serviceLaunched(db) } }));
+    return send(res, 200, publicConfig(config, { today: time.pragueToday(), now: time.now().toISOString(), devMode: DEV, service: { launched: serviceLaunched(db), seasonOpen: seasonOpen(db, time.pragueToday()) } }));
   }
   if ((m = pathname.match(/^\/api\/reviry\/([a-z0-9-]+)\/availability$/)) && method === "GET") {
     return send(res, 200, service.availability(m[1]));
+  }
+  // Hlášení chyby (kdokoli; snímek obrazovky až ~1,5 MB).
+  if (pathname === "/api/bug-reports" && method === "POST") {
+    if (rateLimited(ip, "bug_report", 5, 10 * 60_000)) throw new ApiError(429, "rate_limited", "Příliš mnoho hlášení, zkuste to za chvíli.");
+    return send(res, 201, bugs.create(await readBody(req, 3 * 1024 * 1024), user));
   }
   if (pathname === "/api/announcements" && method === "GET") return send(res, 200, operations.activeAnnouncements(url.searchParams.get("revirId") || ""));
   if (pathname === "/api/orders" && method === "POST") {
@@ -286,6 +295,13 @@ async function handleApi(req, res, url, ip) {
     return send(res, 200, backups.restore(admin, m[1], body));
   }
   if ((m = pathname.match(/^\/api\/manage\/backups\/(\d+)$/)) && method === "DELETE") return send(res, 200, backups.remove(accounts.requireAdmin(ctx), m[1]));
+  // Hlášení chyb – jen admin.
+  if (pathname === "/api/manage/bug-reports" && method === "GET") { accounts.requireAdmin(ctx); return send(res, 200, bugs.list({ status: url.searchParams.get("status") || "" })); }
+  if ((m = pathname.match(/^\/api\/manage\/bug-reports\/(\d+)$/))) {
+    if (method === "GET") { accounts.requireAdmin(ctx); return send(res, 200, bugs.get(m[1])); }
+    if (method === "PATCH") return send(res, 200, bugs.update(accounts.requireAdmin(ctx), m[1], await readBody(req)));
+  }
+  if ((m = pathname.match(/^\/api\/manage\/bug-reports\/(\d+)\/github$/)) && method === "POST") return send(res, 200, await bugs.toGithub(accounts.requireAdmin(ctx), m[1]));
   // E-mailoví klienti: účty spravuje admin, odesílatele skupin vybírá správce.
   if (pathname === "/api/manage/email/accounts" && method === "GET") return send(res, 200, mailAccounts.list(accounts.requireManager(ctx)));
   if (pathname === "/api/manage/email/accounts" && method === "POST") return send(res, 201, mailAccounts.create(accounts.requireManager(ctx), await readBody(req)));

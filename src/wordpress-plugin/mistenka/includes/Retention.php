@@ -35,6 +35,9 @@ final class Retention
             $report['blocksDeleted'] = Db::exec('DELETE FROM {p}member_blocks WHERE (lifted_at IS NOT NULL AND SUBSTRING(lifted_at, 1, 10) <= ?) OR (until_date IS NOT NULL AND until_date <= ?)', $blockCutoff, $blockCutoff);
             $report['paymentsAnonymized'] = Db::exec('UPDATE {p}bank_transactions SET counter_account = NULL, counter_name = NULL, message = NULL WHERE created_at <= ? AND (counter_account IS NOT NULL OR counter_name IS NOT NULL OR message IS NOT NULL)', Time::iso(Time::yearsAgo((int) $p['accountingYears'])));
             $report['emailsDeleted'] = Db::exec('DELETE FROM {p}email_outbox WHERE sent_at IS NOT NULL AND created_at <= ?', Time::iso(Time::fromMs(Time::ms(Time::now()) - (int) $p['emailDays'] * 86400000)));
+            // Hlášení chyb: snímek obrazovky po 90 dnech, vyřízená hlášení rok po vyřízení.
+            $report['bugScreenshotsDeleted'] = Db::exec('UPDATE {p}bug_reports SET screenshot = NULL WHERE screenshot IS NOT NULL AND created_at <= ?', Time::iso(Time::fromMs(Time::ms(Time::now()) - 90 * 86400000)));
+            $report['bugReportsDeleted'] = Db::exec('DELETE FROM {p}bug_reports WHERE resolved_at IS NOT NULL AND resolved_at <= ?', Time::iso(Time::yearsAgo(1)));
             $report['auditDeleted'] = Db::exec('DELETE FROM {p}audit_events WHERE at <= ?', Time::iso(Time::yearsAgo((int) $p['auditYears'])));
             Db::metaSet('last_retention', $today);
         });

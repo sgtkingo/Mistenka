@@ -31,6 +31,7 @@ qsa(".manage-nav-item").forEach((item) => item.addEventListener("click", () => {
   if (section === "announcements") loadAnnouncements();
   if (section === "seasons") loadSeasons();
   if (section === "pricing") loadPricing();
+  if (section === "bugs") loadBugs(location.hash.startsWith("#bugs/") ? location.hash.split("/")[1] : "");
   if (section === "email") loadEmail();
   if (section === "notifications") loadNotifications();
 }));
@@ -430,6 +431,81 @@ qs("#announcementForm").addEventListener("submit", (event) => submitForm(event, 
   loadAnnouncements();
 }));
 
+// ---------- hlášení chyb (jen admin) ----------
+const BUG_STATUS = { new: ["Nové", "warn"], in_progress: ["Řeší se", "info"], resolved: ["Vyřešené", "ok"], wontfix: ["Nebude se řešit", "off"] };
+const BUG_PRIORITY = { low: ["Nízká", "off"], normal: ["Běžná", "info"], high: ["Vysoká", "warn"], critical: ["Kritická", "bad"] };
+let bugFilter = "new";
+let bugGithub = { configured: false, repo: null };
+const bugBadge = (map, key) => `<span class="badge badge-${map[key]?.[1] || "off"}">${esc(map[key]?.[0] || key)}</span>`;
+async function loadBugs(openId = "") {
+  try {
+    const data = await api("/manage/bug-reports", { query: bugFilter ? { status: bugFilter } : {} });
+    bugGithub = data.github;
+    const total = Object.values(data.counts).reduce((a, b) => a + b, 0);
+    qs("#bugCount").textContent = data.counts.new || "";
+    qs("#bugCount").classList.toggle("hidden", !data.counts.new);
+    qs("#bugTabs").innerHTML = [...Object.entries(BUG_STATUS).map(([k, [label]]) => [k, label, data.counts[k]]), ["", "Vše", total]]
+      .map(([k, label, n]) => `<button type="button" class="tab${k === bugFilter ? " active" : ""}" data-filter="${k}">${esc(label)} <span class="tab-count">${n}</span></button>`).join("");
+    qsa("#bugTabs .tab").forEach((b) => b.addEventListener("click", () => { bugFilter = b.dataset.filter; qs("#bugDetail").innerHTML = ""; loadBugs(); }));
+    qs("#bugList").innerHTML = data.reports.length ? `<table class="data-table bug-table"><thead><tr><th>#</th><th>Nahlášeno</th><th>Popis</th><th>Nahlásil</th><th>Priorita</th><th>Stav</th></tr></thead><tbody>${data.reports.map((r) => `
+      <tr class="clickable" data-bug="${r.id}"><td data-label="#">${r.id}</td><td data-label="Nahlášeno">${esc(czDateTime(r.createdAt))}<br><small class="muted-inline">${esc(r.url || "")}</small></td>
+      <td data-label="Popis">${esc(r.description.length > 110 ? `${r.description.slice(0, 110)}…` : r.description)}${r.hasScreenshot ? ' <span class="muted-inline">📷</span>' : ""}${r.githubUrl ? ' <span class="muted-inline">GitHub</span>' : ""}</td>
+      <td data-label="Nahlásil">${r.user ? esc(r.user.name || r.user.email) : r.contactEmail ? esc(r.contactEmail) : '<span class="muted-inline">anonymně</span>'}</td>
+      <td data-label="Priorita">${bugBadge(BUG_PRIORITY, r.priority)}</td><td data-label="Stav">${bugBadge(BUG_STATUS, r.status)}</td></tr>`).join("")}</tbody></table>`
+      : '<p class="muted">Žádná hlášení v tomto stavu.</p>';
+    qsa("tr[data-bug]").forEach((row) => row.addEventListener("click", () => showBug(row.dataset.bug)));
+    if (openId) showBug(openId);
+  } catch (error) { qs("#bugList").innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
+}
+// Text pro GitHub issue (bez osobních údajů a snímku), když GitHub není na serveru nastaven.
+const bugMarkdown = (r) => [r.description, "", `- Hlášení: #${r.id}`, `- Čas: ${r.createdAt}`, `- Stránka: ${r.url || "—"}`, `- Prohlížeč: ${r.userAgent || "—"}`, `- Okno: ${r.viewport || "—"}`, `- Priorita: ${r.priority}`,
+  ...(r.log.length ? ["", "<details><summary>Poslední události</summary>", "", "```", ...r.log.map((e) => `${e.at} ${e.type} ${e.page || ""} ${e.message}`), "```", "</details>"] : [])].join("\n");
+async function showBug(id) {
+  const box = qs("#bugDetail");
+  try {
+    const { report: r } = await api(`/manage/bug-reports/${id}`);
+    history.replaceState(null, "", `#bugs/${r.id}`);
+    const options = (map, current) => Object.entries(map).map(([k, [label]]) => `<option value="${k}"${k === current ? " selected" : ""}>${esc(label)}</option>`).join("");
+    box.innerHTML = `<div class="bug-detail">
+      <div class="bug-detail-head"><h2>Hlášení #${r.id}</h2>${bugBadge(BUG_PRIORITY, r.priority)} ${bugBadge(BUG_STATUS, r.status)}</div>
+      <p class="bug-description">${esc(r.description)}</p>
+      <dl class="summary-list">
+        <div><dt>Nahlášeno</dt><dd>${esc(czDateTime(r.createdAt))}</dd></div>
+        <div><dt>Nahlásil</dt><dd>${r.user ? `${esc(r.user.name)} · <a class="text-link" href="mailto:${esc(r.user.email)}">${esc(r.user.email)}</a>` : r.contactEmail ? `nepřihlášený · <a class="text-link" href="mailto:${esc(r.contactEmail)}">${esc(r.contactEmail)}</a>` : "anonymně"}</dd></div>
+        <div><dt>Stránka</dt><dd>${esc(r.url || "—")}</dd></div>
+        <div><dt>Prohlížeč</dt><dd><small>${esc(r.userAgent || "—")}</small></dd></div>
+        <div><dt>Okno</dt><dd>${esc(r.viewport || "—")}</dd></div>
+      </dl>
+      ${r.screenshot ? `<h3>Snímek obrazovky</h3><a href="${esc(r.screenshot)}" download="hlaseni-${r.id}.jpg" title="Stáhnout"><img class="bug-screenshot" src="${esc(r.screenshot)}" alt="Snímek obrazovky k hlášení ${r.id}"></a>` : ""}
+      <h3>Poslední události <small class="muted-inline">(${r.log.length})</small></h3>
+      ${r.log.length ? `<table class="data-table bug-log-table"><thead><tr><th>Čas</th><th>Typ</th><th>Stránka</th><th>Událost</th></tr></thead><tbody>${r.log.map((e) => `<tr class="log-${esc(e.type)}"><td data-label="Čas">${esc(e.at ? czDateTime(e.at) : "")}</td><td data-label="Typ">${esc(e.type)}</td><td data-label="Stránka">${esc(e.page)}</td><td data-label="Událost">${esc(e.message)}</td></tr>`).join("")}</tbody></table>` : '<p class="muted">Bez záznamu událostí.</p>'}
+      <h3>Řešení</h3>
+      <form id="bugForm" class="settings-form" novalidate>
+        <div class="form-two-col"><div><label class="field-label" for="bugStatus">Stav</label><select id="bugStatus">${options(BUG_STATUS, r.status)}</select></div><div><label class="field-label" for="bugPriority">Priorita</label><select id="bugPriority">${options(BUG_PRIORITY, r.priority)}</select></div></div>
+        <label class="field-label" for="bugNote">Poznámka</label><textarea id="bugNote" rows="3" maxlength="2000">${esc(r.note)}</textarea>
+        <label class="field-label" for="bugGithubUrl">GitHub issue</label><input id="bugGithubUrl" type="url" maxlength="300" value="${esc(r.githubUrl || "")}" placeholder="https://github.com/…/issues/123">
+        <div class="bug-actions"><button class="primary-button" type="submit">Uložit</button>
+          ${r.githubUrl ? `<a class="secondary-button" href="${esc(r.githubUrl)}" target="_blank" rel="noreferrer">Otevřít na GitHubu ↗</a>`
+            : bugGithub.configured ? `<button class="secondary-button" type="button" id="bugToGithub">Vytvořit GitHub issue (${esc(bugGithub.repo)})</button>`
+              : '<button class="secondary-button" type="button" id="bugCopy">Zkopírovat pro GitHub</button>'}</div>
+        ${!r.githubUrl && !bugGithub.configured ? '<p class="field-help">Automatické zakládání issue zapne nastavení MISTENKA_GITHUB_TOKEN a MISTENKA_GITHUB_REPO na serveru. Do té doby text zkopírujte, založte issue ručně a odkaz vložte výše.</p>' : ""}
+      </form></div>`;
+    qs("#bugForm").addEventListener("submit", (event) => submitForm(event, async () => {
+      await api(`/manage/bug-reports/${r.id}`, { method: "PATCH", body: { status: qs("#bugStatus").value, priority: qs("#bugPriority").value, note: qs("#bugNote").value, githubUrl: qs("#bugGithubUrl").value.trim() } });
+      showToast("Hlášení uloženo.");
+      loadBugs(r.id);
+    }));
+    qs("#bugToGithub")?.addEventListener("click", async (event) => {
+      event.currentTarget.disabled = true;
+      try { await api(`/manage/bug-reports/${r.id}/github`, { method: "POST" }); showToast("GitHub issue založeno."); loadBugs(r.id); } catch (error) { showToast(error.message); event.currentTarget.disabled = false; }
+    });
+    qs("#bugCopy")?.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(bugMarkdown(r)); showToast("Text pro GitHub zkopírován."); } catch { showToast("Kopírování se nepodařilo – označte text ručně."); }
+    });
+    box.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) { showToast(error.message); }
+}
+
 // ---------- ceny a místa ----------
 // Prodejní údaje v jedné tabulce: revír s podrevíry v prodeji má cenu a místa po podrevírech (místenka platí
 // pro jeden podrevír), jinak za celý revír. Ukládá se jako nová verze nastavení revíru (PUT /manage/settings/reviry/{id}).
@@ -450,7 +526,7 @@ async function loadPricing() {
       return subs.length ? `<tr class="pricing-revir"><td colspan="4"><b>${esc(r.data.name)}</b> <small class="muted-inline">místenka na jeden podrevír${subs.length === 1 ? " (vybere se automaticky)" : ""}</small></td></tr>${subs.map((s) => row(r, s)).join("")}` : row(r);
     }).join("")}</tbody></table>
       <p class="field-help">Které podrevíry se prodávají, určíte v sekci Revíry (sloupec „Platí místenka“). Podrevír v prodeji má vlastní cenu a počet míst; místenka platí pro jeden vybraný podrevír.</p>
-      <p class="field-help">Kolik dní dopředu se místenky prodávají, nastavíte pro celou organizaci v sekci Sezona a uzavření. Nový revír založíte v sekci Revíry.</p>`;
+`;
     qsa("tr[data-revir]", panel).forEach((row) => qs(".pr-save", row).addEventListener("click", async (event) => {
       const revir = view.reviry.find((r) => r.id === row.dataset.revir);
       const num = (cls, label, int = true) => {
@@ -499,7 +575,7 @@ function renderRevirStatus(seasons) {
       : '<small class="muted-inline">Bez sezony – místenky se neprodávají.</small>';
     const closable = s && (s.state === "open" || s.state === "upcoming");
     return `<div class="revir-status-card"><div class="revir-status-head"><b>${esc(r.name)}</b><span class="badge badge-${tone}">${label}</span></div><p>${period}</p>
-      ${closable ? `<button class="secondary-button toggle-close" type="button">Uzavřít sezonu ▾</button>
+      ${closable ? `<button class="danger-button toggle-close" type="button">${window.Mistenka.icon("lock")} Uzavřít sezonu ▾</button>
       <form class="close-season-form hidden" data-id="${s.id}" data-name="${esc(s.name)}" novalidate>
         <label class="radio-row"><input type="radio" name="when" value="now" checked> <span>Ihned – od dneška se místenky neprodávají</span></label>
         <label class="radio-row"><input type="radio" name="when" value="date"> <span>Od data</span> <input class="date-input close-from" inputmode="numeric" maxlength="10" placeholder="dd.mm.rrrr"></label>

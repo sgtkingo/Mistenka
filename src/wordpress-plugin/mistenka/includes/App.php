@@ -24,6 +24,7 @@ final class App
     public Backups $backups;
     public Retention $retention;
     public Mailer $mailer;
+    public Bugs $bugs;
     private bool $outboxDirty = false;
 
     public static function get(): App
@@ -47,6 +48,7 @@ final class App
         $this->backups = new Backups($this);
         $this->retention = new Retention($this);
         $this->mailer = new Mailer($this);
+        $this->bugs = new Bugs($this);
         $this->operations->importNotices();
     }
 
@@ -218,8 +220,13 @@ final class App
         $acc = $this->accounts;
         $svc = $this->service;
 
-        if ($path === '/config' && $method === 'GET') return self::json(200, Config::publicConfig($this->config, ['today' => Time::pragueToday(), 'now' => Time::nowIso(), 'devMode' => Env::dev(), 'service' => ['launched' => Db::serviceLaunched()]]));
+        if ($path === '/config' && $method === 'GET') return self::json(200, Config::publicConfig($this->config, ['today' => Time::pragueToday(), 'now' => Time::nowIso(), 'devMode' => Env::dev(), 'service' => ['launched' => Db::serviceLaunched(), 'seasonOpen' => Db::seasonOpen(Time::pragueToday())]]));
         if ($match('#^/reviry/([a-z0-9-]+)/availability$#') && $method === 'GET') return self::json(200, $svc->availability($m[1]));
+        // Hlášení chyby (kdokoli; snímek obrazovky až ~1,5 MB).
+        if ($path === '/bug-reports' && $method === 'POST') {
+            if ($this->rateLimited($ip, 'bug_report', 5, 600000)) throw new ApiError(429, 'rate_limited', 'Příliš mnoho hlášení, zkuste to za chvíli.');
+            return self::json(201, $this->bugs->create(self::body($request), $user));
+        }
         if ($path === '/announcements' && $method === 'GET') return self::json(200, $this->operations->activeAnnouncements($q('revirId')));
         if ($path === '/orders' && $method === 'POST') {
             if ($this->rateLimited($ip, 'order', 10, 60000)) throw new ApiError(429, 'rate_limited', 'Příliš mnoho objednávek, zkuste to za chvíli.');
@@ -373,6 +380,13 @@ final class App
             if ($method === 'DELETE') return self::json(200, $this->mailer->remove($acc->requireManager($ctx), $m[1]));
         }
         if ($match('#^/manage/email/accounts/(\d+)/verify$#') && $method === 'POST') return self::json(200, $this->mailer->verify($acc->requireManager($ctx), $m[1], self::body($request)));
+        // Hlášení chyb – jen admin.
+        if ($path === '/manage/bug-reports' && $method === 'GET') { $acc->requireAdmin($ctx); return self::json(200, $this->bugs->list($q('status'))); }
+        if ($match('#^/manage/bug-reports/(\d+)$#')) {
+            if ($method === 'GET') { $acc->requireAdmin($ctx); return self::json(200, $this->bugs->get($m[1])); }
+            if ($method === 'PATCH') return self::json(200, $this->bugs->update($acc->requireAdmin($ctx), $m[1], self::body($request)));
+        }
+        if ($match('#^/manage/bug-reports/(\d+)/github$#') && $method === 'POST') return self::json(200, $this->bugs->toGithub($acc->requireAdmin($ctx), $m[1]));
         if ($path === '/manage/email/senders' && $method === 'PUT') return self::json(200, $this->mailer->setSenders($acc->requireManager($ctx), self::body($request)));
 
         // Zarybnění, přehledy, uzávěrky (B6).

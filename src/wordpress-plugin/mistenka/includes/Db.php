@@ -7,7 +7,7 @@ defined('ABSPATH') || exit;
 
 final class Db
 {
-    public const SCHEMA_VERSION = 17;
+    public const SCHEMA_VERSION = 18;
 
     // Sloupce, které se z $wpdb (vrací řetězce) převádějí na čísla – výstup API musí mít čísla jako Node.
     private const INT = ['id', 'ticket_id', 'user_id', 'price_halere', 'amount_due_halere', 'return_late', 'no_catch', 'seized_by', 'cancelled_by',
@@ -193,6 +193,12 @@ final class Db
     public static function serviceLaunched(): bool
     {
         return (string) self::metaGet('service_launched_at') !== '';
+    }
+
+    // Je dnes otevřená některá sezona? Při uzavřené sezoně se přihlásí jen správci a admini.
+    public static function seasonOpen(string $today): bool
+    {
+        return (bool) self::val('SELECT 1 FROM {p}seasons WHERE deleted_at IS NULL AND opens_on <= ? AND (closes_on IS NULL OR closes_on >= ?) LIMIT 1', $today, $today);
     }
 
     public static function markLaunched(string $at): void
@@ -549,6 +555,29 @@ final class Db
   updated_at $ts NOT NULL,
   deleted_at $ts NULL,
   PRIMARY KEY  (id)
+) $c;";
+        // Hlášení chyb z webu (tlačítko s broukem). Snímek obrazovky jako data URL, záznam událostí jako JSON.
+        $sql[] = "CREATE TABLE {$p}bug_reports (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  created_at $ts NOT NULL,
+  user_id BIGINT UNSIGNED NULL,
+  contact_email VARCHAR(200) NULL,
+  description TEXT NOT NULL,
+  url VARCHAR(500) NULL,
+  user_agent VARCHAR(400) NULL,
+  viewport VARCHAR(40) NULL,
+  client_time VARCHAR(40) NULL,
+  log MEDIUMTEXT NULL,
+  screenshot MEDIUMTEXT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'new',
+  priority VARCHAR(20) NOT NULL DEFAULT 'normal',
+  note TEXT NULL,
+  github_url VARCHAR(300) NULL,
+  resolved_at $ts NULL,
+  updated_at $ts NULL,
+  updated_by BIGINT UNSIGNED NULL,
+  PRIMARY KEY  (id),
+  KEY status (status)
 ) $c;";
         // Žádosti „Jsem porybný“ (notifikace pro správce). unverified = čeká na ověření e-mailu žadatele.
         $sql[] = "CREATE TABLE {$p}warden_requests (

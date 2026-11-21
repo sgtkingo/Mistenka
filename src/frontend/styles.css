@@ -304,3 +304,18 @@ body.season-closed .action-card[data-panel="buy"]{display:none}body.season-close
 .stats-filters #sSeason{grid-column:span 3;max-width:none}
 .stats-filters .stats-row>button{width:100%;height:46px;margin:0;padding:0 14px;white-space:nowrap}
 @media (max-width:760px){.stats-filters{grid-template-columns:1fr 1fr}.stats-label{grid-column:1/-1}.stats-filters #sRevir,.stats-filters #sSeason{grid-column:1/-1}.stats-filters .stats-row>button{grid-column:1/-1}}
+/* Nahlásit chybu */
+.bug-button{display:inline-flex;align-items:center;gap:6px}.bug-button .ico{color:#b5651d}
+@media (max-width:900px){.bug-button span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}}
+.bug-dialog{border:0;border-radius:14px;padding:0;width:min(560px,calc(100vw - 32px));box-shadow:0 20px 60px rgba(0,0,0,.25)}.bug-dialog::backdrop{background:rgba(20,20,20,.45)}
+.bug-form{padding:22px 24px;display:flex;flex-direction:column;gap:6px}.bug-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.bug-title{display:inline-flex;align-items:center;gap:8px;font-size:20px;font-weight:700}.bug-title .ico{color:#b5651d}
+.bug-x{border:0;background:transparent;font-size:24px;line-height:1;color:var(--muted);padding:2px 6px}.bug-file-button{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.bug-form textarea,.bug-form input[type=email]{width:100%;font:inherit;padding:10px 12px;border:1px solid #ddd;border-radius:8px}
+.bug-shot{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.bug-preview{display:flex;align-items:flex-end;gap:12px}.bug-preview img{max-width:220px;max-height:140px;border:1px solid var(--line);border-radius:6px}
+.bug-log{margin-top:6px;font-size:13px;color:var(--muted)}.bug-log pre{max-height:180px;overflow:auto;background:#f6f5f4;padding:10px;border-radius:8px;font-size:11px;white-space:pre-wrap}
+.bug-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-top:12px}
+.bug-detail{margin-top:26px;padding-top:20px;border-top:1px solid var(--line)}.bug-detail-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.bug-detail-head h2{margin:0 6px 0 0}
+.bug-description{white-space:pre-wrap;background:#f6f5f4;padding:14px 16px;border-radius:10px}.bug-screenshot{max-width:100%;border:1px solid var(--line);border-radius:8px}
+.bug-log-table td{font-size:12px}.bug-log-table .log-error td{color:#b52f27}.nav-count{display:inline-block;min-width:18px;padding:0 6px;margin-left:4px;border-radius:9px;background:#b52f27;color:#fff;font-size:11px;line-height:18px;text-align:center}
+.danger-button.toggle-close{display:inline-flex;align-items:center;gap:6px}

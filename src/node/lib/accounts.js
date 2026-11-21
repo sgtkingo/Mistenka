@@ -1,7 +1,7 @@
 "use strict";
 // Uživatelské účty, přihlášení a role (B1). Smlouva v docs/API.md, sekce „Účty“.
 // Ve WordPressu nahradí uživatele, hesla a relace WP (vlastní role a capability); API zůstává stejné.
-const { transaction, serviceLaunched } = require("./db");
+const { transaction, serviceLaunched, seasonOpen } = require("./db");
 const time = require("./time");
 const emails = require("./emails");
 const { noticeRecipients } = require("./mail-accounts");
@@ -24,6 +24,8 @@ const hasRole = (user, role) => rolesOf(user).includes(role);
 const isStaff = (user) => STAFF_ROLES.some((role) => hasRole(user, role));
 // Před spuštěním služby (první otevřená sezona) se registrovat ani přihlásit nemohou rybáři – jen správa.
 const NOT_LAUNCHED = "Místenka zatím nebyla spuštěna – registrace a přihlášení se otevřou s první sezonou.";
+// Při uzavřené sezoně (dnes není otevřená žádná sezona) se přihlásí jen správci a admini.
+const SEASON_CLOSED = "Sezona je uzavřená – přihlásit se teď mohou jen správci a admini. Místenku vrátíte i bez přihlášení (kód místenky a číslo legitimace).";
 // Admin musí mít zapnutou 2FA, jinak nesmí nic spravovat.
 const mfaRequired = (user) => hasRole(user, "admin") && !user.totp_enabled_at;
 
@@ -150,11 +152,16 @@ function createAccounts({ db, config, appUrl }) {
   }
 
   // ---------- registrace a přihlášení ----------
+  // Kdo se smí přihlásit: správa vždy; rybáři jen po spuštění služby a při otevřené sezoně.
+  const closedReason = () => (!serviceLaunched(db) ? ["service_not_launched", NOT_LAUNCHED] : !seasonOpen(db, time.pragueToday()) ? ["season_closed", SEASON_CLOSED] : null);
   const requireLaunchedFor = (user) => {
-    if (!serviceLaunched(db) && !isStaff(user)) throw new ApiError(409, "service_not_launched", NOT_LAUNCHED);
+    const closed = isStaff(user) ? null : closedReason();
+    if (closed) throw new ApiError(409, closed[0], closed[1]);
   };
+  const mayLogIn = (user) => isStaff(user) || !closedReason();
   function register(input = {}) {
-    if (!serviceLaunched(db)) throw new ApiError(409, "service_not_launched", NOT_LAUNCHED);
+    const closed = closedReason();
+    if (closed) throw new ApiError(409, closed[0], closed[1]);
     const email = normalizeEmail(validEmail(input.email));
     const memberId = validMemberId(input.memberId);
     const { firstName, lastName } = validName(input.firstName, input.lastName);
@@ -218,7 +225,7 @@ function createAccounts({ db, config, appUrl }) {
   function requestMagicLink({ email } = {}) {
     validEmail(email);
     const user = userByEmail(email);
-    if (user && (serviceLaunched(db) || isStaff(user))) transaction(db, () => queueEmail(user.email, "magic_link", emails.magicLink(config, { link: link("login", issueAuthToken(user, "magic_link")), minutes: TOKEN_MINUTES.magic_link })));
+    if (user && mayLogIn(user)) transaction(db, () => queueEmail(user.email, "magic_link", emails.magicLink(config, { link: link("login", issueAuthToken(user, "magic_link")), minutes: TOKEN_MINUTES.magic_link })));
     return { sent: true };
   }
   function magicLogin({ token, otp } = {}) {
@@ -235,7 +242,7 @@ function createAccounts({ db, config, appUrl }) {
   function requestPasswordReset({ email } = {}) {
     validEmail(email);
     const user = userByEmail(email);
-    if (user && (serviceLaunched(db) || isStaff(user))) transaction(db, () => queueEmail(user.email, "password_reset", emails.passwordReset(config, { link: link("reset", issueAuthToken(user, "password_reset")), minutes: TOKEN_MINUTES.password_reset })));
+    if (user && mayLogIn(user)) transaction(db, () => queueEmail(user.email, "password_reset", emails.passwordReset(config, { link: link("reset", issueAuthToken(user, "password_reset")), minutes: TOKEN_MINUTES.password_reset })));
     return { sent: true };
   }
   function resetPassword({ token, password, otp } = {}) {

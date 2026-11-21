@@ -53,6 +53,8 @@
     }
   }
   async function rawApi(path, { method = "GET", body, token, memberId, query } = {}) {
+    const started = Date.now();
+    const logApi = (result) => logEvent("api", `${method} ${maskPath(path)} → ${result} (${Date.now() - started} ms)`);
     let url = API_BASE + path;
     if (query) {
       const params = new URLSearchParams(query).toString();
@@ -67,10 +69,12 @@
     try {
       response = await fetch(url, { method, headers, credentials: "same-origin", body: body === undefined ? undefined : JSON.stringify(body) });
     } catch {
+      logApi("síť nedostupná");
       throw new ApiError("Server je nedostupný. Zkontrolujte připojení a zkuste to znovu.", 0, "network");
     }
     let data = null;
     try { data = await response.json(); } catch { /* prázdná nebo neplatná odpověď */ }
+    logApi(response.ok ? response.status : `${response.status} ${data?.code || "error"}`);
     if (!response.ok) throw new ApiError(data?.error || "Požadavek se nepodařilo dokončit.", response.status, data?.code || "error");
     return data;
   }
@@ -458,6 +462,7 @@
   const ticketCheckUrl = (code) => new URL(`status.html?code=${encodeURIComponent(code)}`, location.href).href;
 
   function showToast(message) {
+    logEvent("toast", message);
     const toast = qs("#toast");
     if (!toast) return window.alert(message);
     toast.textContent = message;
@@ -582,10 +587,115 @@
     water: '<path d="M2 12c2-1.5 4-1.5 6 0s4 1.5 6 0 4-1.5 6 0"/><path d="M2 17c2-1.5 4-1.5 6 0s4 1.5 6 0 4-1.5 6 0"/><path d="M2 7c2-1.5 4-1.5 6 0s4 1.5 6 0 4-1.5 6 0"/>',
     map: '<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
     logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/>',
+    bug: '<rect x="8" y="6" width="8" height="14" rx="4"/><path d="M9 3l1.5 3M15 3l-1.5 3M12 10v10M3 13h5M16 13h5M4 8l4 2M20 8l-4 2M4 19l4-2M20 19l-4-2"/>',
+    lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
     ticket: '<path d="M3 9V7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a3 3 0 0 0 0 6v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a3 3 0 0 0 0-6z"/><path d="M13 5v2M13 11v2M13 17v2"/>'
   };
   const icon = (name, size = 16) => `<svg class="ico" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
-  window.Mistenka = { icon, qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest, attachQrScanner, attachMemberIdScanner, codeFromQr, memberIdFromBarcode, roleBadge, roleBadges };
+  // ---------- hlášení chyb ----------
+  // Záznam posledních událostí (stránky, volání API, chyby, hlášky) v sessionStorage – přikládá se k hlášení.
+  // Bez osobních údajů: jen cesta bez parametrů a kotvy, kódy místenek zamaskované, žádná těla požadavků.
+  function maskPath(path) { return String(path).split(/[?#]/)[0].replace(/\/[A-Z0-9]{6}(?=\/|$)/g, "/******"); }
+  function logEvent(type, message) {
+    try {
+      const list = JSON.parse(sessionStorage.getItem("mistenka.log") || "[]");
+      list.push({ at: new Date().toISOString(), type, message: String(message ?? "").slice(0, 300), page: location.pathname });
+      sessionStorage.setItem("mistenka.log", JSON.stringify(list.slice(-60)));
+    } catch { /* bez úložiště se záznam nevede */ }
+  }
+  const readLog = () => { try { return JSON.parse(sessionStorage.getItem("mistenka.log") || "[]"); } catch { return []; } };
+  logEvent("page", "stránka načtena");
+  window.addEventListener("error", (e) => logEvent("error", `${e.message || "chyba skriptu"}${e.filename ? ` (${e.filename.split("/").pop()}:${e.lineno})` : ""}`));
+  window.addEventListener("unhandledrejection", (e) => logEvent("error", `nezachycená chyba: ${e.reason?.message || e.reason}`));
+
+  // Snímek obrazovky: zmenšit a převést na JPEG, aby se vešel do limitu (~1,5 MB).
+  function shrinkImage(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(img.src);
+        for (const [maxW, quality] of [[1600, 0.82], [1280, 0.7], [1000, 0.6]]) {
+          const scale = Math.min(1, maxW / img.width);
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+          const data = canvas.toDataURL("image/jpeg", quality);
+          if (data.length < 1_900_000) return resolve(data);
+        }
+        reject(new Error("Snímek je příliš velký."));
+      };
+      img.onerror = () => reject(new Error("Soubor není obrázek."));
+      img.src = URL.createObjectURL(file);
+    });
+  }
+  async function openBugReport() {
+    let dialog = qs("#bugDialog");
+    if (!dialog) {
+      dialog = document.createElement("dialog");
+      dialog.id = "bugDialog";
+      dialog.className = "bug-dialog";
+      document.body.append(dialog);
+    }
+    const user = await loadSession().catch(() => null);
+    const log = readLog();
+    let screenshot = null;
+    dialog.innerHTML = `<form method="dialog" class="bug-form" novalidate>
+      <div class="bug-head"><span class="bug-title">${icon("bug", 20)} Nahlásit chybu</span><button class="bug-x bug-close" type="button" aria-label="Zavřít">×</button></div>
+      <label class="field-label req" for="bugText">Co se stalo?</label>
+      <textarea id="bugText" rows="5" maxlength="4000" placeholder="Popište, co jste dělali a co se pokazilo (např. po kliknutí na Zaplatit se nic nestalo)."></textarea>
+      ${user ? `<p class="field-help">Hlášení odešle ${esc(`${user.firstName} ${user.lastName}`)} – odpovíme na e-mail účtu.</p>` : '<label class="field-label" for="bugEmail">E-mail pro odpověď <span class="optional">(nepovinný)</span></label><input id="bugEmail" type="email" maxlength="200" autocomplete="email">'}
+      <label class="field-label" for="bugFile">Snímek obrazovky <span class="optional">(nepovinný)</span></label>
+      <div class="bug-shot"><label class="secondary-button bug-file-button">${icon("doc")} Přiložit snímek…<input id="bugFile" type="file" accept="image/*" hidden></label><span class="field-help">nebo ho vložte ze schránky (Ctrl+V)</span></div>
+      <div class="bug-preview hidden" id="bugPreview"><img alt="Náhled snímku obrazovky"><button class="text-button" type="button" id="bugRemoveShot">Odebrat snímek</button></div>
+      <details class="bug-log"><summary>Přiloží se čas, stránka, prohlížeč a záznam posledních ${log.length} událostí</summary><pre>${esc(log.map((e) => `${e.at.slice(11, 19)} ${e.type} ${e.page} ${e.message}`).join("\n") || "žádné události")}</pre></details>
+      <div class="bug-actions"><button class="secondary-button bug-close" type="button">Zrušit</button><button class="primary-button" type="submit" id="bugSend">Odeslat hlášení</button></div>
+    </form>`;
+    const setShot = (data) => {
+      screenshot = data;
+      qs("#bugPreview", dialog).classList.toggle("hidden", !data);
+      if (data) qs("#bugPreview img", dialog).src = data;
+    };
+    const useFile = async (file) => { try { setShot(await shrinkImage(file)); } catch (error) { showToast(error.message); } };
+    qs("#bugFile", dialog).addEventListener("change", (e) => { if (e.target.files[0]) useFile(e.target.files[0]); });
+    dialog.onpaste = (e) => { const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith("image/")); if (item) { e.preventDefault(); useFile(item.getAsFile()); } };
+    qs("#bugRemoveShot", dialog).addEventListener("click", () => { setShot(null); qs("#bugFile", dialog).value = ""; });
+    qsa(".bug-close", dialog).forEach((b) => b.addEventListener("click", () => dialog.close()));
+    qs("form", dialog).addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const description = qs("#bugText", dialog).value.trim();
+      if (description.length < 10) { qs("#bugText", dialog).focus(); return showToast("Popište prosím, co se stalo (aspoň 10 znaků)."); }
+      const button = qs("#bugSend", dialog);
+      button.disabled = true;
+      try {
+        const { id } = await api("/bug-reports", { method: "POST", body: {
+          description, contactEmail: qs("#bugEmail", dialog)?.value.trim() || "", url: location.pathname, userAgent: navigator.userAgent,
+          viewport: `${window.innerWidth}x${window.innerHeight}`, clientTime: new Date().toISOString(), log: readLog(), screenshot
+        } });
+        dialog.close();
+        showToast(`Děkujeme, chyba je nahlášená (č. ${id}).`);
+      } catch (error) { showToast(error.message); button.disabled = false; }
+    });
+    dialog.showModal();
+    qs("#bugText", dialog).focus();
+  }
+  // Tlačítko s broukem v horním panelu, nalevo od přihlášení.
+  function addBugButton() {
+    const hosts = qsa(".user-menu").length ? qsa(".user-menu") : qsa(".site-header");
+    hosts.forEach((host) => {
+      if (qs(".bug-button", host)) return;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "login-button bug-button";
+      button.title = "Nahlásit chybu";
+      button.innerHTML = `${icon("bug")}<span>Nahlásit chybu</span>`;
+      button.addEventListener("click", openBugReport);
+      host.prepend(button);
+    });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", addBugButton); else addBugButton();
+
+  window.Mistenka = { icon, openBugReport, logEvent, qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest, attachQrScanner, attachMemberIdScanner, codeFromQr, memberIdFromBarcode, roleBadge, roleBadges };
 })();
 
 // Pole s číslem členské legitimace (max. 8 znaků): ponechá jen číslice, aby vložené „1234 5678“ nepřišlo o číslici.

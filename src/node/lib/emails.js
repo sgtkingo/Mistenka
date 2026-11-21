@@ -176,6 +176,17 @@ function paymentSettingsChanged(config, { actorName, before, after, at }) {
   };
 }
 
+// ---------- hlášení chyby (všem adminům) ----------
+function bugReport(config, { report, link }) {
+  const who = report.user ? `${report.user.name} <${report.user.email}>` : report.contactEmail ? `nepřihlášený, odpověď na ${report.contactEmail}` : "nepřihlášený uživatel";
+  const rows = [["Hlášení", `#${report.id}`], ["Čas", czDateTime(report.createdAt)], ["Nahlásil", who], ["Stránka", report.url || "—"], ["Snímek obrazovky", report.hasScreenshot ? "ano" : "ne"]];
+  return {
+    subject: `Místenka – nahlášená chyba #${report.id}`,
+    html: layout(config, "Nahlášená chyba", `<p style="margin:0 0 16px;white-space:pre-wrap">${esc(report.description)}</p>${table(rows)}${button(link, "Otevřít v portálu")}`),
+    text: textBlock(["Nahlášená chyba", "", report.description, "", ...rows.map(([k, v]) => `${k}: ${v}`), `Portál: ${link}`])
+  };
+}
+
 // ---------- zrušení správcem (B4) ----------
 function ticketCancelled(config, { ticket, revir }) {
   const contact = [config.organization.contact?.email, config.organization.contact?.phone].filter(Boolean).join(", ");
@@ -256,4 +267,4 @@ function createFileMailer(dir) {
   };
 }
 
-module.exports = { paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, ticketCancelled, paymentSettingsChanged, seasonReport, databaseAutoRestored, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, wardenRequest, wardenRequestDecided, createFileMailer, czDate };
+module.exports = { bugReport, paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, ticketCancelled, paymentSettingsChanged, seasonReport, databaseAutoRestored, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, wardenRequest, wardenRequestDecided, createFileMailer, czDate };

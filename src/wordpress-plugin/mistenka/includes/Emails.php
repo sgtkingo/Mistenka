@@ -295,6 +295,19 @@ final class Emails
     }
 
     // ---------- nastavení (B5) ----------
+    // Hlášení chyby (všem adminům).
+    public static function bugReport(array $config, array $x): array
+    {
+        $r = $x['report'];
+        $who = $r['user'] ? "{$r['user']['name']} <{$r['user']['email']}>" : ($r['contactEmail'] ? "nepřihlášený, odpověď na {$r['contactEmail']}" : 'nepřihlášený uživatel');
+        $rows = [['Hlášení', "#{$r['id']}"], ['Čas', self::czDateTime($r['createdAt'])], ['Nahlásil', $who], ['Stránka', $r['url'] ?: '—'], ['Snímek obrazovky', $r['hasScreenshot'] ? 'ano' : 'ne']];
+        return self::mail(
+            "Místenka – nahlášená chyba #{$r['id']}",
+            self::layout($config, 'Nahlášená chyba', '<p style="margin:0 0 16px;white-space:pre-wrap">' . self::esc($r['description']) . '</p>' . self::table($rows) . self::button($x['link'], 'Otevřít v portálu')),
+            self::text(array_merge(['Nahlášená chyba', '', $r['description'], ''], self::rowsText($rows), ["Portál: {$x['link']}"]))
+        );
+    }
+
     public static function paymentSettingsChanged(array $config, array $x): array
     {
         $labels = ['accountNumber' => 'Číslo účtu', 'bankCode' => 'Kód banky', 'iban' => 'IBAN', 'recipientName' => 'Příjemce', 'reservationMinutes' => 'Rezervace (min)', 'messagePrefix' => 'Zpráva pro příjemce'];

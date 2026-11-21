@@ -123,7 +123,7 @@ Není součástí API. Frontend ji načítá přímo z [Open-Meteo](https://open
 ## Endpointy
 
 ### `GET /config`
-Veřejná konfigurace: `organization` (`name`, `shortName`, `web`, `privacyUrl`, `contact`), `payment` (`mode`: `fake` | `fio`, `reservationMinutes`), `reviry[]` (včetně `species`), `today` (Praha), `now`, `devMode`, `service: { launched }` (viz Spuštění služby). Nikdy neobsahuje číslo účtu, IBAN ani tokeny.
+Veřejná konfigurace: `organization` (`name`, `shortName`, `web`, `privacyUrl`, `contact`), `payment` (`mode`: `fake` | `fio`, `reservationMinutes`), `reviry[]` (včetně `species`), `today` (Praha), `now`, `devMode`, `service: { launched, seasonOpen }` (viz Spuštění služby; `seasonOpen` = dnes je otevřená některá sezona). Nikdy neobsahuje číslo účtu, IBAN ani tokeny.
 
 ### `GET /reviry/{id}/availability`
 `{ revirId, today, days: [{ date, capacity, taken, available, subdistricts: [{ number, name, priceCzk, capacity, taken, available }], closed, closedReason, closedCode }] }` pro dnešek až `bookingDaysAhead`. U revíru s podrevíry v prodeji jsou místa po podrevírech a `capacity` / `taken` / `available` dne jsou jejich součty; jinak je `subdistricts` prázdné. Uzavřený den (mimo sezonu nebo mimořádně uzavřený, viz Provoz) má `closed: true`, `available: 0`, důvod a kód (`out_of_season` | `revir_closed`); otevřený den má `closedReason` i `closedCode` `null`. Když jsou všechny dny `out_of_season`, úvodní stránka ukáže „sezona je uzavřená“. Neznámý revír → `404 unknown_revir`.
@@ -226,7 +226,7 @@ Dokud neexistuje žádný admin, server při startu vypíše do konzole jednorá
 | `GET /auth/me` | – | `{ user: <User> \| null, csrf }` (vždy `200`) |
 | `POST /auth/register` | `{ email, firstName, lastName, birthDate, memberId, password?, consent: true, wardenRequest? }` (`wardenRequest: true` = „Jsem porybný“, žádost se odešle po ověření e-mailu) | `{ sent: true }`; `400 invalid_email`, `invalid_name`, `invalid_birth_date`, `invalid_member_id`, `weak_password`, `consent_required`; `409 member_id_taken`, `409 service_not_launched` (před spuštěním služby) |
 | `POST /auth/verify` | `{ token }` | `{ user, csrf }` + cookie; `400 invalid_link` |
-| `POST /auth/login` | `{ email, password, otp? }` | `{ user, csrf }` + cookie; `401 invalid_credentials`, `401 otp_required`, `401 invalid_otp`, `403 email_not_verified` (pošle nový ověřovací odkaz), `409 service_not_launched` (rybář před spuštěním služby; správce a admin se přihlásí) |
+| `POST /auth/login` | `{ email, password, otp? }` | `{ user, csrf }` + cookie; `401 invalid_credentials`, `401 otp_required`, `401 invalid_otp`, `403 email_not_verified` (pošle nový ověřovací odkaz), `409 service_not_launched` (rybář před spuštěním služby), `409 season_closed` (rybář při uzavřené sezoně – dnes není otevřená žádná sezona); správce a admin se přihlásí vždy. Registrace vrací stejné kódy, žádosti o odkaz rybářům v té době nic nepošlou |
 | `POST /auth/magic-link` | `{ email }` | `{ sent: true }` |
 | `POST /auth/magic` | `{ token, otp? }` | `{ user, csrf }` + cookie; `400 invalid_link`, `401 otp_required`/`invalid_otp` (odkaz pak zůstává platný) |
 | `POST /auth/password-reset` | `{ email }` | `{ sent: true }` |
@@ -297,7 +297,8 @@ Portál → **Admin → Emailoví klienti**. Organizace může mít víc poštov
 | --- | --- |
 | `tickets` – Místenky | `payment_instructions`, `ticket_issued`, `return_reminder`, `ticket_closed`, `ticket_seized`, `ticket_cancelled`, `closure_notice`, `member_blocked` |
 | `accounts` – Účty | `account_verify`, `account_exists`, `magic_link`, `password_reset`, `email_change`, `staff_invite`, `account_deleted`, `warden_request_approved`, `warden_request_rejected` |
-| `notices` – Upozornění správcům | `warden_request`, `seizure_notice`, `limit_exceeded`, `season_report`, `payment_settings_changed`, `database_auto_restored` |
+| `notices` – Upozornění správců | `warden_request`, `seizure_notice`, `limit_exceeded`, `season_report`, `payment_settings_changed`, `database_auto_restored` |
+| `bugs` – Hlášení chyb | `bug_report` (všem adminům) |
 
 - Účty zakládá, upravuje, testuje a maže **jen admin**; odesílatele skupin může vybrat správce i admin (API), v UI je sekce jen pro admina.
 - Odesílatelem skupiny může být jen **ověřený** účet = úspěšně odeslaný testovací e-mail. Změna adresy odesílatele, serveru, portu, šifrování, přihlašovacího jména nebo hesla ověření zruší; neověřený přiřazený účet se nepoužije, dokud ho admin znovu neotestuje.
@@ -321,6 +322,20 @@ Portál → **Admin → Emailoví klienti**. Organizace může mít víc poštov
 { "id": 1, "label": "Místenka", "fromEmail": "mistenka@…", "fromName": "Místenka – MO Karviná", "host": "smtp.websupport.cz", "port": 465, "encryption": "ssl",
   "username": "mistenka@…", "hasPassword": true, "verified": true, "verifiedAt": "…", "verifiedTo": "admin@…", "lastError": null, "usedFor": ["tickets"], "createdAt": "…", "updatedAt": "…" }
 ```
+
+## Hlášení chyb
+
+Tlačítko s broukem v horním panelu (nalevo od přihlášení) otevře formulář: popis (povinný), e-mail pro odpověď (jen nepřihlášený), volitelný snímek obrazovky (soubor nebo vložení ze schránky; prohlížeč ho zmenší a převede na JPEG) a automaticky čas, stránka, prohlížeč, velikost okna a záznam posledních událostí (posledních 60 v rámci záložky: načtení stránek, volání API s výsledkem a dobou, chyby skriptů, zobrazené hlášky; bez parametrů adres, s maskovanými kódy místenek, bez těl požadavků). Každé hlášení dostanou e-mailem všichni admini (skupina `bugs` – Hlášení chyb v E-mailových klientech). Portál: **Admin → Hlášení chyb**.
+
+| Endpoint | Tělo | Odpověď / chyby |
+| --- | --- | --- |
+| `POST /bug-reports` | `{ description, contactEmail?, url, userAgent, viewport, clientTime, log: [{ at, type, message, page }], screenshot? }` (`screenshot` = data URL PNG/JPEG/WebP do ~1,5 MB; `url` se uloží bez parametrů a kotvy; přihlášený uživatel se připojí automaticky) | `201 { id }`; `400 invalid_description` (10–4000 znaků), `invalid_email`, `invalid_screenshot`; `429` (5 / 10 min) |
+| `GET /manage/bug-reports?status=` 🛡 admin | `status`: `new` \| `in_progress` \| `resolved` \| `wontfix` (prázdné = vše) | `{ reports: [{ id, createdAt, status, priority, description, url, user, contactEmail, hasScreenshot, githubUrl, note, updatedAt, resolvedAt }], counts: { new, in_progress, resolved, wontfix }, github: { configured, repo } }` |
+| `GET /manage/bug-reports/{id}` 🛡 admin | – | `{ report }` navíc s `userAgent`, `viewport`, `clientTime`, `log`, `screenshot` |
+| `PATCH /manage/bug-reports/{id}` 🛡 admin | `{ status?, priority?: "low" \| "normal" \| "high" \| "critical", note?, githubUrl? }` | `{ report }`; `400 invalid_status`, `invalid_priority`, `invalid_github_url` (jen `https://github.com/…/issues/N`) |
+| `POST /manage/bug-reports/{id}/github` 🛡 admin | – | `{ report }` s `githubUrl` (založí issue přes GitHub API, bez osobních údajů a snímku; nové hlášení přejde na `in_progress`); `409 github_not_configured`, `409 already_on_github`, `502 github_failed` |
+
+GitHub: Node proměnné `MISTENKA_GITHUB_TOKEN` (token s právem zakládat issues) a `MISTENKA_GITHUB_REPO` (`vlastník/repozitář`), WordPress stejnojmenné konstanty ve `wp-config.php`. Bez nich portál nabídne zkopírování textu pro ruční založení issue. Uchovávání: snímek obrazovky se maže po 90 dnech, vyřízené hlášení (`resolved`, `wontfix`) rok po vyřízení.
 
 ## Provoz (B4)
 

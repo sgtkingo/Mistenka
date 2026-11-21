@@ -345,7 +345,9 @@ qs("#logoutButton").addEventListener("click", (event) => busy(event.currentTarge
     const cfg = await loadConfig();
     applyBranding(cfg);
     // Před spuštěním služby (první sezona) se registrovat nedá – přihlásit se může jen správa.
-    if (cfg.service && !cfg.service.launched) {
+    // Při uzavřené sezoně se přihlásí jen správci a admini (rybáři i registrace až s otevřenou sezonou).
+    if (cfg.service && (!cfg.service.launched || cfg.service.seasonOpen === false)) {
+      if (cfg.service.launched) qs("#registerClosed").textContent = "Sezona je uzavřená – registrace a přihlášení rybářů se otevřou s další sezonou. Místenku vrátíte i bez přihlášení.";
       qs("#registerClosed").classList.remove("hidden");
       qsa("#registerForm input, #registerForm button[type=submit]").forEach((el) => { el.disabled = true; });
     }

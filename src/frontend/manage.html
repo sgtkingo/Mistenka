@@ -40,6 +40,7 @@
         <span class="manage-nav-group admin-only hidden">Admin</span>
         <button class="manage-nav-item admin-only hidden" type="button" data-section="bank">Bankovní spojení</button>
         <button class="manage-nav-item admin-only hidden" type="button" data-section="email">Emailoví klienti</button>
+        <button class="manage-nav-item admin-only hidden" type="button" data-section="bugs">Hlášení chyb <span class="nav-count hidden" id="bugCount"></span></button>
         <button class="manage-nav-item admin-only hidden" type="button" data-section="backups">Zálohy</button>
         <button class="manage-nav-item admin-only hidden" type="button" data-section="audit">Audit změn</button>
       </nav>
@@ -229,6 +230,14 @@
         <div class="panel-heading"><div><span class="section-kicker">Admin</span><h1>Emailoví klienti</h1></div></div>
         <p class="panel-intro">Všechny automatické e-maily Místenky odcházejí přes poštovní účty (SMTP) nastavené tady – žádné výchozí odesílání neexistuje. Účet nejdřív ověřte testovacím e-mailem, pak ho vyberte jako odesílatele skupiny e-mailů a nastavte příjemce upozornění správcům. Bez toho nejde otevřít první sezonu.</p>
         <div id="emailPanel"></div>
+      </section>
+
+      <section class="panel-card manage-section hidden" id="section-bugs">
+        <div class="panel-heading"><div><span class="section-kicker">Admin</span><h1>Hlášení chyb</h1></div></div>
+        <p class="panel-intro">Chyby nahlášené z webu (tlačítko s broukem v horním panelu): popis, čas, stránka, prohlížeč, záznam posledních událostí a případně snímek obrazovky. Každé hlášení přijde adminům e-mailem. Snímky se po 90 dnech mažou, vyřízená hlášení rok po vyřízení.</p>
+        <div class="tabs bug-tabs" id="bugTabs"></div>
+        <div id="bugList"></div>
+        <div id="bugDetail"></div>
       </section>
 
       <section class="panel-card manage-section hidden" id="section-backups">

@@ -165,7 +165,7 @@ test("průvodce prvním spuštěním: admin vznikne jen s jednorázovým odkazem
 test("spuštění služby: před otevřením první sezony je zavřeno, otevřít ji lze až s nastavenými e-maily", async () => {
   await setClock("2026-06-10T08:00:00Z");
   const session = ROOT.session;
-  assert.deepEqual((await call("GET", "/config")).data.service, { launched: false });
+  assert.deepEqual((await call("GET", "/config")).data.service, { launched: false, seasonOpen: false });
   const days = (await call("GET", "/reviry/revir-a/availability")).data.days;
   assert.ok(days.every((d) => d.closed && d.closedReason === "Sezona zatím nebyla otevřena"), JSON.stringify(days[0]));
   assert.equal((await call("POST", "/orders", { body: orderBody() })).data.code, "out_of_season");
@@ -175,7 +175,7 @@ test("spuštění služby: před otevřením první sezony je zavřeno, otevří
 
   const email = (await call("GET", "/manage/email/accounts", { session })).data;
   assert.equal(email.ready, false);
-  assert.deepEqual(email.missing, ["tickets", "accounts", "notices", "noticeRecipients"]);
+  assert.deepEqual(email.missing, ["tickets", "accounts", "notices", "bugs", "noticeRecipients"]);
   assert.deepEqual(email.noticeRecipients, []);
   assert.ok(!("fallback" in email), "výchozí odesílatel neexistuje");
   const season = { name: "Sezona 2026", opensOn: "2026-01-01" };
@@ -186,8 +186,8 @@ test("spuštění služby: před otevřením první sezony je zavřeno, otevří
   assert.equal((await call("POST", `/manage/email/accounts/${account.id}/verify`, { body: { to: ROOT.email }, session })).status, 200);
   assert.equal((await call("PUT", "/manage/email/senders", { body: { noticeRecipients: "spravce-mo@example.cz, spatna" }, session })).data.code, "invalid_email");
   const partial = await call("PUT", "/manage/email/senders", { body: { tickets: account.id, accounts: account.id }, session });
-  assert.deepEqual(partial.data.missing, ["notices", "noticeRecipients"]);
-  const saved = await call("PUT", "/manage/email/senders", { body: { notices: account.id, noticeRecipients: ["Spravce-MO@example.cz", "vybor@example.cz", "vybor@example.cz"] }, session });
+  assert.deepEqual(partial.data.missing, ["notices", "bugs", "noticeRecipients"]);
+  const saved = await call("PUT", "/manage/email/senders", { body: { notices: account.id, bugs: account.id, noticeRecipients: ["Spravce-MO@example.cz", "vybor@example.cz", "vybor@example.cz"] }, session });
   assert.equal(saved.status, 200, JSON.stringify(saved.data));
   assert.deepEqual(saved.data.noticeRecipients, ["spravce-mo@example.cz", "vybor@example.cz"]);
   assert.equal(saved.data.ready, true);
@@ -195,7 +195,7 @@ test("spuštění služby: před otevřením první sezony je zavřeno, otevří
   const opened = await call("POST", "/manage/seasons", { body: season, session });
   assert.equal(opened.status, 201, JSON.stringify(opened.data));
   assert.equal(opened.data.season.state, "open");
-  assert.deepEqual((await call("GET", "/config")).data.service, { launched: true });
+  assert.deepEqual((await call("GET", "/config")).data.service, { launched: true, seasonOpen: true });
   assert.equal((await call("GET", "/reviry/revir-a/availability")).data.days[0].closed, false);
   Object.assign(LAUNCH, { season: opened.data.season, accountId: account.id });
 });
@@ -864,8 +864,15 @@ test("důležité zprávy: správa jen pro správce, veřejně nejvýš 3 aktivn
 
 test("sezona: prodává se jen v otevřené sezoně; revír bez sezony je zavřený; dny mimo sezonu jsou v dostupnosti uzavřené", async () => {
   await setClock("2026-06-10T08:00:00Z");
-  const { session } = await managerAccount();
+  const manager = await managerAccount();
+  const { session } = manager;
+  const fisher = await verifiedAccount();
   assert.equal((await call("DELETE", `/manage/seasons/${LAUNCH.season.id}`, { session })).status, 200);
+  // Uzavřená sezona: rybář se nepřihlásí ani nezaregistruje, správa ano.
+  const denied = await call("POST", "/auth/login", { body: { email: fisher.email, password: fisher.password } });
+  assert.deepEqual([denied.status, denied.data.code], [409, "season_closed"]);
+  assert.equal((await call("POST", "/auth/register", { body: accountBody() })).data.code, "season_closed");
+  assert.equal((await call("POST", "/auth/login", { body: { email: manager.email, password: manager.password } })).status, 200, "správce se přihlásí");
   const none = (await call("GET", "/reviry/revir-b/availability")).data.days[0];
   assert.equal(none.closed, true, "bez sezony je zavřeno");
   assert.equal(none.closedReason, "Mimo sezonu", "služba už běží – jen mimo sezonu");
@@ -1459,7 +1466,8 @@ test("e-mailoví klienti: účty spravuje admin, heslo se nevrací, odesílatele
   const listed = await call("GET", "/manage/email/accounts", { session: manager.session });
   assert.equal(listed.status, 200, JSON.stringify(listed.data));
   assert.equal(listed.data.canEdit, false, "správce účty jen vidí");
-  assert.deepEqual(listed.data.groups.map((g) => g.id), ["tickets", "accounts", "notices"]);
+  assert.deepEqual(listed.data.groups.map((g) => g.id), ["tickets", "accounts", "notices", "bugs"]);
+  assert.equal(listed.data.groups.find((g) => g.id === "notices").label, "Upozornění správců");
   assert.ok(listed.data.accounts.some((a) => a.id === account.id) && !JSON.stringify(listed.data).includes("smtp-tajne-heslo"));
   assert.equal((await call("POST", `/manage/email/accounts/${account.id}/verify`, { body: {}, session: manager.session })).data.code, "forbidden_role");
   assert.equal((await call("PUT", "/manage/email/senders", { body: { tickets: account.id }, session: manager.session })).data.code, "account_not_verified", "neověřený účet nejde přiřadit");
@@ -1522,11 +1530,44 @@ test("podrevíry: místenka na jeden podrevír s vlastní cenou a kapacitou; jed
   assert.equal((await call("PUT", "/manage/settings/reviry/revir-b", { body: { data: revirB.data, note: "Zpět" }, session: manager.session })).status, 200);
 });
 
+// ---------- hlášení chyb ----------
+test("hlášení chyb: kdokoli nahlásí (popis, záznam událostí, snímek), admin dostane e-mail, řeší stav a prioritu", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+  const body = { description: "Po kliknutí na Zaplatit se nic nestalo.", url: "/payment.html", userAgent: "Test", viewport: "390x844", clientTime: "2026-06-10T08:00:00Z",
+    log: [{ at: "2026-06-10T07:59:58Z", type: "api", message: "POST /orders → 500 error", page: "/" }], screenshot: png };
+  for (const [overrides, code] of [[{ description: "krátké" }, "invalid_description"], [{ screenshot: "data:text/html;base64,PGI+" }, "invalid_screenshot"], [{ contactEmail: "x" }, "invalid_email"]]) {
+    assert.equal((await call("POST", "/bug-reports", { body: { ...body, ...overrides } })).data.code, code, JSON.stringify(overrides));
+  }
+  const sent = await call("POST", "/bug-reports", { body: { ...body, contactEmail: "Rybar@Example.cz" } });
+  assert.equal(sent.status, 201, JSON.stringify(sent.data));
+  assert.ok(await lastEmail(ROOT.email, "bug_report"), "e-mail adminovi");
+
+  const manager = await managerAccount();
+  assert.equal((await call("GET", "/manage/bug-reports", { session: manager.session })).status, 403, "jen admin");
+  const admin = {};
+  await setClock(new Date(T0 + 150_000).toISOString());
+  assert.equal((await call("POST", "/auth/login", { body: { email: ROOT.email, password: ROOT.password, otp: totp(ROOT.secret, T0 + 150_000) }, session: admin })).status, 200);
+  await setClock("2026-06-10T08:00:00Z");
+  const list = (await call("GET", "/manage/bug-reports", { session: admin })).data;
+  const row = list.reports.find((r) => r.id === sent.data.id);
+  assert.deepEqual([row.status, row.priority, row.hasScreenshot, row.contactEmail, list.github.configured], ["new", "normal", true, "rybar@example.cz", false]);
+  assert.ok(!("screenshot" in row) && !("log" in row), "seznam bez snímku a záznamu");
+  const detail = (await call("GET", `/manage/bug-reports/${row.id}`, { session: admin })).data.report;
+  assert.deepEqual([detail.screenshot, detail.log[0].message, detail.viewport], [png, "POST /orders → 500 error", "390x844"]);
+  assert.equal((await call("PATCH", `/manage/bug-reports/${row.id}`, { body: { priority: "urgent" }, session: admin })).data.code, "invalid_priority");
+  assert.equal((await call("PATCH", `/manage/bug-reports/${row.id}`, { body: { githubUrl: "https://example.cz/1" }, session: admin })).data.code, "invalid_github_url");
+  const updated = (await call("PATCH", `/manage/bug-reports/${row.id}`, { body: { status: "resolved", priority: "high", note: "Opraveno v 1.0.1", githubUrl: "https://github.com/mo/mistenka/issues/7" }, session: admin })).data.report;
+  assert.deepEqual([updated.status, updated.priority, updated.note, updated.githubUrl, Boolean(updated.resolvedAt)], ["resolved", "high", "Opraveno v 1.0.1", "https://github.com/mo/mistenka/issues/7", true]);
+  assert.equal((await call("GET", "/manage/bug-reports?status=resolved", { session: admin })).data.counts.resolved, 1);
+  assert.equal((await call("POST", `/manage/bug-reports/${row.id}/github`, { session: admin })).data.code, "github_not_configured");
+});
+
 // ---------- pozvání správce ----------
 test("pozvání správce: admin pozve správce, účet jen pro správu, heslo z odkazu", async () => {
-  await setClock(new Date(T0 + 120_000).toISOString());
+  await setClock(new Date(T0 + 180_000).toISOString());
   const session = {};
-  assert.equal((await call("POST", "/auth/login", { body: { email: ROOT.email, password: ROOT.password, otp: totp(ROOT.secret, T0 + 120_000) }, session })).status, 200);
+  assert.equal((await call("POST", "/auth/login", { body: { email: ROOT.email, password: ROOT.password, otp: totp(ROOT.secret, T0 + 180_000) }, session })).status, 200);
   await setClock("2026-06-10T08:00:00Z");
   const member = await verifiedAccount();
   assert.equal((await call("POST", "/manage/users", { body: { email: "x@example.cz", firstName: "A", lastName: "B", roles: ["warden"] }, session })).data.code, "invalid_roles");
