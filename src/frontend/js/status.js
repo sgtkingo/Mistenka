@@ -1,4 +1,4 @@
-const { qs, qsa, esc, api, czDate, czDateTime, initUserMenu, hasRole, ticketState, showToast, limitsHtml } = window.Mistenka;
+const { qs, qsa, esc, api, loadConfig, czDate, czDateTime, initUserMenu, hasRole, ticketState, showToast, limitsHtml } = window.Mistenka;
 const code = (new URLSearchParams(location.search).get("code") || "").trim().toUpperCase();
 
 // Stav -> [popisek, vysvětlení, CSS třída, ikona]
@@ -20,6 +20,9 @@ function showError(message) {
   qs("#statusError").textContent = message;
   qs("#statusError").classList.remove("hidden");
 }
+
+// Falešná banka (testovací web): varování, že místenky neplatí.
+loadConfig().then((config) => qs("#testModeBanner").classList.toggle("hidden", config.payment?.mode !== "fake")).catch(() => {});
 
 async function loadStatus() {
   if (!/^[A-Z0-9]{6}$/.test(code)) return showError("Chybí platný šestimístný kód místenky.");

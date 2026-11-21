@@ -120,7 +120,7 @@ qs("#cancelPayment").addEventListener("click", async () => {
 });
 qs("#downloadTicket").addEventListener("click", () => {
   const revir = revirOf(ticket);
-  window.MistenkaPdf.download({ ticket, revir, organization: config.organization, checkUrl: ticketCheckUrl(ticket.code), hours: fishingHours(revir, ticket.date) });
+  window.MistenkaPdf.download({ ticket, revir, organization: config.organization, checkUrl: ticketCheckUrl(ticket.code), hours: fishingHours(revir, ticket.date), testMode: config.payment.mode === "fake" });
 });
 qs("#printTicket").addEventListener("click", () => window.print());
 

@@ -19,6 +19,9 @@ const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial
 // Barva hlavičky podle typu zprávy: info modrá, success zelená (vystaveno, uloženo),
 // warning oranžová (upozornění, je potřeba něco udělat), danger červená (zrušeno, zadrženo, blokace).
 const TONES = { info: ["#0075de", "#cfe5fb"], success: ["#1a8245", "#d3f0dc"], warning: ["#c2610c", "#fde3c8"], danger: ["#c8302a", "#f9d2cf"] };
+// Falešná banka (testovací web): každý e-mail nese varování, předmět začíná „[TEST]“.
+const TEST_NOTE = "Testovací verze Místenky – platby se jen simulují a vystavené místenky neopravňují k lovu.";
+const testMode = (config) => config.payment?.provider === "fake";
 // layout(config, typ, nadpis, obsah, patička, { preheader }) – preheader = náhled v seznamu zpráv.
 function layout(config, tone, title, rowsHtml, footerHtml = "", { preheader = "" } = {}) {
   const [toneBg, toneSub] = TONES[tone] || TONES.info;
@@ -35,6 +38,7 @@ function layout(config, tone, title, rowsHtml, footerHtml = "", { preheader = ""
   <span style="color:${toneSub};font-size:13px;vertical-align:middle;margin-left:8px">${esc(org.shortName)}</span>
 </td></tr>
 <tr><td style="background:#fff;border:1px solid ${C.line};border-top:0;border-radius:0 0 12px 12px;padding:28px 24px 24px">
+  ${testMode(config) ? `<p style="margin:0 0 18px;padding:12px 14px;background:${C.warnBg};border:1px solid #f3d9a4;border-radius:8px;font-size:14px;color:${C.warn}"><b>${esc(TEST_NOTE)}</b></p>` : ""}
   <h1 style="margin:0 0 16px;font-size:22px;line-height:1.25;color:${C.ink}">${esc(title)}</h1>
   <div style="font-size:15px;line-height:1.55">${rowsHtml}${footerHtml}</div>
 </td></tr>
@@ -271,4 +275,10 @@ function createFileMailer(dir) {
   };
 }
 
-module.exports = { bugReport, paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, ticketCancelled, paymentSettingsChanged, seasonReport, databaseAutoRestored, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, wardenRequest, wardenRequestDecided, createFileMailer, czDate };
+const TEMPLATES = { bugReport, paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, ticketCancelled, paymentSettingsChanged, seasonReport, databaseAutoRestored, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, wardenRequest, wardenRequestDecided };
+// V testovacím režimu doplní „[TEST]“ do předmětu a varování do textové verze (HTML ho má z layoutu).
+const withTestNote = (fn) => (config, ...args) => {
+  const mail = fn(config, ...args);
+  return testMode(config) ? { ...mail, subject: `[TEST] ${mail.subject}`, text: `${TEST_NOTE}\n\n${mail.text}` } : mail;
+};
+module.exports = { ...Object.fromEntries(Object.entries(TEMPLATES).map(([name, fn]) => [name, withTestNote(fn)])), createFileMailer, czDate };

@@ -7,7 +7,7 @@
   const H = 1754;
   const PT = 595 / W; // převod px plátna → body PDF
   const FONT = '"Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-  const COL = { brand: "#0075de", brandDark: "#005bab", ink: "#252321", muted: "#6d6862", line: "#e6e4e0", soft: "#f6f5f4", okBg: "#eef8f1", ok: "#17803f" };
+  const COL = { brand: "#0075de", brandDark: "#005bab", ink: "#252321", muted: "#6d6862", line: "#e6e4e0", soft: "#f6f5f4", okBg: "#eef8f1", ok: "#17803f", test: "#c2610c" };
   // Razítko pro místenky, které už neplatí pro lov.
   const STAMPS = { expired_returned: ["ODEVZDANÁ", "#17803f"], seized: ["ZADRŽENÁ", "#b52f27"], cancelled: ["ZRUŠENÁ", "#b52f27"], closed_unreturned: ["NEODEVZDANÁ", "#b52f27"], payment_expired: ["NEZAPLACENÁ", "#b52f27"] };
 
@@ -56,7 +56,8 @@
     return wrap(ctx, value, x, y + 36, width, { size: 27, weight: 600 });
   }
 
-  function drawTicket({ ticket, revir, organization, checkUrl, hours }) {
+  // testMode = falešná banka (testovací web): oranžová hlavička a razítko „TEST – NEPLATÍ“.
+  function drawTicket({ ticket, revir, organization, checkUrl, hours, testMode = false }) {
     const { czDate, qrMatrix, subdistrictLabel, subdistrictTitle, czk } = window.Mistenka;
     textRuns = [];
     const canvas = document.createElement("canvas");
@@ -68,12 +69,12 @@
 
     // Hlavička
     const M = 80;
-    roundRect(ctx, M, 70, W - 2 * M, 120, 22, COL.brand);
+    roundRect(ctx, M, 70, W - 2 * M, 120, 22, testMode ? COL.test : COL.brand);
     roundRect(ctx, M + 34, 104, 52, 52, 12, "#fff");
-    text(ctx, "⌁", M + 60, 145, { size: 38, weight: 700, color: COL.brand, align: "center" });
+    text(ctx, "⌁", M + 60, 145, { size: 38, weight: 700, color: testMode ? COL.test : COL.brand, align: "center" });
     text(ctx, "Místenka", M + 106, 142, { size: 38, weight: 700, color: "#fff" });
-    text(ctx, organization.shortName, W - M - 34, 128, { size: 22, color: "#d6e9fd", align: "right" });
-    text(ctx, "rybářská místenka", W - M - 34, 158, { size: 20, color: "#d6e9fd", align: "right" });
+    text(ctx, testMode ? "TESTOVACÍ VERZE" : organization.shortName, W - M - 34, 128, { size: 22, weight: testMode ? 700 : 400, color: testMode ? "#fff" : "#d6e9fd", align: "right" });
+    text(ctx, testMode ? "neopravňuje k lovu" : "rybářská místenka", W - M - 34, 158, { size: 20, color: testMode ? "#fde3c8" : "#d6e9fd", align: "right" });
 
     // Revír
     let y = 268;
@@ -138,7 +139,7 @@
     text(ctx, checkUrl, M + 30, H - 92, { size: 16, color: COL.brand });
 
     // Razítko stavu (místenka už neplatí pro lov)
-    const stamp = STAMPS[ticket.status];
+    const stamp = STAMPS[ticket.status] || (testMode ? ["TEST – NEPLATÍ", COL.test] : null);
     if (stamp) {
       // Přes blok s kódem, ne přes QR (ten musí zůstat čitelný).
       ctx.save();

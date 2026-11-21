@@ -53,9 +53,16 @@ final class Emails
     // warning oranžová (upozornění, je potřeba něco udělat), danger červená (zrušeno, zadrženo, blokace).
     private const TONES = ['info' => ['#0075de', '#cfe5fb'], 'success' => ['#1a8245', '#d3f0dc'], 'warning' => ['#c2610c', '#fde3c8'], 'danger' => ['#c8302a', '#f9d2cf']];
 
+    // Falešná banka (testovací web): každý e-mail nese varování, předmět začíná „[TEST]“.
+    private const TEST_NOTE = 'Testovací verze Místenky – platby se jen simulují a vystavené místenky neopravňují k lovu.';
+    private static bool $testMode = false;
+
     private static function layout(array $config, string $tone, string $title, string $rowsHtml, string $footerHtml = '', string $preheader = ''): string
     {
         $c = self::C;
+        // layout() se vyhodnotí jako argument mail(), takže mail() pak ví, jestli jde o testovací verzi.
+        self::$testMode = ($config['payment']['provider'] ?? '') === 'fake';
+        $testHtml = self::$testMode ? '<p style="margin:0 0 18px;padding:12px 14px;background:' . $c['warnBg'] . ';border:1px solid #f3d9a4;border-radius:8px;font-size:14px;color:' . $c['warn'] . '"><b>' . self::esc(self::TEST_NOTE) . '</b></p>' : '';
         [$toneBg, $toneSub] = self::TONES[$tone] ?? self::TONES['info'];
         $org = $config['organization'];
         $contactParts = [];
@@ -78,7 +85,7 @@ final class Emails
   <span style=\"color:{$toneSub};font-size:13px;vertical-align:middle;margin-left:8px\">{$short}</span>
 </td></tr>
 <tr><td style=\"background:#fff;border:1px solid {$c['line']};border-top:0;border-radius:0 0 12px 12px;padding:28px 24px 24px\">
-  <h1 style=\"margin:0 0 16px;font-size:22px;line-height:1.25;color:{$c['ink']}\">{$t}</h1>
+  {$testHtml}<h1 style=\"margin:0 0 16px;font-size:22px;line-height:1.25;color:{$c['ink']}\">{$t}</h1>
   <div style=\"font-size:15px;line-height:1.55\">{$rowsHtml}{$footerHtml}</div>
 </td></tr>
 <tr><td style=\"padding:16px 8px;color:{$c['muted']};font-size:12px;line-height:1.5;text-align:center\">
@@ -138,6 +145,7 @@ final class Emails
 
     private static function mail(string $subject, string $html, string $text): array
     {
+        if (self::$testMode) return ['subject' => "[TEST] {$subject}", 'html' => $html, 'text' => self::TEST_NOTE . "\n\n" . $text];
         return ['subject' => $subject, 'html' => $html, 'text' => $text];
     }
 
