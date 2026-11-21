@@ -6,6 +6,7 @@ const time = require("./time");
 const { getRevir, revirRules } = require("./config");
 const { spayd } = require("./payments");
 const emails = require("./emails");
+const { GROUPS, groupOf, noticeRecipients } = require("./mail-accounts");
 const { ApiError, normalizeMemberId, validEmail, validMemberId, validName, validBirthDate } = require("./validate");
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -201,7 +202,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       const date = time.addDays(today, offset);
       const taken = takenSeats(revir.id, date);
       const day = operations.dayStatus(revir.id, date);
-      days.push({ date, capacity: revir.dailyCapacity, taken, available: day.open ? Math.max(0, revir.dailyCapacity - taken) : 0, closed: !day.open, closedReason: day.open ? null : day.reason });
+      days.push({ date, capacity: revir.dailyCapacity, taken, available: day.open ? Math.max(0, revir.dailyCapacity - taken) : 0, closed: !day.open, closedReason: day.open ? null : day.reason, closedCode: day.open ? null : day.code });
     }
     return { revirId: revir.id, today, days };
   }
@@ -375,7 +376,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     const now = iso(time.now());
     const insert = db.prepare("INSERT INTO limit_violations (ticket_id, member_id, limit_id, label, period, period_from, period_to, count, max_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     for (const l of exceeded) insert.run(ticket.id, ticket.member_id, l.id, l.label, l.period, l.from, l.to, l.count, l.maxCount, now);
-    if (config.organization.managerEmail) enqueueEmail(ticket, "limit_exceeded", null, { to: config.organization.managerEmail, limits: exceeded });
+    for (const to of noticeRecipients(db)) enqueueEmail(ticket, "limit_exceeded", null, { to, limits: exceeded });
     applyPenalty(ticket, "limits", { limits: exceeded });
     return exceeded;
   }
@@ -530,7 +531,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       // Držitel: e-mail s odkazem na odevzdání. Správce: jen upozornění (nepotvrzuje).
       enqueueEmail(seized, "ticket_seized", issueToken(seized.id, "email"), { deadline: iso(windowOf(seized).deadline) });
       applyPenalty(seized, "seizure");
-      if (config.organization.managerEmail) enqueueEmail(seized, "seizure_notice", null, { to: config.organization.managerEmail, wardenName: wardenName(warden) });
+      for (const to of noticeRecipients(db)) enqueueEmail(seized, "seizure_notice", null, { to, wardenName: wardenName(warden) });
       return wardenView(seized);
     });
   }
@@ -805,11 +806,21 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
   }
 
   // Odesílatel podle skupiny e-mailu (SMTP účet z portálu, jinak výchozí) – viz mail-accounts.js.
+  // Fronta e-mailů: odešle nejvýš 20 čekajících. E-mail skupiny bez odesílatele (Admin → Emailoví klienti)
+  // neodejde – dostane chybu a počká, až správce odesílatele nastaví; ostatní e-maily neblokuje.
   async function deliverOutbox() {
-    const pending = db.prepare("SELECT * FROM email_outbox WHERE sent_at IS NULL ORDER BY id LIMIT 20").all();
+    const senders = new Map();
+    const senderOf = (kind) => { const group = groupOf(kind); if (!senders.has(group)) senders.set(group, mailAccounts.senderFor(kind)); return senders.get(group); };
+    const waiting = db.prepare("SELECT * FROM email_outbox WHERE sent_at IS NULL ORDER BY id LIMIT 500").all();
+    const pending = [];
+    for (const mail of waiting) {
+      if (senderOf(mail.kind)) { if (pending.length < 20) pending.push(mail); continue; }
+      const label = (GROUPS.find((g) => g.id === groupOf(mail.kind)) || {}).label;
+      if (!mail.error) db.prepare("UPDATE email_outbox SET error = ? WHERE id = ?").run(`Skupina „${label}“ nemá odesílatele (Admin → Emailoví klienti).`, mail.id);
+    }
     for (const mail of pending) {
       try {
-        const sender = mailAccounts ? mailAccounts.senderFor(mail.kind) : { from: null, account: null, label: "výchozí" };
+        const sender = senderOf(mail.kind);
         await mailer.send({ id: mail.id, to: mail.to_email, subject: mail.subject, html: mail.body_html, text: mail.body_text, from: sender.from, account: sender.account });
         db.prepare("UPDATE email_outbox SET sent_at = ?, error = NULL, sender = ? WHERE id = ?").run(iso(time.now()), sender.label, mail.id);
       } catch (error) {

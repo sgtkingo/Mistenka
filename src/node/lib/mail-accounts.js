@@ -2,12 +2,13 @@
 // SMTP účty pro odesílání e-mailů (portál → Admin → Emailoví klienti). Smlouva v docs/API.md, sekce „E-mailoví klienti“.
 //
 // Admin účty zakládá, upravuje, ověřuje (testovací e-mail) a maže. Správce pro každou skupinu e-mailů vybere
-// jeden ověřený účet jako odesílatele. Skupina bez přiřazeného (nebo neověřeného) účtu odesílá výchozím
-// způsobem serveru s odesílatelem z nastavení organizace (email.fromEmail / fromName).
+// jeden ověřený účet jako odesílatele a nastaví příjemce upozornění správcům. Výchozí odesílání neexistuje:
+// e-mail skupiny bez ověřeného účtu neodejde (čeká ve frontě, portál ukáže chybu). Dokud nejsou nastaveni
+// odesílatelé všech skupin a aspoň jeden příjemce upozornění, nejde otevřít první sezonu (spustit službu).
 //
 // Heslo se ukládá šifrovaně (AES-256-GCM), do frontendu se nikdy nevrací. Klíč: MISTENKA_SECRET_KEY,
-// jinak se vygeneruje do DATA_DIR/secret.key. Node e-maily neodesílá (ukládá je do data/outbox), WordPress
-// je odešle přes SMTP vybraného účtu.
+// jinak se vygeneruje do DATA_DIR/secret.key. Odesílá vlastní SMTP klient (lib/smtp.js); ve vývoji
+// (MISTENKA_MAIL_TRANSPORT=file) se e-maily jen ukládají do data/outbox.
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -27,6 +28,19 @@ const GROUPS = [
     kinds: ["seizure_notice", "limit_exceeded", "season_report", "payment_settings_changed", "database_auto_restored", "warden_request"] }
 ];
 const groupOf = (kind) => (GROUPS.find((g) => g.kinds.includes(kind)) || GROUPS[0]).id;
+const MAX_RECIPIENTS = 10;
+const metaValue = (db, key) => db.prepare("SELECT value FROM meta WHERE key = ?").get(key)?.value ?? null;
+// Příjemci upozornění správcům (skupina „notices“): žádosti, zadržení, limity, uzávěrky…
+function noticeRecipients(db) {
+  try { return (JSON.parse(metaValue(db, "email_notice_recipients") || "[]") || []).filter((e) => EMAIL_RE.test(e)); } catch { return []; }
+}
+// Co chybí k odesílání: skupiny bez ověřeného odesílatele, příp. "noticeRecipients".
+function mailMissing(db) {
+  const stored = JSON.parse(metaValue(db, "email_senders") || "{}");
+  const missing = GROUPS.filter((g) => !(stored[g.id] && db.prepare("SELECT 1 FROM email_accounts WHERE id = ? AND deleted_at IS NULL AND verified_at IS NOT NULL").get(Number(stored[g.id])))).map((g) => g.id);
+  if (!noticeRecipients(db).length) missing.push("noticeRecipients");
+  return missing;
+}
 // Změna těchto údajů ruší ověření (účet je potřeba znovu otestovat).
 const CONNECTION_FIELDS = ["from_email", "host", "port", "encryption", "username", "password_enc"];
 
@@ -80,8 +94,11 @@ function createMailAccounts({ db, config, dataDir, mailer }) {
   // ---------- čtení (správce i admin) ----------
   function list(actor) {
     const accounts = db.prepare("SELECT * FROM email_accounts WHERE deleted_at IS NULL ORDER BY label, id").all().map(shape);
-    const fallback = { fromEmail: config.email?.fromEmail || "", fromName: config.email?.fromName || "" };
-    return { accounts, senders: senders(), groups: GROUPS.map(({ id, label, help }) => ({ id, label, help })), fallback, delivery: mailer.delivery, canEdit: rolesOf(actor).includes("admin") };
+    const missing = mailMissing(db);
+    return {
+      accounts, senders: senders(), noticeRecipients: noticeRecipients(db), groups: GROUPS.map(({ id, label, help }) => ({ id, label, help })),
+      ready: missing.length === 0, missing, delivery: mailer.delivery, canEdit: rolesOf(actor).includes("admin")
+    };
   }
 
   // ---------- správa účtů (jen admin) ----------
@@ -187,7 +204,15 @@ function createMailAccounts({ db, config, dataDir, mailer }) {
         current[group.id] = account.id;
       }
       metaSet("email_senders", JSON.stringify(current));
-      audit(actor, "email_senders_changed", "senders", current);
+      if ("noticeRecipients" in body) {
+        const raw = Array.isArray(body.noticeRecipients) ? body.noticeRecipients : String(body.noticeRecipients ?? "").split(/[\s,;]+/);
+        const list = [...new Set(raw.map((e) => String(e ?? "").trim().toLowerCase()).filter(Boolean))];
+        const bad = list.find((e) => !EMAIL_RE.test(e) || e.length > 200);
+        if (bad) throw new ApiError(400, "invalid_email", `Neplatná adresa příjemce upozornění: ${bad}`);
+        if (list.length > MAX_RECIPIENTS) throw new ApiError(400, "invalid_email", `Nejvýše ${MAX_RECIPIENTS} příjemců upozornění.`);
+        metaSet("email_notice_recipients", JSON.stringify(list));
+      }
+      audit(actor, "email_senders_changed", "senders", { ...current, noticeRecipients: noticeRecipients(db) });
       return list(actor);
     });
   }
@@ -195,12 +220,12 @@ function createMailAccounts({ db, config, dataDir, mailer }) {
   // ---------- odeslání ----------
   const fromOf = (a) => ({ email: a.from_email, name: a.from_name || "" });
   const accountForSending = (a) => ({ id: a.id, label: a.label, host: a.host, port: a.port, encryption: a.encryption, username: a.username || "", password: decrypt(a.password_enc) });
-  // Odesílatel pro druh e-mailu: přiřazený ověřený účet skupiny, jinak výchozí odesílatel organizace.
+  // Odesílatel pro druh e-mailu: přiřazený ověřený účet skupiny, jinak null (e-mail zatím neodejde).
   function senderFor(kind) {
     const id = senders()[groupOf(kind)];
     const account = id ? find(id) : null;
     if (account?.verified_at) return { from: fromOf(account), account: accountForSending(account), label: account.label };
-    return { from: { email: config.email?.fromEmail || "", name: config.email?.fromName || "" }, account: null, label: "výchozí" };
+    return null;
   }
 
   return { list, create, update, remove, verify, setSenders, senderFor, GROUPS };
@@ -208,4 +233,4 @@ function createMailAccounts({ db, config, dataDir, mailer }) {
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
 
-module.exports = { createMailAccounts, GROUPS, groupOf };
+module.exports = { createMailAccounts, GROUPS, groupOf, noticeRecipients, mailMissing };

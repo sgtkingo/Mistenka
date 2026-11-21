@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
-const SCHEMA_VERSION = 15;
+const SCHEMA_VERSION = 16;
 
 // Sloupce tabulky users (sdílí vytvoření i migrace).
 const USERS_COLUMNS = `
@@ -94,6 +94,8 @@ function openDatabase(dataDir, { autoRecover = true } = {}) {
     throw new Error(`Databáze ${file} má starší formát. Smažte ji, nebo spusťte "npm run seed".`);
   }
   db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
+  const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();
+  const previousVersion = hasMeta ? Number(db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get()?.value || 0) : 0;
   // Migrace 2 -> 3: místenka může patřit k účtu.
   if (ticketColumns.length && !ticketColumns.includes("user_id")) db.exec("ALTER TABLE tickets ADD COLUMN user_id INTEGER REFERENCES users(id)");
   migrateUsersNullable(db);
@@ -415,6 +417,10 @@ function openDatabase(dataDir, { autoRecover = true } = {}) {
     );
   `);
   db.exec("CREATE INDEX IF NOT EXISTS tickets_user ON tickets (user_id)");
+  // v16: instalace, která už prodávala (má místenky nebo sezony), je spuštěná – nové pravidlo ji nezavře.
+  if (previousVersion && previousVersion < 16 && (db.prepare("SELECT 1 FROM tickets LIMIT 1").get() || db.prepare("SELECT 1 FROM seasons WHERE deleted_at IS NULL LIMIT 1").get())) {
+    db.prepare("INSERT INTO meta (key, value) VALUES ('service_launched_at', ?) ON CONFLICT (key) DO NOTHING").run(new Date().toISOString());
+  }
   db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(String(SCHEMA_VERSION));
   return db;
 }
@@ -432,4 +438,9 @@ function transaction(db, fn) {
   }
 }
 
-module.exports = { openDatabase, transaction, integrityProblem };
+// Spuštění služby: čerstvá instalace je zavřená (sezona uzavřena, registrace a přihlášení rybářů vypnuté),
+// dokud správce ručně neotevře první sezonu. Stav se drží v meta (při obnově ze zálohy se nemění).
+const serviceLaunched = (db) => Boolean(db.prepare("SELECT value FROM meta WHERE key = 'service_launched_at'").get()?.value);
+const markLaunched = (db, at) => db.prepare("INSERT INTO meta (key, value) VALUES ('service_launched_at', ?) ON CONFLICT (key) DO NOTHING").run(at);
+
+module.exports = { openDatabase, transaction, integrityProblem, serviceLaunched, markLaunched };

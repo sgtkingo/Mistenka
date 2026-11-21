@@ -22,6 +22,7 @@ qsa(".manage-nav-item").forEach((item) => item.addEventListener("click", () => {
   if (section === "stocking") window.MistenkaReports.loadStocking();
   if (section === "reports") window.MistenkaReports.loadReports(location.hash.startsWith("#reports/") ? location.hash.split("/")[1] : "");
   if (section === "settings") window.MistenkaSettings.load(decodeURIComponent(location.hash.split("/")[1] || ""), "settings");
+  if (section === "bank") window.MistenkaSettings.load(decodeURIComponent(location.hash.split("/")[1] || ""), "bank");
   if (section === "reviry") window.MistenkaSettings.load(decodeURIComponent(location.hash.split("/")[1] || ""), "reviry");
   if (section === "payments") loadPayments();
   if (section === "vouchers") loadVouchers();
@@ -434,10 +435,10 @@ function seasonPeriod(s) {
 function renderRevirStatus(seasons) {
   qs("#revirStatus").innerHTML = config.reviry.map((r) => {
     const s = revirSeason(seasons, r.id);
-    const [label, tone] = s ? SEASON_STATES[s.state] : ["Otevřeno celoročně", "ok"];
+    const [label, tone] = s ? SEASON_STATES[s.state] : ["Zavřeno", "off"];
     const period = s
       ? `${esc(s.name)}${s.revirId ? "" : ' <small class="muted-inline">(všechny revíry)</small>'}<br><small class="muted-inline">${esc(seasonPeriod(s))}</small>`
-      : '<small class="muted-inline">Bez sezony – místenky se prodávají celý rok.</small>';
+      : '<small class="muted-inline">Bez sezony – místenky se neprodávají.</small>';
     const closable = s && (s.state === "open" || s.state === "upcoming");
     return `<div class="revir-status-card"><div class="revir-status-head"><b>${esc(r.name)}</b><span class="badge badge-${tone}">${label}</span></div><p>${period}</p>
       ${closable ? `<button class="secondary-button toggle-close" type="button">Uzavřít sezonu ▾</button>
@@ -468,6 +469,10 @@ async function loadSeasons() {
   try {
     const [{ seasons }, { closures }, cfg] = await Promise.all([api("/manage/seasons"), api("/manage/closures"), api("/config")]);
     seasonToday = cfg.today;
+    // Před spuštěním: první sezonu otevře správa až s nastavenými e-maily (server to hlídá: email_not_ready).
+    const note = qs("#launchNote");
+    note.classList.toggle("hidden", Boolean(cfg.service?.launched));
+    if (!cfg.service?.launched) note.innerHTML = "<b>Místenka zatím není spuštěná.</b> Rybáři vidí uzavřenou sezonu a nemohou se registrovat ani přihlásit. Otevřením první sezony službu spustíte – předtím musí admin v <b>Admin → Emailoví klienti</b> nastavit odesílatele všech skupin e-mailů a příjemce upozornění.";
     renderRevirStatus(seasons);
     qs("#seasonList").innerHTML = seasons.length ? `<table class="data-table"><thead><tr><th>Sezona</th><th>Revír</th><th>Období</th><th>Stav</th><th></th></tr></thead><tbody>${seasons.map((s) => {
       const [label, tone] = SEASON_STATES[s.state];
@@ -475,7 +480,7 @@ async function loadSeasons() {
         <td class="row-actions"><button class="text-button delete-season" type="button" data-id="${s.id}">Smazat</button></td></tr>`;
     }).join("")}</tbody></table>` : '<p class="muted">Zatím žádná sezona.</p>';
     qsa(".delete-season").forEach((b) => b.addEventListener("click", async () => {
-      if (!window.confirm("Smazat sezonu? Revír bez sezony je otevřený celý rok.")) return;
+      if (!window.confirm("Smazat sezonu? Revír bez sezony je zavřený – místenky se na něj neprodávají.")) return;
       try { await api(`/manage/seasons/${b.dataset.id}`, { method: "DELETE" }); loadSeasons(); } catch (error) { showToast(error.message); }
     }));
     qs("#closureList").innerHTML = closures.length ? `<table class="data-table"><thead><tr><th>Dny</th><th>Revír</th><th>Důvod</th><th></th></tr></thead><tbody>${closures.map((c) => `
@@ -582,13 +587,13 @@ const ENCRYPTION_LABELS = { ssl: "SSL/TLS (465)", tls: "STARTTLS (587)", none: "
 async function loadEmail() {
   const panel = qs("#emailPanel");
   try {
-    const { accounts, senders, groups, fallback, canEdit, delivery } = await api("/manage/email/accounts");
+    const { accounts, senders, groups, noticeRecipients, ready, missing, canEdit, delivery } = await api("/manage/email/accounts");
     const byId = new Map(accounts.map((a) => [a.id, a]));
-    const fallbackLabel = fallback.fromEmail ? `Výchozí – ${fallback.fromName ? `${fallback.fromName} ` : ""}<${fallback.fromEmail}>` : "Výchozí odesílání serveru";
+    const missingLabels = missing.map((id) => (id === "noticeRecipients" ? "příjemci upozornění" : `odesílatel – ${groups.find((g) => g.id === id)?.label || id}`));
     const groupRow = (g) => {
       const current = senders[g.id] ? byId.get(senders[g.id]) : null;
-      const options = [`<option value="">${esc(fallbackLabel)}</option>`, ...accounts.filter((a) => a.verified || a.id === senders[g.id]).map((a) => `<option value="${a.id}"${a.id === senders[g.id] ? " selected" : ""}>${esc(`${a.label} – ${a.fromEmail}`)}${a.verified ? "" : " (neověřený)"}</option>`)];
-      const warn = current && !current.verified ? '<small class="over-budget">Účet není ověřený – e-maily jdou výchozím způsobem, dokud ho admin znovu neotestuje.</small>' : "";
+      const options = ['<option value="">— nepřiřazeno (e-maily neodejdou) —</option>', ...accounts.filter((a) => a.verified || a.id === senders[g.id]).map((a) => `<option value="${a.id}"${a.id === senders[g.id] ? " selected" : ""}>${esc(`${a.label} – ${a.fromEmail}`)}${a.verified ? "" : " (neověřený)"}</option>`)];
+      const warn = current && !current.verified ? '<small class="over-budget">Účet není ověřený – e-maily této skupiny neodejdou, dokud ho admin znovu neotestuje.</small>' : !current ? '<small class="over-budget">Bez odesílatele – e-maily této skupiny čekají ve frontě.</small>' : "";
       return `<div class="email-group"><label class="field-label" for="sender-${g.id}">${esc(g.label)}</label><select id="sender-${g.id}" data-group="${g.id}">${options.join("")}</select><small class="muted-inline">${esc(g.help)}</small>${warn}</div>`;
     };
     const status = (a) => (a.verified ? `<span class="badge badge-ok">ověřeno</span><br><small class="muted-inline">${esc(czDateTime(a.verifiedAt))} → ${esc(a.verifiedTo || "")}</small>`
@@ -596,8 +601,11 @@ async function loadEmail() {
     const used = (a) => a.usedFor.map((id) => groups.find((g) => g.id === id)?.label || id).join(", ");
     panel.innerHTML = `
       ${delivery === "file" ? '<p class="field-help">Vývojový server: e-maily se neodesílají, ukládají se do složky <code>data/outbox</code> (i test účtu).</p>' : ""}
+      <div class="email-ready ${ready ? "ok" : "warn"}">${ready ? "✓ E-maily jsou nastavené – všechny skupiny mají odesílatele a upozornění mají příjemce." : `<b>E-maily nejsou nastavené.</b> Chybí: ${esc(missingLabels.join(", "))}. Dokud to nedoplníte, e-maily dotčených skupin neodejdou a nejde otevřít první sezonu.`}</div>
       <h2 class="manage-h2">Odesílatelé podle druhu e-mailu</h2>
-      <form id="senderForm" class="settings-form" novalidate>${groups.map(groupRow).join("")}<button class="primary-button" type="submit">Uložit odesílatele</button></form>
+      <form id="senderForm" class="settings-form" novalidate>${groups.map(groupRow).join("")}
+        <div class="email-group"><label class="field-label" for="noticeRecipients">Příjemci upozornění správcům</label><textarea id="noticeRecipients" rows="2" maxlength="2100" placeholder="spravce@…, predseda@…">${esc(noticeRecipients.join(", "))}</textarea><small class="muted-inline">Komu chodí upozornění: žádosti „Jsem porybný“, zadržení, překročené limity, uzávěrka sezony. Více adres oddělte čárkou (nejvýše 10).</small></div>
+        <button class="primary-button" type="submit">Uložit odesílatele a příjemce</button></form>
       <h2 class="manage-h2">Poštovní účty</h2>
       ${canEdit ? `<details class="invite-box" id="accountBox"><summary>+ Přidat účet</summary>${accountForm()}</details>` : '<p class="field-help">Účty zakládá a ověřuje admin.</p>'}
       ${accounts.length ? `<table class="data-table"><thead><tr><th>Účet</th><th>Server</th><th>Stav</th><th>Používá se pro</th>${canEdit ? "<th></th>" : ""}</tr></thead><tbody>${accounts.map((a) => `
@@ -605,12 +613,13 @@ async function loadEmail() {
         <td data-label="Server">${esc(`${a.host}:${a.port}`)}<br><small class="muted-inline">${esc(ENCRYPTION_LABELS[a.encryption] || a.encryption)}${a.username ? ` · ${esc(a.username)}` : ""}</small></td>
         <td data-label="Stav">${status(a)}</td><td data-label="Používá se pro">${esc(used(a)) || '<span class="muted-inline">—</span>'}</td>
         ${canEdit ? '<td class="row-actions"><button class="text-button test-account" type="button">Otestovat</button><button class="text-button edit-account" type="button">Upravit</button><button class="text-button delete-account" type="button">Smazat</button></td>' : ""}</tr>`).join("")}</tbody></table>`
-        : '<p class="muted">Zatím žádný účet – všechny e-maily jdou výchozím způsobem.</p>'}`;
+        : '<p class="muted">Zatím žádný účet – Místenka neodešle žádný e-mail.</p>'}`;
 
     qs("#senderForm").addEventListener("submit", (event) => submitForm(event, async () => {
       const body = Object.fromEntries(qsa("#senderForm select").map((select) => [select.dataset.group, select.value ? Number(select.value) : null]));
+      body.noticeRecipients = qs("#noticeRecipients").value;
       await api("/manage/email/senders", { method: "PUT", body });
-      showToast("Odesílatelé uloženi.");
+      showToast("Odesílatelé a příjemci uloženi.");
       loadEmail();
     }));
     if (!canEdit) return;
@@ -643,7 +652,7 @@ async function loadEmail() {
         loadEmail();
       });
       qs(".delete-account", row).addEventListener("click", async () => {
-        if (!window.confirm(`Smazat účet ${account.label}?${account.usedFor.length ? " Skupiny, které ho používají, přejdou na výchozí odesílání." : ""}`)) return;
+        if (!window.confirm(`Smazat účet ${account.label}?${account.usedFor.length ? " Skupiny, které ho používají, zůstanou bez odesílatele a jejich e-maily neodejdou." : ""}`)) return;
         try { await api(`/manage/email/accounts/${account.id}`, { method: "DELETE" }); showToast("Účet smazán."); loadEmail(); } catch (error) { showToast(error.message); }
       });
     });

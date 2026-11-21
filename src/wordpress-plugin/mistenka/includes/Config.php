@@ -112,8 +112,10 @@ final class Config
             if (!Js::isInteger($rule['count']) || $rule['count'] < 0 || $rule['count'] > 50) self::fail("{$label}: počet případů musí být celé číslo 0–50");
             if ($rule['blockDays'] !== null && !(Js::isInteger($rule['blockDays']) && $rule['blockDays'] > 0 && $rule['blockDays'] <= 3650)) self::fail("{$label}: délka blokace musí být 1–3650 dní, nebo prázdná (do konce roku)");
         }
-        $managerEmail = $config['organization']['managerEmail'] ?? '';
-        if ($managerEmail && !self::emailOk($managerEmail)) self::fail('neplatný e-mail správce');
+        // E-maily (odesílatelé, příjemci upozornění) nastavuje admin v portálu (Emailoví klienti), ne konfigurace.
+        unset($config['organization']['managerEmail'], $config['email']);
+        $contactEmail = $config['organization']['contact']['email'] ?? '';
+        if ($contactEmail && !self::emailOk($contactEmail)) self::fail('neplatný veřejný e-mail');
         $orgRules = self::speciesRulesFor($speciesDocs, $config['speciesRules'] ?? null, 'organizace');
         foreach ($config['reviry'] as $i => $revir) {
             $rules = !empty($revir['speciesRules']) ? self::speciesRulesFor($speciesDocs, $revir['speciesRules'], 'revír ' . $revir['id']) : $orgRules;

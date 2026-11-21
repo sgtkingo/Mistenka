@@ -17,7 +17,7 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const { loadConfig, publicConfig } = require("./lib/config");
-const { openDatabase } = require("./lib/db");
+const { openDatabase, serviceLaunched } = require("./lib/db");
 const { createProvider } = require("./lib/payments");
 const { createFileMailer } = require("./lib/emails");
 const { createService, ApiError } = require("./lib/service");
@@ -28,6 +28,7 @@ const { createReports } = require("./lib/reports");
 const { createBackups } = require("./lib/backups");
 const { createRetention } = require("./lib/retention");
 const { createMailAccounts } = require("./lib/mail-accounts");
+const { createSmtpMailer } = require("./lib/smtp");
 const time = require("./lib/time");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -40,7 +41,9 @@ const FRONTEND = path.join(__dirname, "..", "frontend");
 const config = loadConfig();
 const db = openDatabase(DATA_DIR);
 const provider = createProvider(config);
-const mailer = createFileMailer(path.join(DATA_DIR, "outbox"));
+// E-maily: vlastní SMTP klient přes účty z portálu; ve vývoji (MISTENKA_DEV) jen soubory v data/outbox.
+const MAIL_TRANSPORT = process.env.MISTENKA_MAIL_TRANSPORT || (DEV ? "file" : "smtp");
+const mailer = MAIL_TRANSPORT === "file" ? createFileMailer(path.join(DATA_DIR, "outbox")) : createSmtpMailer();
 const settings = createSettings({ db, config }); // nastavení z portálu (B5) přepíše hodnoty ze souboru
 const operations = createOperations({ db, config, appUrl: APP_URL });
 const mailAccounts = createMailAccounts({ db, config, dataDir: DATA_DIR, mailer }); // SMTP účty (Admin → Emailoví klienti)
@@ -135,7 +138,7 @@ async function handleApi(req, res, url, ip) {
   const user = ctx?.user || null;
 
   if (pathname === "/api/config" && method === "GET") {
-    return send(res, 200, publicConfig(config, { today: time.pragueToday(), now: time.now().toISOString(), devMode: DEV }));
+    return send(res, 200, publicConfig(config, { today: time.pragueToday(), now: time.now().toISOString(), devMode: DEV, service: { launched: serviceLaunched(db) } }));
   }
   if ((m = pathname.match(/^\/api\/reviry\/([a-z0-9-]+)\/availability$/)) && method === "GET") {
     return send(res, 200, service.availability(m[1]));

@@ -60,9 +60,13 @@ final class Admin
                 echo self::row('Verze', esc_html(MISTENKA_VERSION . ' · schéma ' . Db::SCHEMA_VERSION . ' · PHP ' . PHP_VERSION));
                 echo self::row('Konfigurace', esc_html(Env::configFile()), is_readable(Env::configFile()));
                 echo self::row('Datová složka (zálohy)', esc_html($dataDir), is_dir($dataDir) && is_writable($dataDir));
-                echo self::row('Platby', $app ? esc_html($app->config['payment']['provider'] === 'fio' ? 'Fio API' . (Env::fioToken() ? '' : ' – chybí MISTENKA_FIO_TOKEN') : 'falešná banka (vývoj)') : '—', $app ? ($app->config['payment']['provider'] !== 'fio' || Env::fioToken() !== '') : null);
+                $fio = $app && $app->config['payment']['provider'] === 'fio';
+                // Falešná banka mimo vývojový režim = kdokoli může „zaplatit“ místenku přes /dev/payments.
+                echo self::row('Platby', $app ? esc_html($fio ? 'Fio API' . (Env::fioToken() ? '' : ' – chybí MISTENKA_FIO_TOKEN') : 'falešná banka – jen pro vývoj, platby jde simulovat!') : '—', $app ? ($fio ? Env::fioToken() !== '' : Env::dev()) : null);
                 echo self::row('Klíč pro cron', Env::cronKey() !== '' ? 'nastaven' : 'chybí konstanta <code>MISTENKA_CRON_KEY</code> ve wp-config.php', Env::cronKey() !== '');
-                echo self::row('Odesílání e-mailů', Env::mailTransport() === 'file' ? 'jen do datové složky (MISTENKA_MAIL_TRANSPORT = file)' : 'SMTP účty z portálu (Admin → Emailoví klienti), jinak wp_mail()');
+                $missing = Mailer::missing();
+                echo self::row('Odesílání e-mailů', esc_html((Env::mailTransport() === 'file' ? 'jen do datové složky (MISTENKA_MAIL_TRANSPORT = file)' : 'vlastní SMTP klient přes účty z portálu (Admin → Emailoví klienti)') . ($missing ? ' – nenastaveno: chybí odesílatelé nebo příjemci upozornění' : ' – nastaveno')), !$missing);
+                echo self::row('Spuštění služby', Db::serviceLaunched() ? 'spuštěno' : 'zatím ne – rybáři vidí uzavřenou sezonu; službu spustí otevření první sezony v portálu (po nastavení e-mailů)', Db::serviceLaunched());
                 echo self::row('Vývojový režim', Env::dev() ? '<b>zapnutý</b> (MISTENKA_DEV) – jen pro testovací web!' : 'vypnutý', !Env::dev());
                 $labels = ['not_needed' => 'nepoužívají se (frontend mimo složku webu)', 'ok' => 'v pořádku', 'outdated' => 'zastaralá – zapište znovu', 'absent' => 'chybí', 'missing' => 'soubor .htaccess neexistuje'];
                 echo self::row('Pravidla .htaccess', esc_html($labels[$htaccess]), in_array($htaccess, ['ok', 'not_needed'], true));
@@ -79,7 +83,10 @@ final class Admin
             </details>
 
             <h2>Plánované úlohy (cron hostingu)</h2>
-            <p>Platby, připomínky, uzávěrky, zálohy a e-maily zpracovává úloha, kterou má volat cron hostingu každou minutu:</p>
+            <p>Platby, připomínky, uzávěrky, zálohy a e-maily zpracovává úloha, kterou má cron hostingu spouštět každou minutu.</p>
+            <p><b>PHP cron</b> (doporučeno, bez klíče – skript nejde spustit z webu) – PHP soubor:</p>
+            <pre style="background:#fff;padding:12px;border:1px solid #ccd0d4;overflow:auto"><?php echo esc_html(MISTENKA_DIR . 'cron.php'); ?></pre>
+            <p><b>Nebo příkaz</b> (cron, který umí POST s hlavičkou):</p>
             <pre style="background:#fff;padding:12px;border:1px solid #ccd0d4;overflow:auto">curl -fsS -X POST -H "X-Mistenka-Cron-Key: &lt;MISTENKA_CRON_KEY&gt;" "<?php echo esc_html($cronUrl); ?>"</pre>
             <p class="description">Jako záloha běží úlohy i přes WP-cron každých 5 minut (jen když web někdo navštíví).</p>
 

@@ -1,6 +1,6 @@
 # WordPress plugin (PHP)
 
-Produkční implementace Místenky. Chování je stejné jako u Node verze v `src/node/`: obě dodržují [docs/API.md](../../docs/API.md) a procházejí stejnými testy z `test/` (47 testů, ověřeno proti WordPressu 7.1.4 / PHP 8.3 v Dockeru).
+Produkční implementace Místenky. Chování je stejné jako u Node verze v `src/node/`: obě dodržují [docs/API.md](../../docs/API.md) a procházejí stejnými testy z `test/` (49 testů, ověřeno proti WordPressu 7.1.4 / PHP 8.3 v Dockeru).
 
 | Plugin | Stav |
 | --- | --- |
@@ -13,14 +13,15 @@ Produkční implementace Místenky. Chování je stejné jako u Node verze v `sr
 - **REST** `mistenka/v1` (`/?rest_route=/mistenka/v1/...`, web nemá „hezké“ trvalé odkazy). Požadavky obslouží vlastní router dřív, než je WordPress zpracuje (chyby mají tvar `{ error, code }`); CORS hlavičky WordPressu se pro aplikaci vypínají.
 - **Účty jsou vlastní** (tabulky `{prefix}mistenka_*`): rybáři ani správci nejsou uživateli WordPressu a nedostanou se do wp-admin. Relace v cookie `mistenka_session` + hlavička `X-Mistenka-Csrf`, hesla `password_hash()`, 2FA (TOTP).
 - **Databáze**: tabulky `{prefix}mistenka_*` vytvoří `dbDelta()` při aktivaci a po aktualizaci pluginu (verze schématu v `Db::SCHEMA_VERSION`). Zápisy, které hlídají kapacitu, poukazy a párování plateb, běží v transakci se zámkem `GET_LOCK`.
-- **E-maily**: fronta `email_outbox`; odesílá se přes SMTP účty z portálu (**Admin → Emailoví klienti**, PHPMailer z WordPressu – víc účtů, každá skupina e-mailů vlastní odesílatel), skupina bez účtu přes `wp_mail()`. Plugin WP Mail SMTP už není potřeba. E-maily vzniklé během požadavku odejdou hned po odeslání odpovědi.
+- **E-maily**: fronta `email_outbox`; odesílá vlastní SMTP klient pluginu (`includes/Smtp.php`, nezávisle na `wp_mail()`, PHPMaileru i pluginech typu WP Mail SMTP) přes účty z portálu (**Admin → Emailoví klienti** – víc účtů, každá skupina e-mailů vlastní odesílatel, příjemci upozornění správcům). Výchozí odesílání neexistuje: skupina bez odesílatele čeká. E-maily vzniklé během požadavku odejdou hned po odeslání odpovědi.
+- **Spuštění služby**: čerstvá instalace je zavřená – úvodní stránka ukáže uzavřenou sezonu, rybáři se nemohou registrovat ani přihlásit (správa ano). Službu spustí admin ručním otevřením první sezony, které jde až s nastavenými Emailovými klienty. `organization.json` e-maily nenastavuje.
 - **Zálohy**: export tabulek pluginu (`*.json.gz`) do datové složky mimo web; obnova z portálu.
 - **Konfigurace**: výchozí hodnoty `config/organization.json` + pravidla ryb (v ZIPu pluginu), změny z portálu se ukládají jako verze do databáze.
 
 ## Instalace
 
 1. `python scripts/build-plugin.py` → `dist/mistenka.zip` (PHP + frontend + výchozí konfigurace).
-2. Před sestavením zkontrolujte `config/organization.json`: `organization.appUrl` (adresa subdomény), `payment` (účet, **`provider: "fio"`** pro ostrý provoz – `fake` je jen pro vývoj).
+2. Před sestavením zkontrolujte `config/organization.json`, hlavně `organization.appUrl` (adresa subdomény). Ostatní údaje (účet, e-maily, GDPR) jdou změnit i v portálu. ZIP má vždy `payment.provider: "fio"`, i když repo nechává `fake` pro lokální Node. Falešnou banku, kde může místenku „zaplatit“ kdokoli, dá do ZIPu jen `--fake-bank` (testovací web s `MISTENKA_DEV`).
 3. wp-config.php (nad řádek „That's all, stop editing!“):
 
    ```php
@@ -35,14 +36,15 @@ Produkční implementace Místenky. Chování je stejné jako u Node verze v `sr
    Nikdy nedávejte do produkce `MISTENKA_DEV`, `MISTENKA_RATE_LIMIT = false` ani `MISTENKA_MAIL_TRANSPORT = 'file'`.
 4. Nahrát ZIP (Pluginy → Instalace pluginů → Nahrát) a aktivovat.
 5. **Nastavení → Místenka**: zkontrolovat stav (konfigurace, datová složka, .htaccess, cron, Fio) a tlačítkem **Vygenerovat odkaz** založit prvního admina Místenky (průvodce s 2FA, odkaz platí 60 minut).
-6. Cron hostingu každou minutu:
+6. Cron hostingu každou minutu. Doporučená je **PHP úloha** (Websupport: typ „PHP 8.3 CRON“), PHP soubor `wp-content/plugins/mistenka/cron.php`. Klíč není potřeba, protože skript z webu vrací 404. Pokud hosting umí jen příkaz s POST:
 
    ```
    curl -fsS -X POST -H "X-Mistenka-Cron-Key: <MISTENKA_CRON_KEY>" "https://mistenka.rybarikarvina.cz/?rest_route=/mistenka/v1/jobs/run"
    ```
 
    Záložně běží úlohy i přes WP-cron každých 5 minut (jen při návštěvě webu).
-7. V portálu: **Admin → Emailoví klienti** – přidat SMTP účet(y) (např. `smtp.websupport.cz`, 465, SSL), otestovat a přiřadit skupinám e-mailů.
+7. V portálu: **Admin → Emailoví klienti** – přidat SMTP účet(y) (např. `smtp.websupport.cz`, 465, SSL), otestovat, přiřadit všem skupinám e-mailů a vyplnit příjemce upozornění správcům.
+8. **Provoz → Sezona a uzavření → Otevřít sezonu** – první otevřená sezona spustí službu (do té doby je pro rybáře zavřeno).
 
 Postup ověřit nejdřív na `test.rybarikarvina.cz`. Smazání pluginu data nemaže (místenky podléhají evidenci); úplné smazání jen s `define('MISTENKA_UNINSTALL_DELETE_DATA', true)`.
 

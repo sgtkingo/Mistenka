@@ -6,7 +6,6 @@
     "web": "https://rybarikarvina.cz",
     "appUrl": "https://mistenka.rybarikarvina.cz",
     "privacyUrl": "",
-    "managerEmail": "",
     "contact": {
       "label": "Moravskoslezský ÚS",
       "email": "administrativa@rybsvaz-ms.cz",
@@ -20,10 +19,6 @@
     "recipientName": "MO CRS Karvina",
     "reservationMinutes": 60,
     "messagePrefix": "Mistenka"
-  },
-  "email": {
-    "fromEmail": "mistenka@rybarikarvina.cz",
-    "fromName": "Místenka – MO Karviná"
   },
   "limitPolicy": {
     "violationsBeforeBlock": 0,

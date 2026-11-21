@@ -43,15 +43,18 @@
       <div class="settings-history" id="settingsHistory"></div>`;
   }
 
-  // Formuláře se vykreslují do jednoho panelu, který se přesune do aktivní sekce (Revíry / Nastavení).
+  // Formuláře se vykreslují do jednoho panelu, který se přesune do aktivní sekce (Revíry / Nastavení / Bankovní spojení).
+  const BANK_TABS = ["payment", "gateway"];
   async function load(initialTab, nextMode = "settings") {
     mode = nextMode;
     const host = qs(`.settings-host[data-host="${mode}"]`);
     host.append(qs("#settingsTabs"), qs("#settingsPanel"));
     const panel = qs("#settingsPanel");
-    const inMode = (key) => (mode === "reviry" ? key.startsWith("revir:") || key === "new-revir" : !key.startsWith("revir:") && key !== "new-revir");
+    const inMode = (key) => (mode === "reviry" ? key.startsWith("revir:") || key === "new-revir"
+      : mode === "bank" ? BANK_TABS.includes(key)
+        : !key.startsWith("revir:") && key !== "new-revir" && !BANK_TABS.includes(key));
     if (initialTab && inMode(initialTab)) tab = initialTab;
-    else if (!inMode(tab)) tab = mode === "reviry" ? "" : "organization";
+    else if (!inMode(tab)) tab = mode === "reviry" ? "" : mode === "bank" ? "payment" : "organization";
     try {
       isAdmin = hasRole(await loadSession(), "admin");
       view = await api("/manage/settings");
@@ -62,7 +65,8 @@
   function renderTabs() {
     const tabs = mode === "reviry"
       ? [...view.reviry.map((r) => [`revir:${r.id}`, r.data.name]), ["new-revir", "+ Nový revír"]]
-      : [["organization", "Organizace"], ["species", "Ryby a limity"], ["payment", "Platby"]];
+      : mode === "bank" ? [["payment", "Bankovní převody a QR platby"], ["gateway", "Platební brána"]]
+        : [["organization", "Organizace"], ["species", "Ryby a limity"]];
     if (!tabs.some(([key]) => key === tab)) tab = tabs[0][0];
     qs("#settingsTabs").innerHTML = tabs.map(([key, label]) => `<button type="button" class="tab${key === tab ? " active" : ""}" data-tab="${esc(key)}">${esc(label)}</button>`).join("");
     qsa("#settingsTabs .tab").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; renderTabs(); render(); }));
@@ -71,6 +75,7 @@
     const panel = qs("#settingsPanel");
     if (tab === "organization") panel.innerHTML = organizationForm();
     else if (tab === "payment") panel.innerHTML = paymentForm();
+    else if (tab === "gateway") panel.innerHTML = gatewayForm();
     else if (tab === "species") panel.innerHTML = speciesForm();
     else if (tab === "new-revir") panel.innerHTML = newRevirForm();
     else panel.innerHTML = revirForm(view.reviry.find((r) => `revir:${r.id}` === tab));
@@ -91,10 +96,8 @@
       <div class="form-two-col">${field("oAddress", "Sídlo (pro zásady zpracování)", o.address)}${field("oIco", "IČO", o.ico)}</div>
       <h3>Kontakty</h3>
       <div class="form-two-col">${field("cLabel", "Kontakt – popisek", c.label)}${field("cPhone", "Telefon", c.phone)}</div>
-      <div class="form-two-col">${field("cEmail", "Veřejný e-mail", c.email, 'type="email"')}${field("oManager", "E-mail správce (upozornění: zadržení, limity)", o.managerEmail, 'type="email"')}</div>
-      <h3>Výchozí odesílatel automatických e-mailů</h3>
-      <div class="form-two-col">${field("eName", "Jméno odesílatele", d.email?.fromName, 'placeholder="Místenka – MO Karviná"')}${field("eEmail", "Adresa odesílatele", d.email?.fromEmail, 'type="email" placeholder="mistenka@…"')}</div>
-      <p class="field-help">Použije se pro e-maily, kterým není přiřazen poštovní účet v sekci <b>Admin → Emailoví klienti</b>. Adresa musí patřit k poštovnímu účtu, přes který server odesílá (jinak skončí ve spamu). Na tyto e-maily se neodpovídá – kontakt pro rybáře je výše.</p>
+      <div class="form-two-col">${field("cEmail", "Veřejný e-mail", c.email, 'type="email"')}<div></div></div>
+      <p class="field-help">Odesílatele automatických e-mailů a příjemce upozornění správcům nastavuje admin v <b>Admin → Emailoví klienti</b>.</p>
       <h3>Veřejná kontrola místenky</h3>
       <div class="form-two-col"><div><label class="checkbox-label settings-check"><input type="checkbox" id="pcFull"${pc.showFullName !== false ? " checked" : ""}> <span>Zobrazit celé příjmení</span></label></div>${field("pcChars", "Viditelné číslice legitimace", pc.memberIdVisibleChars ?? 4, 'type="number" min="0" max="8"')}</div>
       <h3>Ochrana osobních údajů – lhůty uchování <a class="text-link" href="privacy.html" target="_blank">zobrazit zásady ↗</a></h3>
@@ -106,9 +109,10 @@
   }
   function organizationData() {
     const d = structuredClone(view.organization.data);
+    delete d.email;
+    if (d.organization) delete d.organization.managerEmail;
     d.privacy = { contactEmail: val("prEmail"), ticketYears: num("prTickets", "Místenky"), accountingYears: num("prAccounting", "Účetní lhůta"), emailDays: num("prEmails", "E-maily"), auditYears: num("prAudit", "Audit"), backupYears: num("prBackups", "Zálohy") };
-    d.organization = { ...d.organization, name: val("oName"), shortName: val("oShort"), web: val("oWeb"), privacyUrl: val("oPrivacy"), address: val("oAddress"), ico: val("oIco"), managerEmail: val("oManager"), contact: { ...(d.organization?.contact || {}), label: val("cLabel"), email: val("cEmail"), phone: val("cPhone") } };
-    d.email = { ...(d.email || {}), fromName: val("eName"), fromEmail: val("eEmail") };
+    d.organization = { ...d.organization, name: val("oName"), shortName: val("oShort"), web: val("oWeb"), privacyUrl: val("oPrivacy"), address: val("oAddress"), ico: val("oIco"), contact: { ...(d.organization?.contact || {}), label: val("cLabel"), email: val("cEmail"), phone: val("cPhone") } };
     d.publicCheck = { showFullName: qs("#pcFull").checked, memberIdVisibleChars: num("pcChars", "Viditelné číslice") };
     return d;
   }
@@ -118,13 +122,19 @@
     const p = view.payment.data;
     const ro = view.canEditPayment ? "" : "disabled";
     return `<form class="settings-form" data-scope="payment" novalidate>
-      <h3>Platební údaje</h3>
+      <h3>Podklady pro bankovní převody a QR platby</h3>
+      <p class="field-help">Z těchto údajů se skládá QR platba (SPAYD) a pokyny k platbě v e-mailu; platby se párují podle variabilního symbolu.</p>
       <div class="${view.canEditPayment ? "info-box" : "status-error"}">${view.canEditPayment ? "Změnu účtu dostanou e-mailem všichni admini. Nové objednávky se budou platit na nový účet, rozpracované zůstávají na původním." : "Platební údaje smí měnit jen admin."}</div>
       <div class="form-two-col">${field("pAccount", "Číslo účtu (s předčíslím: 19-123456789)", p.accountNumber, ro)}${field("pBank", "Kód banky", p.bankCode, `${ro} maxlength="4"`)}</div>
       <p class="field-help">IBAN: <b>${esc(view.payment.iban)}</b> · zdroj plateb: <b>${esc(view.payment.provider)}</b> (mění se jen v konfiguraci serveru)</p>
       <div class="form-two-col">${field("pRecipient", "Příjemce (do QR platby, bez diakritiky)", p.recipientName, ro)}${field("pMessage", "Zpráva pro příjemce – předpona", p.messagePrefix, ro)}</div>
       <div class="form-two-col">${field("pReservation", "Rezervace místa před platbou (minuty)", p.reservationMinutes, `${ro} type="number" min="10" max="1440"`)}<div></div></div>
       ${footer("payment", view.payment, { canEdit: view.canEditPayment })}</form>`;
+  }
+  // Platební brána (karty, Apple/Google Pay) – připraveno pro budoucí rozšíření.
+  function gatewayForm() {
+    return `<div class="settings-form"><h3>Platební brána</h3>
+      <div class="unsupported-box"><b>Prozatím nepodporováno…</b><br>Platby kartou přes platební bránu budou doplněny později. Zatím se platí bankovním převodem nebo QR platbou.</div></div>`;
   }
   const paymentData = () => ({ accountNumber: val("pAccount"), bankCode: val("pBank"), recipientName: val("pRecipient"), messagePrefix: val("pMessage"), reservationMinutes: num("pReservation", "Rezervace") });
 
@@ -226,6 +236,7 @@
   // ---------- uložení, historie, JSON ----------
   function bindCommon() {
     const form = qs("#settingsPanel form");
+    if (!form) return; // platební brána: zatím jen informace
     qs("#speciesSelect")?.addEventListener("change", (e) => { speciesRef = e.target.value; render(); });
     qs("#addSub")?.addEventListener("click", () => qs("#subTable tbody").insertAdjacentHTML("beforeend", subRow()));
     qs("#addHours")?.addEventListener("click", () => qs("#hoursTable tbody").insertAdjacentHTML("beforeend", hoursRow()));

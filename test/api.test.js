@@ -87,6 +87,117 @@ async function paidTicket(overrides) {
 }
 const PERSONAL_KEYS = ["email", "birthDate", "firstName", "lastName", "memberId"];
 
+// ---------- účty (B1) ----------
+const { totp } = require("../src/node/lib/security");
+const T0 = Date.parse("2026-06-10T08:00:00Z");
+let accountSeq = 0;
+function accountBody(overrides = {}) {
+  accountSeq += 1;
+  return { email: `ucet${accountSeq}@example.cz`, password: "tajne-heslo-123", firstName: "Eva", lastName: "Účtová", birthDate: "1990-04-01", memberId: String(50000000 + accountSeq), consent: true, ...overrides };
+}
+async function lastEmail(to, kind) {
+  const { data } = await call("GET", `/dev/outbox?to=${encodeURIComponent(to)}`);
+  return data.emails.find((mail) => !kind || mail.kind === kind) || null;
+}
+async function linkToken(to, kind, fragment) {
+  const mail = await lastEmail(to, kind);
+  assert.ok(mail, `chybí e-mail ${kind} pro ${to}`);
+  const match = mail.text.match(new RegExp(`#${fragment}=([A-Za-z0-9_-]+)`));
+  assert.ok(match, mail.text);
+  return match[1];
+}
+// Registrace + ověření e-mailu → přihlášená relace.
+async function verifiedAccount(overrides) {
+  const body = accountBody(overrides);
+  assert.equal((await call("POST", "/auth/register", { body })).status, 200);
+  const session = {};
+  const verified = await call("POST", "/auth/verify", { body: { token: await linkToken(body.email, "account_verify", "verify") }, session });
+  assert.equal(verified.status, 200, JSON.stringify(verified.data));
+  return { ...body, session, user: verified.data.user };
+}
+async function enableTwoFactor(session, atMs) {
+  const setup = await call("POST", "/me/2fa/setup", { session });
+  assert.equal(setup.status, 200, JSON.stringify(setup.data));
+  await setClock(new Date(atMs).toISOString());
+  const enabled = await call("POST", "/me/2fa/enable", { body: { otp: totp(setup.data.secret, atMs) }, session });
+  assert.equal(enabled.status, 200, JSON.stringify(enabled.data));
+  return setup.data.secret;
+}
+
+// ---------- první spuštění (musí běžet první: průvodce založí admina, ten pak spustí službu) ----------
+const ROOT = { email: "admin@example.cz", password: "admin-heslo", secret: null, session: null };
+const LAUNCH = { season: null, accountId: null };
+test("průvodce prvním spuštěním: admin vznikne jen s jednorázovým odkazem a rovnou s 2FA", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  assert.deepEqual((await call("GET", "/setup")).data, { needed: true });
+  assert.equal((await call("POST", "/setup/2fa", { body: { token: "spatny-token" } })).data.code, "invalid_setup_token");
+  const { token } = (await call("POST", "/dev/setup-token")).data;
+  const setup = await call("POST", "/setup/2fa", { body: { token } });
+  assert.equal(setup.status, 200, JSON.stringify(setup.data));
+  assert.ok(setup.data.otpauthUrl.startsWith("otpauth://totp/"));
+  const body = { token, email: "Admin@Example.cz", firstName: "Hlavní", lastName: "Admin", password: "admin-heslo" };
+  assert.equal((await call("POST", "/setup", { body: { ...body, password: "kratke" } })).data.code, "weak_password");
+  assert.equal((await call("POST", "/setup", { body: { ...body, otp: "000000" } })).data.code, "invalid_otp");
+  const session = {};
+  const done = await call("POST", "/setup", { body: { ...body, otp: totp(setup.data.secret, T0) }, session });
+  assert.equal(done.status, 200, JSON.stringify(done.data));
+  assert.deepEqual(done.data.user.roles, ["member", "admin"]);
+  assert.equal(done.data.user.twoFactor, true);
+  assert.equal(done.data.user.mfaRequired, false);
+  assert.equal(done.data.user.staffOnly, true, "admin nemusí mít rybářské údaje");
+  assert.equal(done.data.user.memberId, null);
+  assert.equal((await call("GET", "/manage/users", { session })).status, 200, "admin může hned spravovat");
+  assert.deepEqual((await call("GET", "/setup")).data, { needed: false });
+  assert.equal((await call("POST", "/setup", { body: { ...body, otp: totp(setup.data.secret, T0 + 30_000) } })).data.code, "setup_closed");
+  assert.equal((await call("POST", "/dev/setup-token")).status, 404, "dokud admin existuje, nový odkaz nevznikne");
+  // Přihlášení admina: heslo + 2FA.
+  await setClock(new Date(T0 + 60_000).toISOString());
+  assert.equal((await call("POST", "/auth/login", { body: { email: "admin@example.cz", password: "admin-heslo" } })).data.code, "otp_required");
+  const rootSession = {};
+  assert.equal((await call("POST", "/auth/login", { body: { email: "admin@example.cz", password: "admin-heslo", otp: totp(setup.data.secret, T0 + 60_000) }, session: rootSession })).status, 200, "správa se přihlásí i před spuštěním služby");
+  Object.assign(ROOT, { secret: setup.data.secret, session: rootSession });
+});
+
+
+// Zavřeno, dokud správa ručně neotevře první sezonu; otevřít ji jde až s nastavenými e-maily (výchozí odesílání neexistuje).
+test("spuštění služby: před otevřením první sezony je zavřeno, otevřít ji lze až s nastavenými e-maily", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const session = ROOT.session;
+  assert.deepEqual((await call("GET", "/config")).data.service, { launched: false });
+  const days = (await call("GET", "/reviry/revir-a/availability")).data.days;
+  assert.ok(days.every((d) => d.closed && d.closedReason === "Sezona zatím nebyla otevřena"), JSON.stringify(days[0]));
+  assert.equal((await call("POST", "/orders", { body: orderBody() })).data.code, "out_of_season");
+  const blocked = await call("POST", "/auth/register", { body: accountBody() });
+  assert.equal(blocked.status, 409);
+  assert.equal(blocked.data.code, "service_not_launched", "registrace až po spuštění");
+
+  const email = (await call("GET", "/manage/email/accounts", { session })).data;
+  assert.equal(email.ready, false);
+  assert.deepEqual(email.missing, ["tickets", "accounts", "notices", "noticeRecipients"]);
+  assert.deepEqual(email.noticeRecipients, []);
+  assert.ok(!("fallback" in email), "výchozí odesílatel neexistuje");
+  const season = { name: "Sezona 2026", opensOn: "2026-01-01" };
+  assert.equal((await call("POST", "/manage/seasons", { body: season, session })).data.code, "email_not_ready");
+  const created = await call("POST", "/manage/email/accounts", { body: { label: "Místenka MO", fromEmail: "mistenka@example.cz", fromName: "Místenka MO Test", host: "smtp.example.cz", port: 465, encryption: "ssl", username: "mistenka@example.cz", password: "smtp-heslo" }, session });
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  const account = created.data.account;
+  assert.equal((await call("POST", `/manage/email/accounts/${account.id}/verify`, { body: { to: ROOT.email }, session })).status, 200);
+  assert.equal((await call("PUT", "/manage/email/senders", { body: { noticeRecipients: "spravce-mo@example.cz, spatna" }, session })).data.code, "invalid_email");
+  const partial = await call("PUT", "/manage/email/senders", { body: { tickets: account.id, accounts: account.id }, session });
+  assert.deepEqual(partial.data.missing, ["notices", "noticeRecipients"]);
+  const saved = await call("PUT", "/manage/email/senders", { body: { notices: account.id, noticeRecipients: ["Spravce-MO@example.cz", "vybor@example.cz", "vybor@example.cz"] }, session });
+  assert.equal(saved.status, 200, JSON.stringify(saved.data));
+  assert.deepEqual(saved.data.noticeRecipients, ["spravce-mo@example.cz", "vybor@example.cz"]);
+  assert.equal(saved.data.ready, true);
+
+  const opened = await call("POST", "/manage/seasons", { body: season, session });
+  assert.equal(opened.status, 201, JSON.stringify(opened.data));
+  assert.equal(opened.data.season.state, "open");
+  assert.deepEqual((await call("GET", "/config")).data.service, { launched: true });
+  assert.equal((await call("GET", "/reviry/revir-a/availability")).data.days[0].closed, false);
+  Object.assign(LAUNCH, { season: opened.data.season, accountId: account.id });
+});
+
 // ---------- konfigurace a dostupnost ----------
 test("GET /config vrací veřejnou konfiguraci bez tajných údajů", async () => {
   await setClock("2026-06-10T08:00:00Z");
@@ -316,43 +427,6 @@ test("platnost místenky respektuje pásmo Europe/Prague a přelom roku", async 
   await setClock("2026-06-10T08:00:00Z");
 });
 
-// ---------- účty (B1) ----------
-const { totp } = require("../src/node/lib/security");
-const T0 = Date.parse("2026-06-10T08:00:00Z");
-let accountSeq = 0;
-function accountBody(overrides = {}) {
-  accountSeq += 1;
-  return { email: `ucet${accountSeq}@example.cz`, password: "tajne-heslo-123", firstName: "Eva", lastName: "Účtová", birthDate: "1990-04-01", memberId: String(50000000 + accountSeq), consent: true, ...overrides };
-}
-async function lastEmail(to, kind) {
-  const { data } = await call("GET", `/dev/outbox?to=${encodeURIComponent(to)}`);
-  return data.emails.find((mail) => !kind || mail.kind === kind) || null;
-}
-async function linkToken(to, kind, fragment) {
-  const mail = await lastEmail(to, kind);
-  assert.ok(mail, `chybí e-mail ${kind} pro ${to}`);
-  const match = mail.text.match(new RegExp(`#${fragment}=([A-Za-z0-9_-]+)`));
-  assert.ok(match, mail.text);
-  return match[1];
-}
-// Registrace + ověření e-mailu → přihlášená relace.
-async function verifiedAccount(overrides) {
-  const body = accountBody(overrides);
-  assert.equal((await call("POST", "/auth/register", { body })).status, 200);
-  const session = {};
-  const verified = await call("POST", "/auth/verify", { body: { token: await linkToken(body.email, "account_verify", "verify") }, session });
-  assert.equal(verified.status, 200, JSON.stringify(verified.data));
-  return { ...body, session, user: verified.data.user };
-}
-async function enableTwoFactor(session, atMs) {
-  const setup = await call("POST", "/me/2fa/setup", { session });
-  assert.equal(setup.status, 200, JSON.stringify(setup.data));
-  await setClock(new Date(atMs).toISOString());
-  const enabled = await call("POST", "/me/2fa/enable", { body: { otp: totp(setup.data.secret, atMs) }, session });
-  assert.equal(enabled.status, 200, JSON.stringify(enabled.data));
-  return setup.data.secret;
-}
-
 test("registrace: validace, ověření e-mailu, přihlášení heslem, odhlášení", async () => {
   await setClock("2026-06-10T08:00:00Z");
   for (const [overrides, code] of [[{ consent: false }, "consent_required"], [{ password: "kratke" }, "weak_password"], [{ memberId: "123" }, "invalid_member_id"], [{ email: "x" }, "invalid_email"]]) {
@@ -518,7 +592,8 @@ test("role: správce jmenuje porybné, admin správce; admin musí mít 2FA; pos
   assert.equal((await call("PUT", `/manage/users/${member.user.id}/roles`, { body: { roles: ["warden", "manager"] }, session: manager.session })).data.code, "forbidden_role");
   assert.equal((await call("PUT", `/manage/users/${admin.user.id}/roles`, { body: { roles: [] }, session: manager.session })).data.code, "forbidden_role");
 
-  // Posledního admina nelze odebrat ani smazat; admin si nemůže vypnout 2FA.
+  // Posledního admina nelze odebrat ani smazat; admin si nemůže vypnout 2FA. (Admin z průvodce dočasně bez role.)
+  await call("POST", "/dev/users/roles", { body: { email: ROOT.email, roles: [] } });
   assert.equal((await call("PUT", `/manage/users/${admin.user.id}/roles`, { body: { roles: ["manager"] }, session: admin.session })).data.code, "last_admin");
   assert.equal((await call("POST", "/me/delete", { body: { confirm: true, password: admin.password }, session: admin.session })).data.code, "last_admin");
   assert.equal((await call("POST", "/me/2fa/disable", { body: { otp: "123456" }, session: admin.session })).data.code, "two_factor_required");
@@ -530,6 +605,7 @@ test("role: správce jmenuje porybné, admin správce; admin musí mít 2FA; pos
   assert.equal((await call("PUT", `/manage/users/${pendingId}/roles`, { body: { roles: ["warden"] }, session: admin.session })).data.code, "user_not_verified");
   // Úklid pro další testy: druhý admin by jinak ovlivnil kontrolu „posledního admina“.
   await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: [] } });
+  await call("POST", "/dev/users/roles", { body: { email: ROOT.email, roles: ["admin"] } });
 });
 
 test("smazání účtu: místenky zůstanou, přihlášení přestane fungovat; neověřené účty se po 48 h smažou", async () => {
@@ -782,9 +858,13 @@ test("důležité zprávy: správa jen pro správce, veřejně nejvýš 3 aktivn
   assert.deepEqual((await call("GET", "/announcements?revirId=revir-a")).data.announcements, []);
 });
 
-test("sezona: mimo sezonu nelze koupit, dny jsou v dostupnosti uzavřené; revír bez sezony je otevřený", async () => {
+test("sezona: prodává se jen v otevřené sezoně; revír bez sezony je zavřený; dny mimo sezonu jsou v dostupnosti uzavřené", async () => {
   await setClock("2026-06-10T08:00:00Z");
   const { session } = await managerAccount();
+  assert.equal((await call("DELETE", `/manage/seasons/${LAUNCH.season.id}`, { session })).status, 200);
+  const none = (await call("GET", "/reviry/revir-b/availability")).data.days[0];
+  assert.equal(none.closed, true, "bez sezony je zavřeno");
+  assert.equal(none.closedReason, "Mimo sezonu", "služba už běží – jen mimo sezonu");
   assert.equal((await call("POST", "/manage/seasons", { body: { name: "Sezona 2026", revirId: "revir-a" }, session })).data.code, "invalid_date");
   // Název je nepovinný; uzavření od data = poslední den lovu je den předtím; uzavřít lze nejdřív ode dneška.
   const unnamed = (await call("POST", "/manage/seasons", { body: { revirId: "revir-b", opensOn: "2026-06-01" }, session })).data.season;
@@ -808,12 +888,17 @@ test("sezona: mimo sezonu nelze koupit, dny jsou v dostupnosti uzavřené; reví
   assert.equal(out.status, 409);
   assert.equal(out.data.code, "out_of_season");
   assert.equal((await call("POST", "/orders", { body: orderBody({ date: "2026-06-12" }) })).status, 201);
-  assert.equal((await call("POST", "/orders", { body: orderBody({ revirId: "revir-b", date: "2026-06-11" }) })).status, 201, "revír B sezonu nemá → otevřený");
+  assert.equal((await call("POST", "/orders", { body: orderBody({ revirId: "revir-b", date: "2026-06-11" }) })).data.code, "out_of_season", "revír B sezonu nemá → zavřený");
   // Předčasné uzavření sezony = změna data uzavření.
   const closed = await call("PUT", `/manage/seasons/${season.data.season.id}`, { body: { name: "Sezona 2026", revirId: "revir-a", opensOn: "2026-06-01", closesOn: "2026-06-10" }, session });
   assert.equal(closed.data.season.state, "open", "dnes je poslední den");
   assert.equal((await call("POST", "/orders", { body: orderBody({ date: "2026-06-11" }) })).data.code, "out_of_season");
   assert.equal((await call("DELETE", `/manage/seasons/${season.data.season.id}`, { session })).status, 200);
+  assert.equal((await call("GET", "/reviry/revir-a/availability")).data.days[0].closed, true);
+  // Úklid: celoroční sezona celé MO pro další testy.
+  const restored = await call("POST", "/manage/seasons", { body: { name: "Sezona 2026", opensOn: "2026-01-01" }, session });
+  assert.equal(restored.status, 201);
+  LAUNCH.season = restored.data.season;
   assert.equal((await call("GET", "/reviry/revir-a/availability")).data.days[0].closed, false);
 });
 
@@ -972,7 +1057,7 @@ test("nastavení organizace a pravidel ryb; verze pravidel se uloží k odevzdan
   const { session } = await managerAccount();
   const view = (await call("GET", "/manage/settings", { session })).data;
   const org = view.organization.data;
-  assert.equal((await call("PUT", "/manage/settings/organization", { body: { data: { ...org, organization: { ...org.organization, managerEmail: "spatny" } } }, session })).data.code, "invalid_settings");
+  assert.equal((await call("PUT", "/manage/settings/organization", { body: { data: { ...org, organization: { ...org.organization, contact: { ...org.organization.contact, email: "spatny" } } } }, session })).data.code, "invalid_settings");
   const changed = await call("PUT", "/manage/settings/organization", { body: { data: { ...org, publicCheck: { showFullName: false, memberIdVisibleChars: 2 } } }, session });
   assert.equal(changed.status, 200, JSON.stringify(changed.data));
   const t = await paidTicket({ lastName: "Veřejný" });
@@ -1089,7 +1174,7 @@ test("přehledy: místenky, tržby, úlovky po druzích, uloveno vs. nasazeno, p
   assert.deepEqual(s.byMonth.map((m) => [m.month, m.tickets, m.catches]), [["2026-08", 2, 3]]);
 });
 
-test("uzávěrky: ruční za období; automatická po skončení sezony s e-mailem správci, jen jednou", async () => {
+test("uzávěrky: ruční za období; čeká na odevzdání vs. neodevzdané; automatická až po lhůtě pro odevzdání, s e-mailem správci, jen jednou", async () => {
   await setClock("2026-08-03T08:00:00Z");
   const { session } = await managerAccount();
   const manual = await call("POST", "/manage/reports", { body: { name: "Srpen 2026", from: "2026-08-01", to: "2026-08-31", revirId: "revir-a" }, session });
@@ -1097,17 +1182,29 @@ test("uzávěrky: ruční za období; automatická po skončení sezony s e-mail
   assert.equal(manual.data.kind, "manual");
   assert.equal(manual.data.data.summary.sold, 2, "uložená statistika");
 
+  await paidTicket({ date: "2026-08-03" }); // neodevzdaná – lhůta 7 dní po dni lovu
   const season = await call("POST", "/manage/seasons", { body: { name: "Letní sezona", revirId: "revir-a", opensOn: "2026-08-01", closesOn: "2026-08-03" }, session });
   assert.equal(season.status, 201);
   const before = (await call("GET", "/manage/reports", { session })).data.reports.filter((r) => r.kind === "season").length;
-  await setClock("2026-08-04T06:00:00Z"); // den po skončení sezony – úlohy vytvoří uzávěrku
-  const reports = (await call("GET", "/manage/reports", { session })).data.reports;
-  const auto = reports.find((r) => r.kind === "season" && r.seasonId === season.data.season.id);
+  const seasonReport = async () => (await call("GET", "/manage/reports", { session })).data.reports.find((r) => r.kind === "season" && r.seasonId === season.data.season.id);
+
+  // Den po skončení sezony: lhůta pro odevzdání běží → uzávěrka by nebyla konečná, automatická ještě nevznikne.
+  await setClock("2026-08-04T06:00:00Z");
+  const pending = (await call("GET", "/manage/stats?from=2026-08-01&to=2026-08-03&revirId=revir-a", { session })).data.summary;
+  assert.deepEqual([pending.sold, pending.returned, pending.awaitingReturn, pending.returnDeadline, pending.unreturned], [3, 2, 1, "2026-08-10", 0], JSON.stringify(pending));
+  assert.equal(await seasonReport(), undefined, "automatická uzávěrka až po lhůtě pro odevzdání");
+  await setClock("2026-08-10T20:00:00Z");
+  assert.equal(await seasonReport(), undefined, "poslední den lhůty ještě ne");
+
+  // Po lhůtě: místenka se uzavře jako neodevzdaná a vznikne konečná uzávěrka.
+  await setClock("2026-08-11T06:00:00Z");
+  const auto = await seasonReport();
   assert.ok(auto, "automatická uzávěrka");
   assert.deepEqual([auto.from, auto.to], ["2026-08-01", "2026-08-03"]);
-  assert.equal((await call("GET", `/manage/reports/${auto.id}`, { session })).data.data.summary.sold, 2);
+  const final = (await call("GET", `/manage/reports/${auto.id}`, { session })).data.data.summary;
+  assert.deepEqual([final.sold, final.returned, final.awaitingReturn, final.returnDeadline, final.unreturned], [3, 2, 0, null, 1], JSON.stringify(final));
   assert.ok(await lastEmail("spravce-mo@example.cz", "season_report"), "e-mail správci");
-  await setClock("2026-08-05T06:00:00Z");
+  await setClock("2026-08-12T06:00:00Z");
   assert.equal((await call("GET", "/manage/reports", { session })).data.reports.filter((r) => r.kind === "season").length, before + 1, "uzávěrka sezony jen jednou");
   await call("DELETE", `/manage/seasons/${season.data.season.id}`, { session });
   await setClock("2026-06-10T08:00:00Z");
@@ -1141,15 +1238,17 @@ test("zálohy: jen admin; ruční záloha jde stáhnout; denní se drží 2; po 
   assert.equal(daily.length, 2, "drží se poslední a aktuální denní záloha");
   assert.ok(daily[0].createdAt.startsWith("2026-09-04") && daily.every((b) => b.exists));
 
-  // Mimo sezonu se denní záloha nedělá.
+  // Mimo sezonu se denní záloha nedělá (celoroční sezona z prvního spuštění dočasně pryč).
   await setClock("2026-09-04T08:00:00Z");
+  assert.equal((await call("DELETE", `/manage/seasons/${LAUNCH.season.id}`, { session })).status, 200);
   const season = await call("POST", "/manage/seasons", { body: { name: "Podzim", opensOn: "2026-09-01", closesOn: "2026-09-04" }, session });
-  await setClock("2026-09-05T06:00:00Z"); // konec sezony → uzávěrka → trvalá záloha
+  await setClock("2026-09-12T06:00:00Z"); // po lhůtě pro odevzdání → uzávěrka → trvalá záloha
   const after = (await call("GET", "/manage/backups", { session })).data.backups;
   const seasonBackup = after.find((b) => b.kind === "season");
   assert.ok(seasonBackup, "záloha po uzávěrce sezony");
   assert.match(seasonBackup.note, /Podzim/);
-  assert.ok(!after.some((b) => b.kind === "daily" && b.createdAt.startsWith("2026-09-05")), "mimo sezonu bez denní zálohy");
+  assert.ok(!after.some((b) => b.kind === "daily" && b.createdAt.startsWith("2026-09-12")), "mimo sezonu bez denní zálohy");
+  LAUNCH.season = (await call("POST", "/manage/seasons", { body: { name: "Sezona 2026", opensOn: "2026-01-01" }, session })).data.season;
 
   assert.equal((await call("DELETE", `/manage/backups/${manual.data.backup.id}`, { session })).status, 200);
   assert.ok(!(await call("GET", "/manage/backups", { session })).data.backups.some((b) => b.id === manual.data.backup.id));
@@ -1350,40 +1449,16 @@ test("e-mailoví klienti: účty spravuje admin, heslo se nevrací, odesílatele
   assert.equal(edited.data.account.hasPassword, true);
   assert.equal((await call("DELETE", `/manage/email/accounts/${account.id}`, { session })).status, 200);
   assert.equal((await call("GET", "/manage/email/accounts", { session })).data.senders.tickets, null, "smazaný účet se odebere ze skupin");
+  const restored = await call("PUT", "/manage/email/senders", { body: { tickets: LAUNCH.accountId, accounts: LAUNCH.accountId }, session });
+  assert.equal(restored.data.ready, true, "úklid: odesílatelé z prvního spuštění");
   await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: [] } });
 });
 
-// ---------- průvodce prvním spuštěním a pozvání správce ----------
-// Musí běžet poslední: po založení admina se průvodce zavře.
-test("průvodce prvním spuštěním: admin vznikne jen s jednorázovým odkazem a rovnou s 2FA", async () => {
-  await setClock("2026-06-10T08:00:00Z");
-  assert.deepEqual((await call("GET", "/setup")).data, { needed: true });
-  assert.equal((await call("POST", "/setup/2fa", { body: { token: "spatny-token" } })).data.code, "invalid_setup_token");
-  const { token } = (await call("POST", "/dev/setup-token")).data;
-  const setup = await call("POST", "/setup/2fa", { body: { token } });
-  assert.equal(setup.status, 200, JSON.stringify(setup.data));
-  assert.ok(setup.data.otpauthUrl.startsWith("otpauth://totp/"));
-  const body = { token, email: "Admin@Example.cz", firstName: "Hlavní", lastName: "Admin", password: "admin-heslo" };
-  assert.equal((await call("POST", "/setup", { body: { ...body, password: "kratke" } })).data.code, "weak_password");
-  assert.equal((await call("POST", "/setup", { body: { ...body, otp: "000000" } })).data.code, "invalid_otp");
+// ---------- pozvání správce ----------
+test("pozvání správce: admin pozve správce, účet jen pro správu, heslo z odkazu", async () => {
+  await setClock(new Date(T0 + 120_000).toISOString());
   const session = {};
-  const done = await call("POST", "/setup", { body: { ...body, otp: totp(setup.data.secret, T0) }, session });
-  assert.equal(done.status, 200, JSON.stringify(done.data));
-  assert.deepEqual(done.data.user.roles, ["member", "admin"]);
-  assert.equal(done.data.user.twoFactor, true);
-  assert.equal(done.data.user.mfaRequired, false);
-  assert.equal(done.data.user.staffOnly, true, "admin nemusí mít rybářské údaje");
-  assert.equal(done.data.user.memberId, null);
-  assert.equal((await call("GET", "/manage/users", { session })).status, 200, "admin může hned spravovat");
-  assert.deepEqual((await call("GET", "/setup")).data, { needed: false });
-  assert.equal((await call("POST", "/setup", { body: { ...body, otp: totp(setup.data.secret, T0 + 30_000) } })).data.code, "setup_closed");
-  assert.equal((await call("POST", "/dev/setup-token")).status, 404, "dokud admin existuje, nový odkaz nevznikne");
-  // Přihlášení admina: heslo + 2FA.
-  await setClock(new Date(T0 + 60_000).toISOString());
-  assert.equal((await call("POST", "/auth/login", { body: { email: "admin@example.cz", password: "admin-heslo" } })).data.code, "otp_required");
-  assert.equal((await call("POST", "/auth/login", { body: { email: "admin@example.cz", password: "admin-heslo", otp: totp(setup.data.secret, T0 + 60_000) } })).status, 200);
-
-  // Admin pozve správce: účet jen pro správu, heslo si nastaví z odkazu.
+  assert.equal((await call("POST", "/auth/login", { body: { email: ROOT.email, password: ROOT.password, otp: totp(ROOT.secret, T0 + 120_000) }, session })).status, 200);
   await setClock("2026-06-10T08:00:00Z");
   const member = await verifiedAccount();
   assert.equal((await call("POST", "/manage/users", { body: { email: "x@example.cz", firstName: "A", lastName: "B", roles: ["warden"] }, session })).data.code, "invalid_roles");

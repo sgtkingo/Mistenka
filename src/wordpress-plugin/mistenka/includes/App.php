@@ -218,7 +218,7 @@ final class App
         $acc = $this->accounts;
         $svc = $this->service;
 
-        if ($path === '/config' && $method === 'GET') return self::json(200, Config::publicConfig($this->config, ['today' => Time::pragueToday(), 'now' => Time::nowIso(), 'devMode' => Env::dev()]));
+        if ($path === '/config' && $method === 'GET') return self::json(200, Config::publicConfig($this->config, ['today' => Time::pragueToday(), 'now' => Time::nowIso(), 'devMode' => Env::dev(), 'service' => ['launched' => Db::serviceLaunched()]]));
         if ($match('#^/reviry/([a-z0-9-]+)/availability$#') && $method === 'GET') return self::json(200, $svc->availability($m[1]));
         if ($path === '/announcements' && $method === 'GET') return self::json(200, $this->operations->activeAnnouncements($q('revirId')));
         if ($path === '/orders' && $method === 'POST') {

@@ -80,8 +80,11 @@ function buildConfig(rawInput, speciesDocs) {
     if (!Number.isInteger(rule.count) || rule.count < 0 || rule.count > 50) fail(`${label}: počet případů musí být celé číslo 0–50`);
     if (rule.blockDays !== null && !(Number.isInteger(rule.blockDays) && rule.blockDays > 0 && rule.blockDays <= 3650)) fail(`${label}: délka blokace musí být 1–3650 dní, nebo prázdná (do konce roku)`);
   }
-  const managerEmail = config.organization.managerEmail;
-  if (managerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(managerEmail)) fail("neplatný e-mail správce");
+  // E-maily (odesílatelé, příjemci upozornění) nastavuje admin v portálu (Emailoví klienti), ne konfigurace.
+  delete config.organization.managerEmail;
+  delete config.email;
+  const contactEmail = config.organization.contact?.email;
+  if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) fail("neplatný veřejný e-mail");
   const orgRules = speciesRulesFor(speciesDocs, config.speciesRules, "organizace");
   for (const revir of config.reviry) {
     const rules = revir.speciesRules ? speciesRulesFor(speciesDocs, revir.speciesRules, `revír ${revir.id}`) : orgRules;

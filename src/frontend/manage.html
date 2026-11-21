@@ -37,6 +37,7 @@
         <span class="manage-nav-group">Organizace</span>
         <button class="manage-nav-item" type="button" data-section="settings">Nastavení</button>
         <span class="manage-nav-group admin-only hidden">Admin</span>
+        <button class="manage-nav-item admin-only hidden" type="button" data-section="bank">Bankovní spojení</button>
         <button class="manage-nav-item admin-only hidden" type="button" data-section="email">Emailoví klienti</button>
         <button class="manage-nav-item admin-only hidden" type="button" data-section="backups">Zálohy</button>
         <button class="manage-nav-item admin-only hidden" type="button" data-section="audit">Audit změn</button>
@@ -151,7 +152,8 @@
 
       <section class="panel-card manage-section hidden" id="section-seasons">
         <div class="panel-heading"><div><span class="section-kicker">Provoz revíru</span><h1>Sezona a uzavření</h1></div></div>
-        <p class="panel-intro">Místenky lze kupovat jen na dny v otevřené sezoně. Revír bez nastavené sezony je otevřený celý rok. Uzavřením se zablokuje nákup na další dny; už vystavené místenky platí dál.</p>
+        <p class="panel-intro">Místenky lze kupovat jen na dny v otevřené sezoně – revír bez sezony je zavřený. Uzavřením se zablokuje nákup na další dny; už vystavené místenky platí dál.</p>
+        <div class="launch-note hidden" id="launchNote"></div>
         <button class="primary-button big-button" type="button" id="openSeasonButton">+ Otevřít sezonu</button>
         <form id="seasonForm" class="season-open-form hidden" novalidate>
           <div class="form-two-col"><div><label class="field-label req" for="seasonRevir">Revír</label><select id="seasonRevir" data-revir-select></select></div><div><label class="field-label" for="seasonName">Název <span class="optional">(nepovinný, jinak „Sezona rok“)</span></label><input id="seasonName" maxlength="80"></div></div>
@@ -188,6 +190,12 @@
         <div class="settings-host" data-host="settings"><div class="tabs settings-tabs" id="settingsTabs"></div><div id="settingsPanel"></div></div>
       </section>
 
+      <section class="panel-card manage-section hidden" id="section-bank">
+        <div class="panel-heading"><div><span class="section-kicker">Admin</span><h1>Bankovní spojení</h1></div></div>
+        <p class="panel-intro">Účet, na který rybáři platí místenky. Změnu dostanou e-mailem všichni admini; každé uložení vytvoří novou verzi, starší lze obnovit.</p>
+        <div class="settings-host" data-host="bank"></div>
+      </section>
+
       <section class="panel-card manage-section hidden" id="section-stocking">
         <div class="panel-heading"><div><span class="section-kicker">Hospodaření</span><h1>Zarybnění</h1></div></div>
         <p class="panel-intro">Zapisujte nasazené ryby i plán. Rozpočet hlídá skutečné i plánované náklady; srovnání s úlovky pomáhá plánovat další nasazení.</p>
@@ -201,7 +209,7 @@
 
       <section class="panel-card manage-section hidden" id="section-email">
         <div class="panel-heading"><div><span class="section-kicker">Admin</span><h1>Emailoví klienti</h1></div></div>
-        <p class="panel-intro">Poštovní účty (SMTP), přes které Místenka odesílá e-maily. Účet nejdřív ověřte testovacím e-mailem, pak ho vyberte jako odesílatele pro skupinu e-mailů. Skupina bez účtu odesílá výchozím způsobem serveru.</p>
+        <p class="panel-intro">Všechny automatické e-maily Místenky odcházejí přes poštovní účty (SMTP) nastavené tady – žádné výchozí odesílání neexistuje. Účet nejdřív ověřte testovacím e-mailem, pak ho vyberte jako odesílatele skupiny e-mailů a nastavte příjemce upozornění správcům. Bez toho nejde otevřít první sezonu.</p>
         <div id="emailPanel"></div>
       </section>
 

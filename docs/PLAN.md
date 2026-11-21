@@ -131,7 +131,8 @@ Vše nejdřív v Node verzi. WordPress (WP uživatelé s vlastními rolemi, při
 
 > **Stav 20. 11. 2026: plugin `src/wordpress-plugin/mistenka` (v1.0.0) hotový**, prochází všemi 47 sdílenými testy API proti WordPressu 7.1.4 / PHP 8.3 v Dockeru (`dev/wordpress`). Rozhodnutí:
 > - Účty, relace a 2FA jsou vlastní tabulky pluginu (stejně jako Node), ne uživatelé WordPressu – rybáři se nedostanou do wp-admin a chování je 1:1. Prvního admina zakládá průvodce, odkaz generuje administrátor webu v Nastavení → Místenka.
-> - E-maily: nativní odesílání přes PHPMailer z WordPressu, víc SMTP účtů (portál → Admin → Emailoví klienti, ověření testovacím e-mailem, hesla šifrovaná), odesílatel podle skupiny e-mailů; WP Mail SMTP už není potřeba. Funkce doplněna i do Node verze.
+> - E-maily: víc SMTP účtů (portál → Admin → Emailoví klienti, ověření testovacím e-mailem, hesla šifrovaná), odesílatel podle skupiny e-mailů; WP Mail SMTP už není potřeba. Funkce doplněna i do Node verze.
+> - 21. 11. 2026: vlastní SMTP klient v obou verzích (bez `wp_mail()` a PHPMaileru), žádné výchozí odesílání; příjemci upozornění správcům v Emailových klientech místo `organization.managerEmail`, e-maily z `organization.json` odstraněny. Čerstvá instalace je zavřená (uzavřená sezona s vtipnou úvodní stránkou, bez registrace a přihlášení rybářů), dokud admin ručně neotevře první sezonu; revír bez sezony je zavřený.
 > - Frontend na subdoméně: blok `.htaccess` jen pro host aplikace (statické soubory přímo z Apache), záložně servíruje PHP.
 > - Zálohy ve WordPressu = export tabulek pluginu (JSON + gzip) do datové složky mimo web; automatická obnova poškozené DB je jen v Node (MySQL hlídá hosting).
 > - Nově (obě verze): žádost „Jsem porybný“ → Notifikace v portálu + e-mail správci se schválením z e-mailu.

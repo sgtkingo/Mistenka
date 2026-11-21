@@ -1,13 +1,16 @@
-"""Sestaví instalační ZIP WordPress pluginu: python scripts/build-plugin.py [nazev-pluginu]
+"""Sestaví instalační ZIP WordPress pluginu: python scripts/build-plugin.py [nazev-pluginu] [--fake-bank]
 
 Výchozí plugin je `mistenka`. Do archivu se kromě PHP převezme:
   - frontend (src/frontend → mistenka/frontend), js/env.js s prefixem API WordPressu,
-  - výchozí konfigurace MO (config → mistenka/config),
+  - výchozí konfigurace MO (config → mistenka/config); ZIP je produkční balíček, proto má
+    organization.json vždy payment.provider = "fio" (repo nechává "fake" pro lokální Node;
+    falešnou banku, kde může platbu „zaplatit“ kdokoli, do ZIPu dá jen --fake-bank),
   - LICENSE.md a ochranné .htaccess (config a includes nejsou z webu dostupné).
 
 Používá zipfile, takže výsledek nezávisí na tom, jaký `tar` je v systému,
 a cesty v archivu mají vždy dopředná lomítka (nutné pro WordPress na Linuxu).
 """
+import json
 import os
 import re
 import sys
@@ -16,10 +19,13 @@ import zipfile
 sys.stdout.reconfigure(encoding="utf-8")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-name = sys.argv[1] if len(sys.argv) > 1 else "mistenka"
+args = [a for a in sys.argv[1:] if not a.startswith("--")]
+fake_bank = "--fake-bank" in sys.argv[1:]
+name = args[0] if args else "mistenka"
 src = os.path.join(ROOT, "src", "wordpress-plugin", name)
 out_dir = os.path.join(ROOT, "dist")
-out = os.path.join(out_dir, f"{name}.zip")
+# Testovací balíček s falešnou bankou má jiný název souboru, aby se nezaměnil s produkčním.
+out = os.path.join(out_dir, f"{name}-fake-bank.zip" if fake_bank else f"{name}.zip")
 
 if not os.path.isdir(src):
     sys.exit(f"Plugin nenalezen: {src}")
@@ -63,7 +69,14 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
                 z.write(path, f"{name}/frontend/{rel}")
         z.writestr(f"{name}/frontend/.htaccess", FRONTEND_HTACCESS)
         for path, rel in walk(os.path.join(ROOT, "config")):
-            z.write(path, f"{name}/config/{rel}")
+            if rel == "organization.json":
+                with open(path, encoding="utf8") as fh:
+                    org = json.load(fh)
+                provider = "fake" if fake_bank else "fio"
+                org["payment"]["provider"] = provider
+                z.writestr(f"{name}/config/{rel}", json.dumps(org, ensure_ascii=False, indent=2) + chr(10))
+            else:
+                z.write(path, f"{name}/config/{rel}")
         z.writestr(f"{name}/config/.htaccess", DENY)
         z.writestr(f"{name}/includes/.htaccess", DENY)
         z.write(os.path.join(ROOT, "LICENSE.md"), f"{name}/LICENSE.md")
@@ -75,5 +88,7 @@ with zipfile.ZipFile(out) as z:
     names = z.namelist()
     plugin_file = os.path.join(src, f"{name}.php")
     print(f"OK {out} · verze {version(plugin_file) if os.path.exists(plugin_file) else '?'} · {len(names)} souborů")
+    if name == "mistenka":
+        print(f"  platby: {'fake (POZOR: jen pro test, platby jde simulovat)' if fake_bank else 'fio (nutný MISTENKA_FIO_TOKEN ve wp-config.php)'}")
     for n in names:
         print("  " + n)

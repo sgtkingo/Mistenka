@@ -1,9 +1,10 @@
 "use strict";
 // Uživatelské účty, přihlášení a role (B1). Smlouva v docs/API.md, sekce „Účty“.
 // Ve WordPressu nahradí uživatele, hesla a relace WP (vlastní role a capability); API zůstává stejné.
-const { transaction } = require("./db");
+const { transaction, serviceLaunched } = require("./db");
 const time = require("./time");
 const emails = require("./emails");
+const { noticeRecipients } = require("./mail-accounts");
 const sec = require("./security");
 const { ApiError, normalizeEmail, validEmail, validMemberId, validName, validBirthDate } = require("./validate");
 
@@ -21,6 +22,8 @@ const iso = (date) => date.toISOString();
 const rolesOf = (user) => String(user?.roles || "").split(",").filter(Boolean);
 const hasRole = (user, role) => rolesOf(user).includes(role);
 const isStaff = (user) => STAFF_ROLES.some((role) => hasRole(user, role));
+// Před spuštěním služby (první otevřená sezona) se registrovat ani přihlásit nemohou rybáři – jen správa.
+const NOT_LAUNCHED = "Místenka zatím nebyla spuštěna – registrace a přihlášení se otevřou s první sezonou.";
 // Admin musí mít zapnutou 2FA, jinak nesmí nic spravovat.
 const mfaRequired = (user) => hasRole(user, "admin") && !user.totp_enabled_at;
 
@@ -147,7 +150,11 @@ function createAccounts({ db, config, appUrl }) {
   }
 
   // ---------- registrace a přihlášení ----------
+  const requireLaunchedFor = (user) => {
+    if (!serviceLaunched(db) && !isStaff(user)) throw new ApiError(409, "service_not_launched", NOT_LAUNCHED);
+  };
   function register(input = {}) {
+    if (!serviceLaunched(db)) throw new ApiError(409, "service_not_launched", NOT_LAUNCHED);
     const email = normalizeEmail(validEmail(input.email));
     const memberId = validMemberId(input.memberId);
     const { firstName, lastName } = validName(input.firstName, input.lastName);
@@ -184,6 +191,7 @@ function createAccounts({ db, config, appUrl }) {
   function verifyEmail({ token } = {}) {
     return transaction(db, () => {
       const { row, user } = findAuthToken(token, "verify_email");
+      requireLaunchedFor(user);
       useAuthToken(row);
       markVerified(user);
       audit(user.id, "account_verified", "user", user.id);
@@ -195,6 +203,7 @@ function createAccounts({ db, config, appUrl }) {
     const user = email ? userByEmail(email) : null;
     const ok = sec.verifyPassword(String(password || ""), user?.password_hash || sec.DUMMY_HASH);
     if (!user || !user.password_hash || !ok) throw new ApiError(401, "invalid_credentials", "Nesprávný e-mail nebo heslo.");
+    requireLaunchedFor(user);
     if (!user.email_verified_at) {
       transaction(db, () => sendVerification(user));
       throw new ApiError(403, "email_not_verified", "E-mail ještě není ověřený. Poslali jsme vám nový ověřovací odkaz.");
@@ -209,12 +218,13 @@ function createAccounts({ db, config, appUrl }) {
   function requestMagicLink({ email } = {}) {
     validEmail(email);
     const user = userByEmail(email);
-    if (user) transaction(db, () => queueEmail(user.email, "magic_link", emails.magicLink(config, { link: link("login", issueAuthToken(user, "magic_link")), minutes: TOKEN_MINUTES.magic_link })));
+    if (user && (serviceLaunched(db) || isStaff(user))) transaction(db, () => queueEmail(user.email, "magic_link", emails.magicLink(config, { link: link("login", issueAuthToken(user, "magic_link")), minutes: TOKEN_MINUTES.magic_link })));
     return { sent: true };
   }
   function magicLogin({ token, otp } = {}) {
     return transaction(db, () => {
       const { row, user } = findAuthToken(token, "magic_link");
+      requireLaunchedFor(user);
       checkOtp(user, otp); // při chybě kódu odkaz zůstává platný
       useAuthToken(row);
       markVerified(user); // odkaz z e-mailu prokazuje vlastnictví adresy
@@ -225,13 +235,14 @@ function createAccounts({ db, config, appUrl }) {
   function requestPasswordReset({ email } = {}) {
     validEmail(email);
     const user = userByEmail(email);
-    if (user) transaction(db, () => queueEmail(user.email, "password_reset", emails.passwordReset(config, { link: link("reset", issueAuthToken(user, "password_reset")), minutes: TOKEN_MINUTES.password_reset })));
+    if (user && (serviceLaunched(db) || isStaff(user))) transaction(db, () => queueEmail(user.email, "password_reset", emails.passwordReset(config, { link: link("reset", issueAuthToken(user, "password_reset")), minutes: TOKEN_MINUTES.password_reset })));
     return { sent: true };
   }
   function resetPassword({ token, password, otp } = {}) {
     const newPassword = validPassword(password);
     return transaction(db, () => {
       const { row, user } = findAuthToken(token, ["password_reset", "invite"]);
+      requireLaunchedFor(user);
       checkOtp(user, otp);
       useAuthToken(row);
       db.prepare("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?").run(sec.hashPassword(newPassword), iso(time.now()), user.id);
@@ -466,13 +477,12 @@ function createAccounts({ db, config, appUrl }) {
     db.prepare("UPDATE warden_requests SET status = 'pending', submitted_at = ?, action_token_hash = ?, action_expires_at = ? WHERE id = ?")
       .run(iso(now), sec.sha256(token), iso(new Date(now.getTime() + REQUEST_TOKEN_DAYS * 86_400_000)), request.id);
     audit(user.id, "warden_requested", "user", user.id, { requestId: request.id });
-    const to = config.organization.managerEmail;
-    if (!to) return;
     const page = (action) => `${appUrl}/request.html#t=${token}&a=${action}`;
-    queueEmail(to, "warden_request", emails.wardenRequest(config, {
+    const mail = emails.wardenRequest(config, {
       name: `${user.first_name} ${user.last_name}`, email: user.email, memberId: user.member_id, note: request.note || "",
       links: { approve: page("approve"), reject: page("reject"), open: `${appUrl}/manage.html#notifications` }
-    }));
+    });
+    for (const to of noticeRecipients(db)) queueEmail(to, "warden_request", mail);
   }
   function requestWarden(ctx, input = {}) {
     const user = requireUser(ctx);

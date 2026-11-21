@@ -93,10 +93,37 @@ function renderContact() {
   qs("#contactLine").innerHTML = parts.join(" · ");
 }
 
+// Zavřená sezona (i před spuštěním služby): vtipný úvod a jiný obrázek místo vody.
+let heroOpen = null;
+function renderSeasonClosed(closed, reason) {
+  const title = qs("#heroTitle");
+  const lead = qs("#heroLead");
+  heroOpen ||= { title: title.innerHTML, lead: lead.innerHTML };
+  qs(".hero").classList.toggle("season-closed", closed);
+  // Mimo sezonu se nekupuje: zůstane jen Vrátit (místenky ze sezony jdou odevzdat dál) a Zkontrolovat (dochytávání v den uzavření).
+  document.body.classList.toggle("season-closed", closed);
+  if (closed && !panels.buy.classList.contains("hidden") || closed && !panels.person.classList.contains("hidden")) {
+    qsa(".action-card[data-panel]").forEach((item) => item.classList.toggle("active", item.dataset.panel === "return"));
+    Object.values(panels).forEach((panel) => panel.classList.add("hidden"));
+    panels.return.classList.remove("hidden");
+    qs("#panelTitle").textContent = "Vraťte svou místenku";
+    qs("#panelKicker").textContent = "Ukončení lovu";
+    qs("#stepBadge").textContent = "Rychlá akce";
+  }
+  qs(".hero-art:not(.hero-art-closed)").classList.toggle("hidden", closed);
+  qs(".hero-art-closed").classList.toggle("hidden", !closed);
+  if (!closed) { title.innerHTML = heroOpen.title; lead.innerHTML = heroOpen.lead; return; }
+  const opens = /otevírá se (.+)$/.exec(reason || "");
+  title.innerHTML = "Chyťte svůj<br><em>klid u piva.</em>";
+  lead.innerHTML = `Sezona je zatím uzavřená :( Ryby mají volno, tak si ho dejte taky. ${opens ? `Revír <span data-revir-name>${esc(revir.name)}</span> otevíráme <b>${esc(opens[1])}</b>.` : "Jakmile sezonu otevřeme, místenky tu budou zase k mání."}`;
+}
+
 async function renderDates() {
   const grid = qs("#dateGrid");
   try {
     const { days, today } = await api(`/reviry/${encodeURIComponent(revir.id)}/availability`);
+    const outOfSeason = !config.service?.launched || (days.length > 0 && days.every((day) => day.closed && day.closedCode === "out_of_season"));
+    renderSeasonClosed(outOfSeason, days.find((day) => day.closed)?.closedReason);
     const firstFree = days.find((day) => day.available > 0);
     selectedDate = firstFree ? firstFree.date : "";
     grid.innerHTML = days.map((day) => {

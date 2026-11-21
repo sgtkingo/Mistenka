@@ -15,7 +15,7 @@ defined('ABSPATH') || exit;
 define('MISTENKA_VERSION', '1.0.0');
 define('MISTENKA_DIR', plugin_dir_path(__FILE__));
 
-foreach (['Util', 'Time', 'Db', 'Config', 'Settings', 'Emails', 'Mailer', 'Payments', 'Accounts', 'Operations', 'Service', 'Reports', 'Backups', 'Retention', 'App', 'Plugin', 'Admin'] as $mistenka_file) {
+foreach (['Util', 'Time', 'Db', 'Config', 'Settings', 'Emails', 'Smtp', 'Mailer', 'Payments', 'Accounts', 'Operations', 'Service', 'Reports', 'Backups', 'Retention', 'App', 'Plugin', 'Admin'] as $mistenka_file) {
     require_once MISTENKA_DIR . 'includes/' . $mistenka_file . '.php';
 }
 unset($mistenka_file);

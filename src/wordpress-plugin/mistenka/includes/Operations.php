@@ -161,9 +161,12 @@ final class Operations
                 Db::exec('UPDATE {p}seasons SET revir_id = ?, name = ?, opens_on = ?, closes_on = ?, updated_at = ? WHERE id = ?', $revirId, $name, $opensOn, $closesOn, $now, $existing['id']);
                 $rowId = $existing['id'];
             } else {
+                // Otevření první sezony spouští službu – jen s nastavenými e-maily (odesílatelé všech skupin + příjemci upozornění).
+                if (!Db::serviceLaunched() && Mailer::missing()) throw new ApiError(409, 'email_not_ready', 'Před otevřením první sezony nastavte v Admin → Emailoví klienti odesílatele všech skupin e-mailů a příjemce upozornění.');
                 $rowId = Db::insert('INSERT INTO {p}seasons (revir_id, name, opens_on, closes_on, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)', $revirId, $name, $opensOn, $closesOn, $actor['id'], $now, $now);
             }
             $this->audit($actor, $id ? 'season_updated' : 'season_created', 'season', $rowId, ['name' => $name, 'opensOn' => $opensOn, 'closesOn' => $closesOn, 'revirId' => $revirId]);
+            if (!$id && !Db::serviceLaunched()) { Db::markLaunched($now); $this->audit($actor, 'service_launched', 'season', $rowId); }
             return ['season' => $this->seasonShape(Db::row('SELECT * FROM {p}seasons WHERE id = ?', $rowId))];
         });
     }
@@ -233,21 +236,20 @@ final class Operations
         return ['deleted' => true];
     }
 
-    // Je den otevřený pro nákup? Uzavření má přednost; pak sezona. Revír bez sezony je otevřený celý rok.
+    // Je den otevřený pro nákup? Uzavření má přednost; pak sezona. Prodává se jen v otevřené sezoně – revír bez
+    // sezony (i celá čerstvá instalace, dokud správce neotevře první sezonu) je zavřený.
     public function dayStatus(string $revirId, string $date): array
     {
         $closure = Db::row('SELECT * FROM {p}closures WHERE deleted_at IS NULL AND ' . self::SCOPE_SQL . ' AND ? BETWEEN date_from AND date_to ORDER BY id DESC LIMIT 1', $revirId, $date);
         if ($closure) return ['open' => false, 'code' => 'revir_closed', 'reason' => $closure['reason']];
         $seasons = $this->seasonsFor($revirId);
-        if ($seasons) {
-            $inside = false;
-            foreach ($seasons as $s) if ($s['opens_on'] <= $date && (!$s['closes_on'] || $date <= $s['closes_on'])) $inside = true;
-            if (!$inside) {
-                $next = null;
-                foreach ($seasons as $s) if ($s['opens_on'] > $date) { $next = $s; break; }
-                $reason = $next ? 'Mimo sezonu – otevírá se ' . implode('. ', array_map('intval', array_reverse(explode('-', $next['opens_on'])))) : 'Mimo sezonu';
-                return ['open' => false, 'code' => 'out_of_season', 'reason' => $reason, 'opensOn' => $next['opens_on'] ?? null];
-            }
+        $inside = false;
+        foreach ($seasons as $s) if ($s['opens_on'] <= $date && (!$s['closes_on'] || $date <= $s['closes_on'])) $inside = true;
+        if (!$inside) {
+            $next = null;
+            foreach ($seasons as $s) if ($s['opens_on'] > $date) { $next = $s; break; }
+            $reason = $next ? 'Mimo sezonu – otevírá se ' . implode('. ', array_map('intval', array_reverse(explode('-', $next['opens_on'])))) : (Db::serviceLaunched() ? 'Mimo sezonu' : 'Sezona zatím nebyla otevřena');
+            return ['open' => false, 'code' => 'out_of_season', 'reason' => $reason, 'opensOn' => $next['opens_on'] ?? null];
         }
         return ['open' => true];
     }

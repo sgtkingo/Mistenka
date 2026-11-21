@@ -1,6 +1,7 @@
 "use strict";
 // Provoz revírů (B4): důležité zprávy, sezony a mimořádná uzavření. Smlouva v docs/API.md, sekce „Provoz“.
-const { transaction } = require("./db");
+const { transaction, serviceLaunched, markLaunched } = require("./db");
+const { mailMissing } = require("./mail-accounts");
 const time = require("./time");
 const emails = require("./emails");
 const { getRevir } = require("./config");
@@ -119,9 +120,12 @@ function createOperations({ db, config, appUrl }) {
         if (!existing) throw new ApiError(404, "not_found", "Sezona neexistuje.");
         db.prepare("UPDATE seasons SET revir_id = ?, name = ?, opens_on = ?, closes_on = ?, updated_at = ? WHERE id = ?").run(revirId, name, opensOn, closesOn, now, existing.id);
       } else {
+        // Otevření první sezony spouští službu – jen s nastavenými e-maily (odesílatelé všech skupin + příjemci upozornění).
+        if (!serviceLaunched(db) && mailMissing(db).length) throw new ApiError(409, "email_not_ready", "Před otevřením první sezony nastavte v Admin → Emailoví klienti odesílatele všech skupin e-mailů a příjemce upozornění.");
         rowId = Number(db.prepare("INSERT INTO seasons (revir_id, name, opens_on, closes_on, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(revirId, name, opensOn, closesOn, actor.id, now, now).lastInsertRowid);
       }
       audit(actor, id ? "season_updated" : "season_created", "season", rowId, { name, opensOn, closesOn, revirId });
+      if (!id && !serviceLaunched(db)) { markLaunched(db, now); audit(actor, "service_launched", "season", rowId); }
       return { season: seasonShape(db.prepare("SELECT * FROM seasons WHERE id = ?").get(rowId)) };
     });
   }
@@ -182,14 +186,16 @@ function createOperations({ db, config, appUrl }) {
   }
 
   // ---------- je den otevřený pro nákup? ----------
-  // Uzavření má přednost; pak sezona. Revír bez nastavené sezony je otevřený celý rok.
+  // Uzavření má přednost; pak sezona. Prodává se jen v otevřené sezoně – revír bez sezony (i celá čerstvá
+  // instalace, dokud správce neotevře první sezonu) je zavřený.
   function dayStatus(revirId, date) {
     const closure = db.prepare(`SELECT * FROM closures WHERE deleted_at IS NULL AND ${scopeSql} AND ? BETWEEN date_from AND date_to ORDER BY id DESC`).get(revirId, date);
     if (closure) return { open: false, code: "revir_closed", reason: closure.reason };
     const seasons = seasonsFor(revirId);
-    if (seasons.length && !seasons.some((s) => s.opens_on <= date && (!s.closes_on || date <= s.closes_on))) {
+    if (!seasons.some((s) => s.opens_on <= date && (!s.closes_on || date <= s.closes_on))) {
       const next = seasons.find((s) => s.opens_on > date);
-      return { open: false, code: "out_of_season", reason: next ? `Mimo sezonu – otevírá se ${next.opens_on.split("-").reverse().map(Number).join(". ")}` : "Mimo sezonu", opensOn: next?.opens_on || null };
+      const reason = next ? `Mimo sezonu – otevírá se ${next.opens_on.split("-").reverse().map(Number).join(". ")}` : serviceLaunched(db) ? "Mimo sezonu" : "Sezona zatím nebyla otevřena";
+      return { open: false, code: "out_of_season", reason, opensOn: next?.opens_on || null };
     }
     return { open: true };
   }

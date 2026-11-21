@@ -9,6 +9,8 @@ final class Accounts
 {
     public const ROLES = ['member', 'warden', 'manager', 'admin'];
     private const STAFF_ROLES = ['manager', 'admin'];
+    // Před spuštěním služby (první otevřená sezona) se registrovat ani přihlásit nemohou rybáři – jen správa.
+    private const NOT_LAUNCHED = 'Místenka zatím nebyla spuštěna – registrace a přihlášení se otevřou s první sezonou.';
     private const SESSION_DAYS = 30;
     private const STAFF_SESSION_HOURS = 12;
     private const UNVERIFIED_HOURS = 48;
@@ -206,8 +208,14 @@ final class Accounts
     }
 
     // ---------- registrace a přihlášení ----------
+    private static function requireLaunchedFor(array $user): void
+    {
+        if (!Db::serviceLaunched() && !self::isStaff($user)) throw new ApiError(409, 'service_not_launched', self::NOT_LAUNCHED);
+    }
+
     public function register(array $input): array
     {
+        if (!Db::serviceLaunched()) throw new ApiError(409, 'service_not_launched', self::NOT_LAUNCHED);
         $email = Validate::normalizeEmail(Validate::email($input['email'] ?? null));
         $memberId = Validate::memberId($input['memberId'] ?? null);
         [$firstName, $lastName] = Validate::name($input['firstName'] ?? null, $input['lastName'] ?? null);
@@ -243,6 +251,7 @@ final class Accounts
     {
         return Db::transaction(function () use ($input) {
             [$row, $user] = $this->findAuthToken($input['token'] ?? null, ['verify_email']);
+            self::requireLaunchedFor($user);
             $this->useAuthToken($row);
             $this->markVerified($user);
             $this->audit($user['id'], 'account_verified', 'user', $user['id']);
@@ -256,6 +265,7 @@ final class Accounts
         $user = $email ? $this->userByEmail($email) : null;
         $ok = Security::verifyPassword(Js::s($input['password'] ?? null), $user['password_hash'] ?? Security::dummyHash());
         if (!$user || !$user['password_hash'] || !$ok) throw new ApiError(401, 'invalid_credentials', 'Nesprávný e-mail nebo heslo.');
+        self::requireLaunchedFor($user);
         if (!$user['email_verified_at']) {
             Db::transaction(fn() => $this->sendVerification($user));
             throw new ApiError(403, 'email_not_verified', 'E-mail ještě není ověřený. Poslali jsme vám nový ověřovací odkaz.');
@@ -271,7 +281,7 @@ final class Accounts
     {
         Validate::email($input['email'] ?? null);
         $user = $this->userByEmail($input['email']);
-        if ($user) Db::transaction(fn() => $this->queueEmail($user['email'], 'magic_link', Emails::magicLink($this->app->config, $this->link('login', $this->issueAuthToken($user, 'magic_link')), self::TOKEN_MINUTES['magic_link'])));
+        if ($user && (Db::serviceLaunched() || self::isStaff($user))) Db::transaction(fn() => $this->queueEmail($user['email'], 'magic_link', Emails::magicLink($this->app->config, $this->link('login', $this->issueAuthToken($user, 'magic_link')), self::TOKEN_MINUTES['magic_link'])));
         return ['sent' => true];
     }
 
@@ -279,6 +289,7 @@ final class Accounts
     {
         return Db::transaction(function () use ($input) {
             [$row, $user] = $this->findAuthToken($input['token'] ?? null, ['magic_link']);
+            self::requireLaunchedFor($user);
             $this->checkOtp($user, $input['otp'] ?? null); // při chybě kódu odkaz zůstává platný
             $this->useAuthToken($row);
             $this->markVerified($user); // odkaz z e-mailu prokazuje vlastnictví adresy
@@ -290,7 +301,7 @@ final class Accounts
     {
         Validate::email($input['email'] ?? null);
         $user = $this->userByEmail($input['email']);
-        if ($user) Db::transaction(fn() => $this->queueEmail($user['email'], 'password_reset', Emails::passwordReset($this->app->config, $this->link('reset', $this->issueAuthToken($user, 'password_reset')), self::TOKEN_MINUTES['password_reset'])));
+        if ($user && (Db::serviceLaunched() || self::isStaff($user))) Db::transaction(fn() => $this->queueEmail($user['email'], 'password_reset', Emails::passwordReset($this->app->config, $this->link('reset', $this->issueAuthToken($user, 'password_reset')), self::TOKEN_MINUTES['password_reset'])));
         return ['sent' => true];
     }
 
@@ -299,6 +310,7 @@ final class Accounts
         $newPassword = self::validPassword($input['password'] ?? null);
         return Db::transaction(function () use ($input, $newPassword) {
             [$row, $user] = $this->findAuthToken($input['token'] ?? null, ['password_reset', 'invite']);
+            self::requireLaunchedFor($user);
             $this->checkOtp($user, $input['otp'] ?? null);
             $this->useAuthToken($row);
             Db::exec('UPDATE {p}users SET password_hash = ?, updated_at = ? WHERE id = ?', Security::hashPassword($newPassword), Time::nowIso(), $user['id']);
@@ -559,13 +571,12 @@ final class Accounts
         Db::exec("UPDATE {p}warden_requests SET status = 'pending', submitted_at = ?, action_token_hash = ?, action_expires_at = ? WHERE id = ?",
             Time::iso($now), Security::sha256($token), Time::iso(Time::fromMs(Time::ms($now) + self::REQUEST_TOKEN_DAYS * 86400000)), $request['id']);
         $this->audit($user['id'], 'warden_requested', 'user', $user['id'], ['requestId' => $request['id']]);
-        $to = $this->app->config['organization']['managerEmail'] ?? '';
-        if (!$to) return;
         $page = fn(string $action) => $this->app->appUrl . '/request.html#t=' . $token . '&a=' . $action;
-        $this->queueEmail($to, 'warden_request', Emails::wardenRequest($this->app->config, [
+        $mail = Emails::wardenRequest($this->app->config, [
             'name' => "{$user['first_name']} {$user['last_name']}", 'email' => $user['email'], 'memberId' => $user['member_id'] ?? '', 'note' => $request['note'] ?? '',
             'links' => ['approve' => $page('approve'), 'reject' => $page('reject'), 'open' => $this->app->appUrl . '/manage.html#notifications'],
-        ]));
+        ]);
+        foreach (Mailer::noticeRecipients() as $to) $this->queueEmail($to, 'warden_request', $mail);
     }
 
     public function requestWarden(?array $ctx, array $input): array

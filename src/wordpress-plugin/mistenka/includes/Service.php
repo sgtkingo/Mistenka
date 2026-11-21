@@ -283,7 +283,7 @@ final class Service
             $date = Time::addDays($today, $offset);
             $taken = $this->takenSeats($revir['id'], $date);
             $day = $this->app->operations->dayStatus($revir['id'], $date);
-            $days[] = ['date' => $date, 'capacity' => $revir['dailyCapacity'], 'taken' => $taken, 'available' => $day['open'] ? max(0, $revir['dailyCapacity'] - $taken) : 0, 'closed' => !$day['open'], 'closedReason' => $day['open'] ? null : $day['reason']];
+            $days[] = ['date' => $date, 'capacity' => $revir['dailyCapacity'], 'taken' => $taken, 'available' => $day['open'] ? max(0, $revir['dailyCapacity'] - $taken) : 0, 'closed' => !$day['open'], 'closedReason' => $day['open'] ? null : $day['reason'], 'closedCode' => $day['open'] ? null : $day['code']];
         }
         return ['revirId' => $revir['id'], 'today' => $today, 'days' => $days];
     }
@@ -494,8 +494,7 @@ final class Service
             Db::exec('INSERT INTO {p}limit_violations (ticket_id, member_id, limit_id, label, period, period_from, period_to, count, max_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 $ticket['id'], $ticket['member_id'], $l['id'], $l['label'], $l['period'], $l['from'], $l['to'], $l['count'], $l['maxCount'], $now);
         }
-        $managerEmail = $this->config()['organization']['managerEmail'] ?? '';
-        if ($managerEmail) $this->enqueueEmail($ticket, 'limit_exceeded', null, ['to' => $managerEmail, 'limits' => $exceeded]);
+        foreach (Mailer::noticeRecipients() as $to) $this->enqueueEmail($ticket, 'limit_exceeded', null, ['to' => $to, 'limits' => $exceeded]);
         $this->applyPenalty($ticket, 'limits', ['limits' => $exceeded]);
         return $exceeded;
     }
@@ -679,8 +678,7 @@ final class Service
             // Držitel: e-mail s odkazem na odevzdání. Správce: jen upozornění (nepotvrzuje).
             $this->enqueueEmail($seized, 'ticket_seized', $this->issueToken($seized['id'], 'email'), ['deadline' => Time::iso(Time::fromMs($this->windowOf($seized)['deadline']))]);
             $this->applyPenalty($seized, 'seizure');
-            $managerEmail = $this->config()['organization']['managerEmail'] ?? '';
-            if ($managerEmail) $this->enqueueEmail($seized, 'seizure_notice', null, ['to' => $managerEmail, 'wardenName' => self::wardenName($warden)]);
+            foreach (Mailer::noticeRecipients() as $to) $this->enqueueEmail($seized, 'seizure_notice', null, ['to' => $to, 'wardenName' => self::wardenName($warden)]);
             return $this->wardenView($seized);
         });
     }

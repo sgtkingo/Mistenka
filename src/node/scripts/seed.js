@@ -4,7 +4,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { loadConfig } = require("../lib/config");
-const { openDatabase } = require("../lib/db");
+const { openDatabase, markLaunched } = require("../lib/db");
 const time = require("../lib/time");
 
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, "..", "..", "..", "data"));
@@ -51,6 +51,15 @@ db.prepare("INSERT INTO catches (ticket_id, species, length_cm, weight_kg, weigh
 
 for (const code of ["DEMO16ADBEFA9755", "DEMODE0D3AC759F9", "DEMO360008F96605"]) db.prepare("INSERT INTO vouchers (code) VALUES (?)").run(code);
 db.prepare("INSERT INTO vouchers (code, used_at, ticket_code) VALUES ('DEMO03DCA6CD2460', ?, 'TST001')").run(hoursAgo(47));
+
+// Spuštěná služba: celoroční sezona MO a ukázkový poštovní účet (vývoj ukládá e-maily do data/outbox/).
+db.prepare("INSERT INTO seasons (revir_id, name, opens_on, closes_on, created_at, updated_at) VALUES (NULL, ?, ?, NULL, ?, ?)").run(`Sezona ${today.slice(0, 4)}`, `${today.slice(0, 4)}-01-01`, iso(now), iso(now));
+const accountId = Number(db.prepare(`INSERT INTO email_accounts (label, from_email, from_name, host, port, encryption, username, password_enc, verified_at, verified_to, created_at, updated_at)
+  VALUES ('Ukázkový účet', 'mistenka@example.cz', 'Místenka – ukázka', 'localhost', 25, 'none', '', NULL, ?, 'spravce@example.cz', ?, ?)`).run(iso(now), iso(now), iso(now)).lastInsertRowid);
+const meta = db.prepare("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value");
+meta.run("email_senders", JSON.stringify({ tickets: accountId, accounts: accountId, notices: accountId }));
+meta.run("email_notice_recipients", JSON.stringify(["spravce@example.cz"]));
+markLaunched(db, iso(now));
 
 console.log(`Databáze ${path.join(DATA_DIR, "mistenka.sqlite")} naplněna (revír ${revir.name}, dnes ${today}).`);
 console.log("Číslo členské legitimace pro přístup k místence je ve druhém sloupci.");

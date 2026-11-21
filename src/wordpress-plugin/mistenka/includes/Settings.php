@@ -8,7 +8,7 @@ defined('ABSPATH') || exit;
 
 final class Settings
 {
-    private const ORG_KEYS = ['organization', 'email', 'publicCheck', 'limitPolicy', 'penaltyPolicy', 'privacy'];
+    private const ORG_KEYS = ['organization', 'publicCheck', 'limitPolicy', 'penaltyPolicy', 'privacy'];
     private const PAYMENT_KEYS = ['accountNumber', 'bankCode', 'recipientName', 'reservationMinutes', 'messagePrefix'];
 
     private App $app;

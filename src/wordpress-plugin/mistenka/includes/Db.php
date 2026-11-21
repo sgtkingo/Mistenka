@@ -7,7 +7,7 @@ defined('ABSPATH') || exit;
 
 final class Db
 {
-    public const SCHEMA_VERSION = 15;
+    public const SCHEMA_VERSION = 16;
 
     // Sloupce, které se z $wpdb (vrací řetězce) převádějí na čísla – výstup API musí mít čísla jako Node.
     private const INT = ['id', 'ticket_id', 'user_id', 'price_halere', 'amount_due_halere', 'return_late', 'no_catch', 'seized_by', 'cancelled_by',
@@ -186,6 +186,18 @@ final class Db
     public static function metaSet(string $name, string $value): void
     {
         self::exec('INSERT INTO {p}meta (name, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)', $name, $value);
+    }
+
+    // Spuštění služby: čerstvá instalace je zavřená (sezona uzavřena, registrace a přihlášení rybářů vypnuté),
+    // dokud správce ručně neotevře první sezonu. Stav je v meta (obnova ze zálohy ho nemění).
+    public static function serviceLaunched(): bool
+    {
+        return (string) self::metaGet('service_launched_at') !== '';
+    }
+
+    public static function markLaunched(string $at): void
+    {
+        if (!self::serviceLaunched()) self::metaSet('service_launched_at', $at);
     }
 
     public static function metaDelete(string $name): void
@@ -561,7 +573,14 @@ final class Db
   reset_at BIGINT NOT NULL,
   PRIMARY KEY  (bucket)
 ) $c;";
+        $previous = 0;
+        global $wpdb;
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->prefix . 'mistenka_meta'))) $previous = (int) self::metaGet('schema_version');
         dbDelta($sql);
+        // v16: instalace, která už prodávala (má místenky nebo sezony), je spuštěná – nové pravidlo ji nezavře.
+        if ($previous && $previous < 16 && (self::val('SELECT 1 FROM {p}tickets LIMIT 1') || self::val('SELECT 1 FROM {p}seasons WHERE deleted_at IS NULL LIMIT 1'))) {
+            self::markLaunched(Time::nowIso());
+        }
         self::metaSet('schema_version', (string) self::SCHEMA_VERSION);
     }
 

@@ -28,7 +28,8 @@ npm test        # sdílené testy API (spustí vlastní server s testovací konf
 ```
 
 - Platby jsou v konfiguraci nastavené na falešnou banku (`"provider": "fake"`). Na platební stránce je tlačítko **Simulovat příchozí platbu**.
-- E-maily se neodesílají, ukládají se do `data/outbox/` (HTML a text). Poštovní účty pro WordPress se nastavují v portálu (Admin → Emailoví klienti).
+- S `MISTENKA_DEV=1` se e-maily neodesílají, ukládají se do `data/outbox/` (HTML a text). Bez něj je odešle vlastní SMTP klient přes poštovní účty z portálu (Admin → Emailoví klienti). Výchozí odesílání neexistuje: skupina e-mailů bez odesílatele čeká ve frontě.
+- **Čerstvá databáze je zavřená** (sezona uzavřena, rybáři se nemohou registrovat ani přihlásit). Admin v portálu nastaví Emailoví klienti (odesílatele všech skupin a příjemce upozornění) a otevře první sezonu – tím službu spustí. `npm run seed` vytvoří rovnou spuštěnou službu s celoroční sezonou a ukázkovým poštovním účtem.
 - Další proměnné prostředí jsou popsané v hlavičce [src/node/server.js](src/node/server.js).
 
 ## Účty a role
@@ -37,7 +38,7 @@ Registrace a přihlášení na `account.html` (heslem nebo odkazem z e-mailu; od
 
 **První admin:** dokud žádný není, server při startu vypíše jednorázový odkaz na průvodce (`setup.html#…`, platí 60 minut). V průvodci vyplníte údaje, heslo a rovnou nastavíte dvoufázové ověření. Admin je účet jen pro správu, bez čísla legitimace.
 
-Další správce a adminy admin **pozve** v portálu (Uživatelé a role → Pozvat), porybné jmenuje správce i admin. Uživatel může sám požádat zaškrtnutím **„Jsem porybný“** (při registraci nebo v účtu); žádost přijde do portálu (Notifikace) a e-mailem správci, který ji schválí nebo zamítne i přímo z e-mailu. Nouzové příkazy:
+Další správce a adminy admin **pozve** v portálu (Uživatelé a role → Pozvat), porybné jmenuje správce i admin. Uživatel může sám požádat zaškrtnutím **„Jsem porybný“** (při registraci nebo v účtu); žádost přijde do portálu (Notifikace) a e-mailem příjemcům upozornění (Emailoví klienti), který ji schválí nebo zamítne i přímo z e-mailu. Nouzové příkazy:
 
 ```bash
 npm run user -- list                      # přehled účtů

@@ -228,6 +228,16 @@ async function loadLimits() {
 async function loadTickets() {
   try {
     const { tickets } = await api("/me/tickets");
+    // Kolik místenek zbývá odevzdat (i po skončení sezony); po 7 dnech od dne lovu se uzavřou samy jako neodevzdané.
+    const pending = tickets.filter((t) => (t.status === "expired_unreturned" || t.status === "seized") && t.returnable);
+    const box = qs("#pendingReturns");
+    box.classList.toggle("hidden", !pending.length);
+    if (pending.length) {
+      const n = pending.length;
+      const soonest = pending.map((t) => t.returnDeadline).filter(Boolean).sort()[0];
+      box.innerHTML = `<b>${n === 1 ? "Máte 1 neodevzdanou místenku" : `Máte ${n} ${n < 5 ? "neodevzdané místenky" : "neodevzdaných místenek"}`}.</b> Odevzdejte ${n === 1 ? "ji" : "je"} i s úlovky do 7 dnů od dne lovu${soonest ? ` (nejbližší lhůta ${esc(czDate(soonest.slice(0, 10)))})` : ""} – potom se uzavře${n === 1 ? "" : "ou"} automaticky jako neodevzdan${n === 1 ? "á" : "é"}.
+        <span class="pending-links">${pending.map((t) => `<a class="text-link" href="return.html?code=${encodeURIComponent(t.code)}">${esc(t.code)} · ${esc(czDate(t.date))} →</a>`).join("")}</span>`;
+    }
     const current = tickets.find((t) => t.status === "seized") || tickets.find((t) => t.status === "active") || tickets.find((t) => t.status === "expired_unreturned" && t.returnable)
       || tickets.find((t) => t.status === "pending_payment") || tickets.filter((t) => t.status === "future").slice(-1)[0];
     if (current) {
@@ -331,7 +341,15 @@ qs("#logoutButton").addEventListener("click", (event) => busy(event.currentTarge
 
 // ---------- start ----------
 (async function init() {
-  try { applyBranding(await loadConfig()); } catch { /* stránka funguje i bez konfigurace */ }
+  try {
+    const cfg = await loadConfig();
+    applyBranding(cfg);
+    // Před spuštěním služby (první sezona) se registrovat nedá – přihlásit se může jen správa.
+    if (cfg.service && !cfg.service.launched) {
+      qs("#registerClosed").classList.remove("hidden");
+      qsa("#registerForm input, #registerForm button[type=submit]").forEach((el) => { el.disabled = true; });
+    }
+  } catch { /* stránka funguje i bez konfigurace */ }
   if (await handleLinkFragment()) return;
   user = await loadSession(true);
   setSessionUser(user);

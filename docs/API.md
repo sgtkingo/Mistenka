@@ -58,7 +58,7 @@ Všechno, co se liší mezi organizacemi a revíry, je v konfiguraci (Node: `con
 | `speciesOverrides` | úpravy jednotlivých druhů pro revír, např. `[{ "id": "lin-obecny", "minLength": 30 }]` |
 | `fishingHours`, `rules`, `notice`, `permitNote`, … | texty a pravidla pro UI |
 
-Organizace: `organization.managerEmail` – kontaktní e-mail správce pro upozornění (zadržení, překročené limity); není veřejný. `limitPolicy` – automatická blokace (viz Limity).
+Organizace: `limitPolicy` – automatická blokace (viz Limity). Konfigurace **nenastavuje e-maily**: odesílatele i příjemce upozornění správcům nastaví admin v portálu (E-mailoví klienti); starší klíče `organization.managerEmail` a `email` se ignorují.
 
 ### Pravidla druhů ryb
 
@@ -88,7 +88,7 @@ Seznam druhů, lovné míry, doby hájení a denní limity jsou v samostatném s
    "maxCount": 4, "count": 5, "exceeded": true, "source": "BPVRP bod 1 …" }]   // period "day" = jen tato místenka
 ```
 
-Při odevzdání se překročené limity zapíšou (`limit_violations`) a správce dostane e-mail `limit_exceeded` (`organization.managerEmail`).
+Při odevzdání se překročené limity zapíšou (`limit_violations`) a správci dostanou e-mail `limit_exceeded` (příjemci upozornění z Emailoví klienti).
 
 ### Blokace nákupu
 
@@ -123,10 +123,10 @@ Není součástí API. Frontend ji načítá přímo z [Open-Meteo](https://open
 ## Endpointy
 
 ### `GET /config`
-Veřejná konfigurace: `organization` (`name`, `shortName`, `web`, `privacyUrl`, `contact`), `payment` (`mode`: `fake` | `fio`, `reservationMinutes`), `reviry[]` (včetně `species`), `today` (Praha), `now`, `devMode`. Nikdy neobsahuje číslo účtu, IBAN ani tokeny.
+Veřejná konfigurace: `organization` (`name`, `shortName`, `web`, `privacyUrl`, `contact`), `payment` (`mode`: `fake` | `fio`, `reservationMinutes`), `reviry[]` (včetně `species`), `today` (Praha), `now`, `devMode`, `service: { launched }` (viz Spuštění služby). Nikdy neobsahuje číslo účtu, IBAN ani tokeny.
 
 ### `GET /reviry/{id}/availability`
-`{ revirId, today, days: [{ date, capacity, taken, available, closed, closedReason }] }` pro dnešek až `bookingDaysAhead`. Uzavřený den (mimo sezonu nebo mimořádně uzavřený, viz Provoz) má `closed: true`, `available: 0` a důvod. Neznámý revír → `404 unknown_revir`.
+`{ revirId, today, days: [{ date, capacity, taken, available, closed, closedReason, closedCode }] }` pro dnešek až `bookingDaysAhead`. Uzavřený den (mimo sezonu nebo mimořádně uzavřený, viz Provoz) má `closed: true`, `available: 0`, důvod a kód (`out_of_season` | `revir_closed`); otevřený den má `closedReason` i `closedCode` `null`. Když jsou všechny dny `out_of_season`, úvodní stránka ukáže „sezona je uzavřená“. Neznámý revír → `404 unknown_revir`.
 
 ### `GET /announcements?revirId=`
 Důležité zprávy pro úvodní stránku: `{ announcements: [{ id, revirId, title, text, validFrom, validTo, pinned }] }` – nejvýš 3 aktivní (platné dnes) pro revír nebo celou MO (`revirId: null`), připnuté první, pak nejnovější.
@@ -224,9 +224,9 @@ Dokud neexistuje žádný admin, server při startu vypíše do konzole jednorá
 | Endpoint | Tělo | Odpověď / chyby |
 | --- | --- | --- |
 | `GET /auth/me` | – | `{ user: <User> \| null, csrf }` (vždy `200`) |
-| `POST /auth/register` | `{ email, firstName, lastName, birthDate, memberId, password?, consent: true, wardenRequest? }` (`wardenRequest: true` = „Jsem porybný“, žádost se odešle po ověření e-mailu) | `{ sent: true }`; `400 invalid_email`, `invalid_name`, `invalid_birth_date`, `invalid_member_id`, `weak_password`, `consent_required`; `409 member_id_taken` |
+| `POST /auth/register` | `{ email, firstName, lastName, birthDate, memberId, password?, consent: true, wardenRequest? }` (`wardenRequest: true` = „Jsem porybný“, žádost se odešle po ověření e-mailu) | `{ sent: true }`; `400 invalid_email`, `invalid_name`, `invalid_birth_date`, `invalid_member_id`, `weak_password`, `consent_required`; `409 member_id_taken`, `409 service_not_launched` (před spuštěním služby) |
 | `POST /auth/verify` | `{ token }` | `{ user, csrf }` + cookie; `400 invalid_link` |
-| `POST /auth/login` | `{ email, password, otp? }` | `{ user, csrf }` + cookie; `401 invalid_credentials`, `401 otp_required`, `401 invalid_otp`, `403 email_not_verified` (pošle nový ověřovací odkaz) |
+| `POST /auth/login` | `{ email, password, otp? }` | `{ user, csrf }` + cookie; `401 invalid_credentials`, `401 otp_required`, `401 invalid_otp`, `403 email_not_verified` (pošle nový ověřovací odkaz), `409 service_not_launched` (rybář před spuštěním služby; správce a admin se přihlásí) |
 | `POST /auth/magic-link` | `{ email }` | `{ sent: true }` |
 | `POST /auth/magic` | `{ token, otp? }` | `{ user, csrf }` + cookie; `400 invalid_link`, `401 otp_required`/`invalid_otp` (odkaz pak zůstává platný) |
 | `POST /auth/password-reset` | `{ email }` | `{ sent: true }` |
@@ -262,14 +262,14 @@ Dokud neexistuje žádný admin, server při startu vypíše do konzole jednorá
 
 ## Notifikace
 
-Žádosti a upozornění, které čekají na rozhodnutí správce (portál → **Notifikace**, e-mail na `organization.managerEmail`). Každá notifikace má `kind`; zatím existuje jediný druh `warden_request`, další mohou přibýt se stejnými endpointy (frontend zobrazí neznámý druh obecně).
+Žádosti a upozornění, které čekají na rozhodnutí správce (portál → **Notifikace**, e-mail příjemcům upozornění z E-mailových klientů). Každá notifikace má `kind`; zatím existuje jediný druh `warden_request`, další mohou přibýt se stejnými endpointy (frontend zobrazí neznámý druh obecně).
 
 ### Žádost „Jsem porybný“ (`warden_request`)
 
 Uživatel může při registraci nebo v účtu zaškrtnout **„Jsem porybný“** (smí jen porybný – rybářská stráž MO nebo státní rybářská stráž). Žádost dostane správce:
 
 - v manažerském portálu, sekce **Notifikace** (správce i admin; počet čekajících je v menu),
-- e-mailem `warden_request` na `organization.managerEmail` s tlačítky **Schválit** / **Zamítnout** a odkazem do portálu. Tlačítka vedou na `request.html#t=<token>&a=approve|reject`, kde se rozhodnutí teprve potvrdí (samotné otevření odkazu nic nemění – poštovní skenery odkazy otevírají). Token platí 7 dní a jde použít jen jednou.
+- e-mailem `warden_request` (příjemci upozornění z Emailoví klienti) s tlačítky **Schválit** / **Zamítnout** a odkazem do portálu. Tlačítka vedou na `request.html#t=<token>&a=approve|reject`, kde se rozhodnutí teprve potvrdí (samotné otevření odkazu nic nemění – poštovní skenery odkazy otevírají). Token platí 7 dní a jde použít jen jednou.
 
 Žádost z registrace se odešle až po ověření e-mailu. Schválení přidá roli `warden` (zapíše se do auditu jako změna rolí); žadatel dostane e-mail `warden_request_approved` / `warden_request_rejected` s případnou poznámkou správce.
 
@@ -300,19 +300,21 @@ Portál → **Admin → Emailoví klienti**. Organizace může mít víc poštov
 | `notices` – Upozornění správcům | `warden_request`, `seizure_notice`, `limit_exceeded`, `season_report`, `payment_settings_changed`, `database_auto_restored` |
 
 - Účty zakládá, upravuje, testuje a maže **jen admin**; odesílatele skupin může vybrat správce i admin (API), v UI je sekce jen pro admina.
-- Odesílatelem skupiny může být jen **ověřený** účet = úspěšně odeslaný testovací e-mail. Změna adresy odesílatele, serveru, portu, šifrování, přihlašovacího jména nebo hesla ověření zruší; neověřený přiřazený účet se nepoužije (skupina odesílá výchozím způsobem), dokud ho admin znovu neotestuje.
-- Skupina bez účtu odesílá výchozím způsobem serveru s odesílatelem `email.fromEmail` / `fromName` z nastavení organizace (WordPress: `wp_mail()`).
+- Odesílatelem skupiny může být jen **ověřený** účet = úspěšně odeslaný testovací e-mail. Změna adresy odesílatele, serveru, portu, šifrování, přihlašovacího jména nebo hesla ověření zruší; neověřený přiřazený účet se nepoužije, dokud ho admin znovu neotestuje.
+- **Výchozí odesílání neexistuje.** E-mail skupiny bez ověřeného odesílatele neodejde: ve frontě dostane chybu „Skupina … nemá odesílatele“ a odejde, jakmile správce odesílatele nastaví. Ostatní skupiny neblokuje.
+- **Příjemci upozornění správcům** (`noticeRecipients`, 1–10 adres) dostávají e-maily skupiny `notices` určené správě: `warden_request`, `seizure_notice`, `limit_exceeded`, `season_report`. (`payment_settings_changed` a `database_auto_restored` chodí všem adminům.)
+- `ready` = všechny skupiny mají ověřeného odesílatele a je nastaven aspoň jeden příjemce upozornění; `missing` = co chybí (`tickets`, `accounts`, `notices`, `noticeRecipients`). Bez `ready` nejde otevřít první sezonu (viz Spuštění služby).
 - Heslo se ukládá šifrovaně (AES-256-GCM, klíč `MISTENKA_SECRET_KEY`, jinak vygenerovaný soubor v datové složce) a **nikdy se nevrací** do API. Prázdné heslo při úpravě = beze změny.
-- WordPress odesílá nativně přes PHPMailer, který je součástí WordPressu (každý e-mail vlastní instance s údaji svého účtu) – nezávisle na pluginech typu WP Mail SMTP. Node e-maily neodesílá (`data/outbox/`), test účtu jen zapíše soubor.
+- Odesílá vlastní SMTP klient bez knihoven (Node `lib/smtp.js`, WordPress `includes/Smtp.php` – nezávisle na `wp_mail()`, PHPMaileru i pluginech typu WP Mail SMTP): `ssl` = TLS hned po připojení (465), `tls` = STARTTLS (587, server ho musí nabízet), `none` = bez šifrování (25); přihlášení AUTH PLAIN, jinak LOGIN; certifikát serveru se ověřuje. Zpráva multipart/alternative (text + HTML), UTF-8. Vývoj (`MISTENKA_MAIL_TRANSPORT=file`, v Node výchozí s `MISTENKA_DEV`) e-maily jen ukládá do `outbox/` v datové složce, i test účtu.
 
 | Endpoint | Tělo | Odpověď / chyby |
 | --- | --- | --- |
-| `GET /manage/email/accounts` 🛠 | – | `{ accounts: [<EmailAccount>], senders: { tickets, accounts, notices }, groups: [{ id, label, help }], fallback: { fromEmail, fromName }, delivery: "smtp" \| "file", canEdit }` |
+| `GET /manage/email/accounts` 🛠 | – | `{ accounts: [<EmailAccount>], senders: { tickets, accounts, notices }, noticeRecipients: [e-mail], groups: [{ id, label, help }], ready, missing: [..], delivery: "smtp" \| "file", canEdit }` |
 | `POST /manage/email/accounts` 🛠 (jen admin) | `{ label?, fromEmail, fromName?, host, port, encryption: "ssl" \| "tls" \| "none", username?, password? }` | `201 { account }`; `400 invalid_email`, `invalid_host`, `invalid_port`, `invalid_encryption`, `invalid_label`; `403 forbidden_role` |
 | `PUT /manage/email/accounts/{id}` 🛠 (jen admin) | totéž | `{ account }`; `404` |
-| `DELETE /manage/email/accounts/{id}` 🛠 (jen admin) | – | `{ deleted: true }`; skupiny, které účet používaly, přejdou na výchozí odesílání |
+| `DELETE /manage/email/accounts/{id}` 🛠 (jen admin) | – | `{ deleted: true }`; skupiny, které účet používaly, zůstanou bez odesílatele |
 | `POST /manage/email/accounts/{id}/verify` 🛠 (jen admin) | `{ to? }` (výchozí e-mail admina) | `{ account }` s `verified: true`; `400 smtp_failed` se zprávou serveru (uloží se do `lastError`) |
-| `PUT /manage/email/senders` 🛠 | `{ tickets?, accounts?, notices? }` (id účtu nebo `null` = výchozí) | jako `GET`; `404`, `409 account_not_verified` |
+| `PUT /manage/email/senders` 🛠 | `{ tickets?, accounts?, notices?, noticeRecipients? }` (id účtu nebo `null` = bez odesílatele; příjemci jako pole nebo text oddělený čárkami, malá písmena, bez duplicit) | jako `GET`; `400 invalid_email`, `404`, `409 account_not_verified` |
 
 ```jsonc
 // EmailAccount
@@ -333,12 +335,14 @@ Správa pro `manager`/`admin` (🛠, jinak `401`/`403 forbidden_role`). `revirId
 | `PUT /manage/announcements/{id}` | totéž | `{ announcement }`; `404` |
 | `DELETE /manage/announcements/{id}` | – | `{ deleted: true }` |
 
-**Sezony** – pokud má revír (nebo celá MO) alespoň jednu sezonu, lze kupovat jen místenky na dny uvnitř některé sezony (`409 out_of_season`). Revír bez sezony je otevřený celý rok. Předčasné uzavření = změna `closesOn`.
+**Sezony** – místenky lze kupovat jen na dny uvnitř některé sezony revíru nebo celé MO (`409 out_of_season`). **Revír bez sezony je zavřený.** Předčasné uzavření = změna `closesOn`.
+
+**Spuštění služby** – čerstvá instalace je zavřená: `GET /config` má `service.launched: false`, všechny dny jsou `out_of_season` s důvodem „Sezona zatím nebyla otevřena“, `POST /auth/register` vrací `409 service_not_launched` a přihlásit se (heslem, odkazem, obnovou hesla, ověřením e-mailu) může jen správce nebo admin – rybáři `409 service_not_launched`, žádosti o odkaz jim nic nepošlou. Službu spustí **ruční otevření první sezony** (`POST /manage/seasons`), které vyžaduje nastavené e-maily (`ready` v E-mailových klientech), jinak `409 email_not_ready`. Spuštění je trvalé (meta `service_launched_at`, audit `service_launched`); pozdější smazání sezon jen zavře prodej. Instalace z verze < 16, které už měly místenky nebo sezony, se při aktualizaci označí jako spuštěné.
 
 | Endpoint | Tělo | Odpověď / chyby |
 | --- | --- | --- |
 | `GET /manage/seasons` | – | `{ seasons: [{ id, revirId, revirName, name, opensOn, closesOn, state: "upcoming" \| "open" \| "closed" }] }` |
-| `POST /manage/seasons`, `PUT /manage/seasons/{id}` | `{ name?, revirId?, opensOn, closesOn? }` (`name` prázdné = „Sezona <rok otevření>“, `closesOn` prázdné = do uzavření) | `201 { season }` / `{ season }`; `400 invalid_name`, `invalid_date` |
+| `POST /manage/seasons`, `PUT /manage/seasons/{id}` | `{ name?, revirId?, opensOn, closesOn? }` (`name` prázdné = „Sezona <rok otevření>“, `closesOn` prázdné = do uzavření) | `201 { season }` / `{ season }`; `400 invalid_name`, `invalid_date`; `409 email_not_ready` (první sezona bez nastavených e-mailů) |
 | `POST /manage/seasons/{id}/close` | `{ from }` – uzavřít od data včetně (nejdřív dnes = ihned); posledním dnem lovu je den předtím, vystavené místenky platí dál | `{ season }`; `400 invalid_date`, `404`, `409 already_closing` |
 | `DELETE /manage/seasons/{id}` | – | `{ deleted: true }` |
 
@@ -377,8 +381,8 @@ Konfigurace = soubor (`config/organization.json` + pravidla druhů, ve WordPress
 
 | Část (`scope`) | Obsah | Kdo |
 | --- | --- | --- |
-| `organization` | `{ organization (vč. contact, managerEmail), email, publicCheck, limitPolicy }` | správce, admin |
-| `payment` | `{ accountNumber, bankCode, recipientName, reservationMinutes, messagePrefix }` – po změně dostanou všichni admini e-mail `payment_settings_changed` | **jen admin** |
+| `organization` | `{ organization (vč. contact), publicCheck, limitPolicy, penaltyPolicy, privacy }` (e-maily ne – viz E-mailoví klienti) | správce, admin |
+| `payment` | `{ accountNumber, bankCode, recipientName, reservationMinutes, messagePrefix }` – po změně dostanou všichni admini e-mail `payment_settings_changed`; v portálu **Admin → Bankovní spojení** (podsekce Platební brána je zatím jen připravená, nepodporováno) | **jen admin** |
 | `revir:<id>` | revír bez `id` a odvozených `fishRules` (cena, kapacita, podrevíry, doba lovu, texty, pravidla, `speciesOverrides`, …) | správce, admin |
 | `species:<odkaz>` | dokument pravidel druhů (druhy, míry, hájení, `dailyLimits`, `periodLimits`) | správce, admin |
 
@@ -416,7 +420,7 @@ Pro `manager`/`admin` (🛠).
 
 ```jsonc
 { "from": "2026-01-01", "to": "2026-12-31", "revirId": null, "revir": "Všechny revíry", "generatedAt": "…",
-  "summary": { "sold": 120, "returned": 110, "returnedLate": 6, "noCatch": 40, "unreturned": 4, "upcoming": 6, "seized": 1,
+  "summary": { "sold": 120, "returned": 110, "returnedLate": 6, "noCatch": 40, "awaitingReturn": 2, "returnDeadline": "2026-12-07", "unreturned": 2, "upcoming": 6, "seized": 1,
                "cancelled": 2 /* zaplacené a zrušené */, "vouchers": 3, "revenueHalere": 2340000, "anglers": 61 },
   "catches": { "total": 95, "weightKg": 180.4, "bySpecies": [{ "species": "kapr obecný", "count": 50, "weightKg": 140.2, "weighed": 44, "estimated": 30, "avgLength": 52.1, "maxLength": 69 }] },
   "stocking": { "costHalere": 2120000, "bySpecies": [{ "species": "kapr obecný", "pieces": 300, "kg": 150, "costHalere": 1800000 }] },
@@ -424,9 +428,9 @@ Pro `manager`/`admin` (🛠).
   "byMonth": [{ "month": "2026-11", "tickets": 4, "catches": 5, "revenueHalere": 80000, "stockingHalere": 2120000 }] }
 ```
 
-Hmotnost úlovků se sčítá jen z vyplněných nebo dopočtených hodnot (`weighed` z `count`).
+Hmotnost úlovků se sčítá jen z vyplněných nebo dopočtených hodnot (`weighed` z `count`). Neodevzdané místenky po dni lovu se dělí: `awaitingReturn` = lhůta pro odevzdání ještě běží (lze je odevzdat nejpozději `returnDeadline`, poslední den nejzazší lhůty; jinak `null`), `unreturned` = uzavřené po lhůtě jako neodevzdané. `upcoming` = den lovu dnes nebo později. Platí `sold = returned + awaitingReturn + unreturned + upcoming`. Dokud je `awaitingReturn > 0`, statistika není konečná (portál to u přehledu i uložené uzávěrky upozorní).
 
-**Uzávěrky** – uložená statistika za období. Automatická (`kind: "season"`) vznikne plánovanou úlohou den po `closesOn` každé sezony (jednou) a správce dostane e-mail `season_report`; ruční (`kind: "manual"`) za libovolné období.
+**Uzávěrky** – uložená statistika za období. Automatická (`kind: "season"`) vznikne plánovanou úlohou (jednou) až po lhůtě pro odevzdání posledního dne sezony – den po `closesOn + lateReturnDays` revíru (u sezony celé MO nejdelší lhůta), takže je konečná se všemi odevzdanými úlovky; příjemci upozornění dostanou e-mail `season_report` a vznikne trvalá záloha; ruční (`kind: "manual"`) za libovolné období.
 
 | Endpoint | Tělo | Odpověď |
 | --- | --- | --- |
@@ -488,7 +492,7 @@ Plná kontrola. Každé otevření se zapíše do záznamu kontrol (`ticket_chec
 ```
 
 ### `POST /warden/tickets/{code}/seize`
-Tělo `{ reason, place? }` (důvod 3–500 znaků, místo do 200). Zadržet lze jen stav `active` (`409 not_seizable`), jednou (`409 already_seized`). Lov okamžitě končí, stav `seized`. Držitel dostane e-mail `ticket_seized` s odkazem na odevzdání, správce upozornění `seizure_notice` na `organization.managerEmail` (nepotvrzuje ho). Zapíše se do záznamu kontrol a auditu. Odpověď: `<WardenTicket>`. Chyby: `400 invalid_reason`, `invalid_place`.
+Tělo `{ reason, place? }` (důvod 3–500 znaků, místo do 200). Zadržet lze jen stav `active` (`409 not_seizable`), jednou (`409 already_seized`). Lov okamžitě končí, stav `seized`. Držitel dostane e-mail `ticket_seized` s odkazem na odevzdání, správci upozornění `seizure_notice` (příjemci upozornění z Emailoví klienti). Zapíše se do záznamu kontrol a auditu. Odpověď: `<WardenTicket>`. Chyby: `400 invalid_reason`, `invalid_place`.
 
 Připomínka odevzdání chodí i zadrženým místenkám (po skončení dne lovu).
 
@@ -568,20 +572,20 @@ V tomto pořadí; Node je spouští v intervalu, WordPress cron hostingu přes `
 | `password_reset` | žádost o obnovu hesla | `account.html#reset=<token>` |
 | `email_change` | změna e-mailu v profilu (jde na novou adresu) | `account.html#email=<token>` |
 | `ticket_seized` | porybný zadržel místenku | `return.html?code=…#t=<token>` |
-| `seizure_notice` | totéž, na `organization.managerEmail` (je-li vyplněn) | `status.html?code=…` |
-| `limit_exceeded` | odevzdání s překročeným limitem, na `organization.managerEmail` | `status.html?code=…` |
+| `seizure_notice` | totéž, příjemcům upozornění správcům | `status.html?code=…` |
+| `limit_exceeded` | odevzdání s překročeným limitem, příjemcům upozornění správcům | `status.html?code=…` |
 | `member_blocked` | automatická blokace po opakovaném porušení limitů (držiteli) | – |
 | `ticket_cancelled` | správce zrušil vystavenou místenku | – |
-| `season_report` | automatická uzávěrka po skončení sezony, na `organization.managerEmail` | `manage.html#reports/<id>` |
+| `season_report` | automatická uzávěrka po skončení sezony, příjemcům upozornění správcům | `manage.html#reports/<id>` |
 | `database_auto_restored` | databáze obnovena ze zálohy při startu (všem adminům) | – |
 | `payment_settings_changed` | admin změnil platební údaje (všem adminům) | – |
 | `closure_notice` | mimořádné uzavření revíru na den místenky | `status.html?code=…` |
 | `staff_invite` | admin pozval správce/admina | `account.html#invite=<token>` |
-| `warden_request` | žádost „Jsem porybný“, na `organization.managerEmail` | `request.html#t=<token>&a=approve\|reject`, `manage.html#notifications` |
+| `warden_request` | žádost „Jsem porybný“, příjemcům upozornění správcům | `request.html#t=<token>&a=approve\|reject`, `manage.html#notifications` |
 | `warden_request_approved` / `_rejected` | správce žádost vyřídil (žadateli) | – |
 | `account_deleted` | smazání účtu | – |
 
-Odesílají se přes frontu (tabulka `email_outbox`, sloupec `sender` = přes který účet odešel; detail místenky ho ukazuje). Node je ukládá do `data/outbox/`, WordPress je odešle přes SMTP účet skupiny (viz E-mailoví klienti), jinak přes `wp_mail()`; e-maily vzniklé během požadavku odejdou hned po odeslání odpovědi, ostatní plánovanou úlohou. Neodeslaný e-mail se zkusí znovu nejvýš jednou za hodinu (2 dny).
+Odesílají se přes frontu (tabulka `email_outbox`, sloupec `sender` = přes který účet odešel; detail místenky ho ukazuje). Odcházejí výhradně přes SMTP účet skupiny (viz E-mailoví klienti); skupina bez odesílatele počká. E-maily vzniklé během požadavku odejdou hned po odeslání odpovědi (WordPress), ostatní plánovanou úlohou. Neúspěšné odeslání se zkusí znovu (WordPress nejvýš jednou za hodinu, e-maily starší 7 dní se už neposílají).
 
 ## Vývojové endpointy
 

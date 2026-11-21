@@ -187,12 +187,21 @@ final class Reports
         $issued = array_values(array_filter($tickets, fn($t) => $t['status'] === 'issued'));
         $today = Time::pragueToday();
         $count = fn(callable $fn, array $list) => count(array_filter($list, $fn));
+        // Poslední den, kdy jde místenku ještě odevzdat (den lovu + lhůta revíru); po něm ji úloha uzavře jako neodevzdanou.
+        $lastReturnDay = fn(array $t) => Time::addDays($t['fishing_date'], (int) (Config::getRevir($this->app->config, $t['revir_id'])['lateReturnDays'] ?? 7));
+        $open = array_values(array_filter($issued, fn($t) => !$t['returned_at'] && !$t['closed_at'] && $t['fishing_date'] < $today && $lastReturnDay($t) >= $today));
+        $openIds = array_column($open, 'id');
+        $deadlines = array_map($lastReturnDay, $open);
+        sort($deadlines);
         $summary = [
             'sold' => count($issued),
             'returned' => $count(fn($t) => (bool) $t['returned_at'], $issued),
             'returnedLate' => $count(fn($t) => $t['returned_at'] && $t['return_late'], $issued),
             'noCatch' => $count(fn($t) => $t['returned_at'] && $t['no_catch'], $issued),
-            'unreturned' => $count(fn($t) => !$t['returned_at'] && $t['fishing_date'] < $today, $issued),
+            // Čeká na odevzdání (lhůta běží) vs. uzavřené po lhůtě jako neodevzdané.
+            'awaitingReturn' => count($open),
+            'returnDeadline' => $deadlines ? end($deadlines) : null,
+            'unreturned' => $count(fn($t) => !$t['returned_at'] && $t['fishing_date'] < $today && !in_array($t['id'], $openIds, true), $issued),
             'upcoming' => $count(fn($t) => !$t['returned_at'] && $t['fishing_date'] >= $today, $issued),
             'seized' => $count(fn($t) => (bool) $t['seized_at'], $issued),
             'cancelled' => $count(fn($t) => $t['status'] === 'cancelled' && $t['paid_at'], $tickets),
@@ -300,17 +309,23 @@ final class Reports
     public function closeSeasons(): array
     {
         $today = Time::pragueToday();
-        $due = Db::all('SELECT * FROM {p}seasons WHERE deleted_at IS NULL AND closes_on IS NOT NULL AND closes_on < ? AND closed_report_at IS NULL', $today);
+        // Uzávěrka je konečná až po lhůtě pro odevzdání posledního dne sezony (lateReturnDays revíru, u sezony MO nejdelší).
+        $returnDays = function (array $season): int {
+            $reviry = $season['revir_id'] ? [Config::getRevir($this->app->config, $season['revir_id'])] : $this->app->config['reviry'];
+            return max(0, ...array_map(fn($r) => (int) ($r['lateReturnDays'] ?? 7), $reviry));
+        };
+        $due = array_values(array_filter(Db::all('SELECT * FROM {p}seasons WHERE deleted_at IS NULL AND closes_on IS NOT NULL AND closes_on < ? AND closed_report_at IS NULL', $today),
+            fn($season) => Time::addDays($season['closes_on'], $returnDays($season)) < $today));
         $created = [];
         foreach ($due as $season) {
             Db::transaction(function () use ($season, &$created) {
                 $report = $this->insertReport('Uzávěrka – ' . $season['name'], 'season', $season['id'], $season['revir_id'], $season['opens_on'], $season['closes_on'], null);
                 Db::exec('UPDATE {p}seasons SET closed_report_at = ? WHERE id = ?', Time::nowIso(), $season['id']);
                 $this->audit(null, 'season_report_created', 'report', $report['id'], ['seasonId' => $season['id']]);
-                $managerEmail = $this->app->config['organization']['managerEmail'] ?? '';
-                if ($managerEmail) {
+                $recipients = Mailer::noticeRecipients();
+                if ($recipients) {
                     $mail = Emails::seasonReport($this->app->config, ['name' => $season['name'], 'revir' => $this->revirName($season['revir_id']), 'data' => $report['data'], 'link' => $this->app->appUrl . '/manage.html#reports/' . $report['id']]);
-                    $this->app->queueEmail(null, 'season_report', $managerEmail, $mail);
+                    foreach ($recipients as $to) $this->app->queueEmail(null, 'season_report', $to, $mail);
                 }
                 $created[] = $report['id'];
             });

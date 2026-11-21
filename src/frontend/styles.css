@@ -259,3 +259,18 @@ input.invalid{border-color:#c04438!important;background:#fff7f6}
 .role-toggle.role-admin input{accent-color:var(--role-admin)}.role-toggle.role-manager input{accent-color:var(--role-manager)}.role-toggle.role-warden input{accent-color:var(--role-warden)}
 .role-toggle.role-admin:has(input:checked){color:var(--role-admin)}.role-toggle.role-manager:has(input:checked){color:var(--role-manager)}.role-toggle.role-warden:has(input:checked){color:var(--role-warden)}
 .user-roles .role-badge{font-size:11px;padding:1px 7px;margin-left:2px}
+
+/* Zavřená sezona: vtipný úvod, ilustrace místo vody */
+.hero-art-closed{background:#fdf1e2}.hero-art-closed svg{position:absolute;inset:0;width:100%;height:100%}.hero-art-closed .art-label{color:#8a5a33}
+.season-closed h1 em{color:#d9730d}
+/* Spuštění služby a stav e-mailů */
+.launch-note{margin:0 0 18px;padding:12px 14px;border-radius:10px;background:#fff6e5;border:1px solid #f3d9a4;color:#6b4a14;font-size:14px;line-height:1.5}
+.email-ready{margin:4px 0 18px;padding:12px 14px;border-radius:10px;font-size:14px;line-height:1.5}
+.email-ready.ok{background:#e8f6ed;border:1px solid #bfe3cc;color:#1a6b3c}.email-ready.warn{background:#fff6e5;border:1px solid #f3d9a4;color:#6b4a14}
+#noticeRecipients{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:8px;resize:vertical}
+.unsupported-box{margin:8px 0 4px;padding:18px 20px;border-radius:10px;background:#f1f0ee;border:1px dashed #c9c5bf;color:#77726c;font-size:14px;line-height:1.55}.unsupported-box b{color:#57524c}
+body.season-closed .action-card[data-panel="buy"]{display:none}body.season-closed .action-grid{grid-template-columns:repeat(2,1fr)}
+@media (max-width:800px){body.season-closed .action-grid{grid-template-columns:1fr}}
+.pending-returns{margin:0 0 14px;padding:12px 14px;border-radius:10px;background:#fff6e5;border:1px solid #f3d9a4;color:#6b4a14;font-size:14px;line-height:1.5}.pending-links{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:6px}
+.member-code-input{max-width:none;text-transform:none;letter-spacing:.06em}
+.report-pending{margin:0 0 14px;padding:12px 14px;border-radius:10px;background:#fff6e5;border:1px solid #f3d9a4;color:#6b4a14;font-size:14px;line-height:1.5}

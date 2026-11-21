@@ -43,6 +43,7 @@
       </form>
 
       <form id="registerForm" class="auth-form hidden" novalidate>
+        <p class="launch-note hidden" id="registerClosed">Registrace se otevře se začátkem první sezony. Zatím si dejte pivo – ryby mají taky volno.</p>
         <p class="panel-intro">S účtem se vám formulář místenky vyplní sám a uvidíte historii svých místenek. Nakupovat můžete i bez účtu.</p>
         <div class="form-two-col"><div><label class="field-label" for="regFirstName">Jméno <span class="required">*</span></label><input id="regFirstName" autocomplete="given-name" maxlength="100"></div><div><label class="field-label" for="regLastName">Příjmení <span class="required">*</span></label><input id="regLastName" autocomplete="family-name" maxlength="100"></div></div>
         <div class="form-two-col"><div><label class="field-label" for="regBirthDate">Datum narození <span class="required">*</span></label><input id="regBirthDate" type="text" class="date-input" inputmode="numeric" placeholder="dd.mm.rrrr" maxlength="10" autocomplete="bday"></div><div><label class="field-label" for="regMemberId">Číslo členské legitimace <span class="required">*</span></label><input id="regMemberId" inputmode="numeric" maxlength="8" placeholder="8 číslic pod čárovým kódem" autocomplete="off"></div></div>
@@ -89,6 +90,7 @@
         </div>
         <div class="status-error hidden" id="mfaWarning">Jako admin musíte mít zapnuté dvoufázové ověření. Dokud ho nezapnete, nemůžete nic spravovat. <a href="#2fa" id="mfaLink">Nastavit 2FA →</a></div>
         <span class="section-kicker">Aktuální místenka</span>
+        <div id="pendingReturns" class="pending-returns hidden"></div>
         <div id="currentTicket" class="current-ticket"></div>
         <div id="myLimits"></div>
         <a class="primary-button buy-link" href="./">Koupit místenku →</a>

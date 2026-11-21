@@ -3,6 +3,7 @@
 const { transaction } = require("./db");
 const time = require("./time");
 const emails = require("./emails");
+const { noticeRecipients } = require("./mail-accounts");
 const { getRevir } = require("./config");
 const { ApiError } = require("./validate");
 
@@ -135,12 +136,18 @@ function createReports({ db, config, appUrl }) {
     const tickets = db.prepare(`SELECT * FROM tickets WHERE fishing_date BETWEEN ? AND ? AND ${scope}`).all(range.from, range.to, revir, revir);
     const issued = tickets.filter((t) => t.status === "issued");
     const today = time.pragueToday();
+    // Poslední den, kdy jde místenku ještě odevzdat (den lovu + lhůta revíru); po něm ji úloha uzavře jako neodevzdanou.
+    const lastReturnDay = (t) => time.addDays(t.fishing_date, Number(getRevir(config, t.revir_id)?.lateReturnDays ?? 7));
+    const open = issued.filter((t) => !t.returned_at && !t.closed_at && t.fishing_date < today && lastReturnDay(t) >= today);
     const summary = {
       sold: issued.length,
       returned: issued.filter((t) => t.returned_at).length,
       returnedLate: issued.filter((t) => t.returned_at && t.return_late).length,
       noCatch: issued.filter((t) => t.returned_at && t.no_catch).length,
-      unreturned: issued.filter((t) => !t.returned_at && t.fishing_date < today).length,
+      // Čeká na odevzdání (lhůta běží) vs. uzavřené po lhůtě jako neodevzdané.
+      awaitingReturn: open.length,
+      returnDeadline: open.length ? open.map(lastReturnDay).sort().at(-1) : null,
+      unreturned: issued.filter((t) => !t.returned_at && t.fishing_date < today && !open.includes(t)).length,
       upcoming: issued.filter((t) => !t.returned_at && t.fishing_date >= today).length,
       seized: issued.filter((t) => t.seized_at).length,
       cancelled: tickets.filter((t) => t.status === "cancelled" && t.paid_at).length,
@@ -221,16 +228,20 @@ function createReports({ db, config, appUrl }) {
   const onReportHooks = [];
   function closeSeasons() {
     const today = time.pragueToday();
-    const due = db.prepare("SELECT * FROM seasons WHERE deleted_at IS NULL AND closes_on IS NOT NULL AND closes_on < ? AND closed_report_at IS NULL").all(today);
+    // Uzávěrka je konečná až po lhůtě pro odevzdání posledního dne sezony (lateReturnDays revíru, u sezony MO nejdelší).
+    const returnDays = (season) => Math.max(0, ...(season.revir_id ? [getRevir(config, season.revir_id)] : config.reviry).map((r) => Number(r?.lateReturnDays ?? 7)));
+    const due = db.prepare("SELECT * FROM seasons WHERE deleted_at IS NULL AND closes_on IS NOT NULL AND closes_on < ? AND closed_report_at IS NULL").all(today)
+      .filter((season) => time.addDays(season.closes_on, returnDays(season)) < today);
     const created = [];
     for (const season of due) {
       transaction(db, () => {
         const { id, data } = insertReport({ name: `Uzávěrka – ${season.name}`, kind: "season", seasonId: season.id, revirId: season.revir_id, from: season.opens_on, to: season.closes_on });
         db.prepare("UPDATE seasons SET closed_report_at = ? WHERE id = ?").run(iso(time.now()), season.id);
         audit(null, "season_report_created", "report", id, { seasonId: season.id });
-        if (config.organization.managerEmail) {
+        const recipients = noticeRecipients(db);
+        if (recipients.length) {
           const mail = emails.seasonReport(config, { name: season.name, revir: revirName(season.revir_id), data, link: `${appUrl}/manage.html#reports/${id}` });
-          db.prepare("INSERT INTO email_outbox (ticket_id, kind, to_email, subject, body_html, body_text, created_at) VALUES (NULL, 'season_report', ?, ?, ?, ?, ?)").run(config.organization.managerEmail, mail.subject, mail.html, mail.text, iso(time.now()));
+          for (const to of recipients) db.prepare("INSERT INTO email_outbox (ticket_id, kind, to_email, subject, body_html, body_text, created_at) VALUES (NULL, 'season_report', ?, ?, ?, ?, ?)").run(to, mail.subject, mail.html, mail.text, iso(time.now()));
         }
         created.push(id);
       });

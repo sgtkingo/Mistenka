@@ -3,9 +3,10 @@
 // referenční chování src/node/lib/mail-accounts.js.
 //
 // Admin účty zakládá, upravuje, ověřuje testovacím e-mailem a maže; správce vybere pro každou skupinu e-mailů
-// ověřený účet. E-mail skupiny bez účtu jde přes wp_mail() (výchozí odesílání webu) s odesílatelem
-// z nastavení organizace. Odesílá se nativně přes PHPMailer, který je součástí WordPressu – nezávisle na
-// pluginech typu WP Mail SMTP (každý e-mail dostane vlastní instanci s údaji svého účtu).
+// ověřený účet a nastaví příjemce upozornění správcům. Výchozí odesílání neexistuje: e-mail skupiny bez
+// ověřeného účtu neodejde (čeká ve frontě, portál ukáže chybu). Dokud nejsou nastaveni odesílatelé všech
+// skupin a aspoň jeden příjemce upozornění, nejde otevřít první sezonu (spustit službu). Odesílá vlastní
+// SMTP klient (includes/Smtp.php) – nezávisle na WordPressu (wp_mail, PHPMailer, pluginy typu WP Mail SMTP).
 namespace Mistenka;
 
 defined('ABSPATH') || exit;
@@ -22,6 +23,7 @@ final class Mailer
             'kinds' => ['seizure_notice', 'limit_exceeded', 'season_report', 'payment_settings_changed', 'database_auto_restored', 'warden_request']],
     ];
     private const CONNECTION_FIELDS = ['from_email', 'host', 'port', 'encryption', 'username', 'password_enc'];
+    private const MAX_RECIPIENTS = 10;
 
     private App $app;
 
@@ -57,7 +59,7 @@ final class Mailer
         return Db::row('SELECT * FROM {p}email_accounts WHERE id = ? AND deleted_at IS NULL', (int) $id);
     }
 
-    public function senders(): array
+    public static function senders(): array
     {
         $stored = json_decode(Db::metaGet('email_senders') ?: '{}', true) ?: [];
         $out = [];
@@ -65,10 +67,28 @@ final class Mailer
         return $out;
     }
 
+    // Příjemci upozornění správcům (skupina „notices“): žádosti, zadržení, limity, uzávěrky…
+    public static function noticeRecipients(): array
+    {
+        $list = json_decode(Db::metaGet('email_notice_recipients') ?: '[]', true);
+        return is_array($list) ? array_values(array_filter($list, fn($e) => is_string($e) && preg_match(Validate::EMAIL_RE, $e))) : [];
+    }
+
+    // Co chybí k odesílání: skupiny bez ověřeného odesílatele, příp. "noticeRecipients".
+    public static function missing(): array
+    {
+        $missing = [];
+        foreach (self::senders() as $group => $id) {
+            if (!$id || !Db::val('SELECT 1 FROM {p}email_accounts WHERE id = ? AND deleted_at IS NULL AND verified_at IS NOT NULL', $id)) $missing[] = $group;
+        }
+        if (!self::noticeRecipients()) $missing[] = 'noticeRecipients';
+        return $missing;
+    }
+
     private function shape(array $a): array
     {
         $assigned = [];
-        foreach ($this->senders() as $group => $id) if ($id === $a['id']) $assigned[] = $group;
+        foreach (self::senders() as $group => $id) if ($id === $a['id']) $assigned[] = $group;
         return [
             'id' => $a['id'], 'label' => $a['label'], 'fromEmail' => $a['from_email'], 'fromName' => $a['from_name'] ?? '', 'host' => $a['host'], 'port' => $a['port'], 'encryption' => $a['encryption'],
             'username' => $a['username'] ?? '', 'hasPassword' => (bool) $a['password_enc'], 'verified' => (bool) $a['verified_at'], 'verifiedAt' => $a['verified_at'], 'verifiedTo' => $a['verified_to'],
@@ -79,12 +99,14 @@ final class Mailer
     // ---------- čtení (správce i admin) ----------
     public function list(?array $actor): array
     {
-        $config = $this->app->config;
+        $missing = self::missing();
         return [
             'accounts' => array_map([$this, 'shape'], Db::all('SELECT * FROM {p}email_accounts WHERE deleted_at IS NULL ORDER BY label, id')),
-            'senders' => $this->senders(),
+            'senders' => self::senders(),
+            'noticeRecipients' => self::noticeRecipients(),
             'groups' => array_map(fn($g) => ['id' => $g['id'], 'label' => $g['label'], 'help' => $g['help']], self::GROUPS),
-            'fallback' => ['fromEmail' => $config['email']['fromEmail'] ?? '', 'fromName' => $config['email']['fromName'] ?? ''],
+            'ready' => !$missing,
+            'missing' => $missing,
             'delivery' => Env::mailTransport() === 'file' ? 'file' : 'smtp',
             'canEdit' => self::isAdmin($actor),
         ];
@@ -155,7 +177,7 @@ final class Mailer
             $existing = $this->find($id);
             if (!$existing) throw new ApiError(404, 'not_found', 'E-mailový účet neexistuje.');
             Db::exec('UPDATE {p}email_accounts SET deleted_at = ?, password_enc = NULL WHERE id = ?', Time::nowIso(), $existing['id']);
-            $current = $this->senders();
+            $current = self::senders();
             foreach ($current as $group => $value) if ($value === $existing['id']) $current[$group] = null;
             Db::metaSet('email_senders', wp_json_encode($current));
             $this->audit($actor, 'email_account_deleted', $existing['id'], ['label' => $existing['label']]);
@@ -197,7 +219,7 @@ final class Mailer
     public function setSenders(?array $actor, array $body): array
     {
         return Db::transaction(function () use ($actor, $body) {
-            $current = $this->senders();
+            $current = self::senders();
             foreach (self::GROUPS as $g) {
                 if (!array_key_exists($g['id'], $body)) continue;
                 $value = $body[$g['id']];
@@ -208,7 +230,18 @@ final class Mailer
                 $current[$g['id']] = $account['id'];
             }
             Db::metaSet('email_senders', wp_json_encode($current));
-            $this->audit($actor, 'email_senders_changed', 'senders', $current);
+            if (array_key_exists('noticeRecipients', $body)) {
+                $raw = is_array($body['noticeRecipients']) ? $body['noticeRecipients'] : preg_split('/[\s,;]+/', Js::s($body['noticeRecipients']));
+                $list = [];
+                foreach ($raw as $e) {
+                    $e = Js::lower(trim(Js::s($e)));
+                    if ($e !== '' && !in_array($e, $list, true)) $list[] = $e;
+                }
+                foreach ($list as $e) if (!preg_match(Validate::EMAIL_RE, $e) || strlen($e) > 200) throw new ApiError(400, 'invalid_email', "Neplatná adresa příjemce upozornění: {$e}");
+                if (count($list) > self::MAX_RECIPIENTS) throw new ApiError(400, 'invalid_email', 'Nejvýše ' . self::MAX_RECIPIENTS . ' příjemců upozornění.');
+                Db::metaSet('email_notice_recipients', wp_json_encode($list));
+            }
+            $this->audit($actor, 'email_senders_changed', 'senders', $current + ['noticeRecipients' => self::noticeRecipients()]);
             return $this->list($actor);
         });
     }
@@ -224,106 +257,35 @@ final class Mailer
         return ['id' => $a['id'], 'label' => $a['label'], 'host' => $a['host'], 'port' => $a['port'], 'encryption' => $a['encryption'], 'username' => $a['username'] ?? '', 'password' => Security::decrypt($a['password_enc'])];
     }
 
-    // Odesílatel pro druh e-mailu: přiřazený ověřený účet skupiny, jinak výchozí odesílatel organizace.
-    public function senderFor(string $kind): array
+    // Odesílatel pro druh e-mailu: přiřazený ověřený účet skupiny, jinak null (e-mail zatím neodejde).
+    public function senderFor(string $kind): ?array
     {
-        $id = $this->senders()[self::groupOf($kind)] ?? null;
+        $id = self::senders()[self::groupOf($kind)] ?? null;
         $account = $id ? $this->find($id) : null;
         if ($account && $account['verified_at']) return ['from' => $this->fromOf($account), 'account' => $this->accountForSending($account), 'label' => $account['label']];
-        $email = $this->app->config['email'] ?? [];
-        return ['from' => ['email' => $email['fromEmail'] ?? '', 'name' => $email['fromName'] ?? ''], 'account' => null, 'label' => 'výchozí'];
+        return null;
     }
 
-    // Odeslání jednoho e-mailu. Chyba = výjimka se zprávou pro správce.
-    public function send(string $id, string $to, array $mail, array $from, ?array $account): void
+    // Odeslání jednoho e-mailu přes účet. Chyba = výjimka se zprávou pro správce.
+    public function send(string $id, string $to, array $mail, array $from, array $account): void
     {
         if (Env::mailTransport() === 'file') {
             $this->sendToFile($id, $to, $mail, $from, $account);
             return;
         }
-        if ($account) {
-            $this->sendSmtp($to, $mail, $from, $account);
-            return;
-        }
-        $this->sendWpMail($to, $mail, $from);
+        Smtp::send($account, $from, $to, $mail['subject'], $mail['text'], $mail['html']);
     }
 
     // Vývoj a testy (MISTENKA_MAIL_TRANSPORT = file): e-mail jen do datové složky, jako Node data/outbox.
-    private function sendToFile(string $id, string $to, array $mail, array $from, ?array $account): void
+    private function sendToFile(string $id, string $to, array $mail, array $from, array $account): void
     {
         $dir = Env::dataDir() . '/outbox';
         if (!is_dir($dir)) wp_mkdir_p($dir);
         $base = $dir . '/' . str_pad($id, 5, '0', STR_PAD_LEFT);
-        $sender = !empty($from['email']) ? (($from['name'] ?? '') !== '' ? $from['name'] . ' ' : '') . '<' . $from['email'] . '>' : '(výchozí)';
-        $via = $account ? " · přes {$account['label']} ({$account['host']}:{$account['port']})" : '';
+        $sender = (($from['name'] ?? '') !== '' ? $from['name'] . ' ' : '') . '<' . $from['email'] . '>';
+        $via = " · přes {$account['label']} ({$account['host']}:{$account['port']})";
         if (@file_put_contents($base . '.html', $mail['html']) === false) throw new \RuntimeException('Nelze zapsat e-mail do ' . $dir);
         file_put_contents($base . '.txt', "From: {$sender}{$via}\nTo: {$to}\nSubject: {$mail['subject']}\n\n{$mail['text']}\n");
-    }
-
-    private static function loadPhpMailer(): void
-    {
-        if (!class_exists(\PHPMailer\PHPMailer\PHPMailer::class)) {
-            require_once ABSPATH . WPINC . '/PHPMailer/PHPMailer.php';
-            require_once ABSPATH . WPINC . '/PHPMailer/SMTP.php';
-            require_once ABSPATH . WPINC . '/PHPMailer/Exception.php';
-        }
-    }
-
-    private function sendSmtp(string $to, array $mail, array $from, array $account): void
-    {
-        self::loadPhpMailer();
-        $m = new \PHPMailer\PHPMailer\PHPMailer(true);
-        try {
-            $m->isSMTP();
-            $m->Host = $account['host'];
-            $m->Port = (int) $account['port'];
-            $m->Timeout = 20;
-            $m->CharSet = 'UTF-8';
-            $m->Encoding = 'base64';
-            if ($account['encryption'] === 'ssl') {
-                $m->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
-            } elseif ($account['encryption'] === 'tls') {
-                $m->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-            } else {
-                $m->SMTPSecure = '';
-                $m->SMTPAutoTLS = false;
-            }
-            if ($account['username'] !== '') {
-                $m->SMTPAuth = true;
-                $m->Username = $account['username'];
-                $m->Password = $account['password'];
-            }
-            $m->setFrom($from['email'], $from['name'] ?? '', false);
-            $m->Sender = $from['email']; // envelope sender = odesílatel (SPF)
-            $m->addAddress($to);
-            $m->Subject = $mail['subject'];
-            $m->isHTML(true);
-            $m->Body = $mail['html'];
-            $m->AltBody = $mail['text'];
-            $m->XMailer = ' ';
-            $m->send();
-        } catch (\PHPMailer\PHPMailer\Exception $e) {
-            throw new \RuntimeException($m->ErrorInfo ?: $e->getMessage());
-        }
-    }
-
-    // Výchozí odesílání webu (wp_mail – PHP mail() nebo SMTP plugin, pokud je na webu nainstalovaný).
-    private function sendWpMail(string $to, array $mail, array $from): void
-    {
-        $headers = ['Content-Type: text/html; charset=UTF-8'];
-        if (!empty($from['email'])) $headers[] = 'From: ' . (($from['name'] ?? '') !== '' ? '"' . str_replace('"', '', $from['name']) . '" ' : '') . '<' . $from['email'] . '>';
-        $error = null;
-        $alt = function ($phpmailer) use ($mail) { $phpmailer->AltBody = $mail['text']; };
-        $fail = function ($wpError) use (&$error) { $error = $wpError->get_error_message(); };
-        add_action('phpmailer_init', $alt);
-        add_action('wp_mail_failed', $fail);
-        try {
-            $sent = wp_mail($to, $mail['subject'], $mail['html'], $headers);
-        } finally {
-            remove_action('phpmailer_init', $alt);
-            remove_action('wp_mail_failed', $fail);
-        }
-        if (!$sent) throw new \RuntimeException($error ?: 'wp_mail() e-mail neodeslal.');
     }
 
     // Fronta e-mailů: odešle nejvýš 20 čekajících (plánovaná úloha nebo hned po požadavku).
@@ -331,17 +293,29 @@ final class Mailer
     {
         if (!Db::tryLock('outbox')) return 0; // jiný proces právě odesílá
         try {
-            $pending = Db::all('SELECT * FROM {p}email_outbox WHERE sent_at IS NULL AND error IS NULL ORDER BY id LIMIT 20');
-            if (count($pending) < 20) {
-                // Neúspěšné zkusit znovu, nejvýš jednou za hodinu (chyba se přepíše novou nebo smaže při úspěchu).
-                $retry = Db::all('SELECT * FROM {p}email_outbox WHERE sent_at IS NULL AND error IS NOT NULL AND created_at > ? ORDER BY id LIMIT ?', Time::iso(Time::now()->modify('-2 days')), 20 - count($pending));
-                foreach ($retry as $row) {
-                    $last = get_transient('mistenka_retry_' . $row['id']);
-                    if (!$last) $pending[] = $row;
+            // E-mail skupiny bez odesílatele neodejde – dostane chybu a počká, až správce odesílatele nastaví
+            // (Admin → Emailoví klienti); ostatní e-maily neblokuje.
+            $senders = [];
+            $senderOf = function (string $kind) use (&$senders) {
+                $group = self::groupOf($kind);
+                if (!array_key_exists($group, $senders)) $senders[$group] = $this->senderFor($kind);
+                return $senders[$group];
+            };
+            $waiting = Db::all('SELECT * FROM {p}email_outbox WHERE sent_at IS NULL AND created_at > ? ORDER BY id LIMIT 500', Time::iso(Time::now()->modify('-7 days')));
+            $pending = [];
+            foreach ($waiting as $row) {
+                if (!$senderOf($row['kind'])) {
+                    $label = '';
+                    foreach (self::GROUPS as $g) if ($g['id'] === self::groupOf($row['kind'])) $label = $g['label'];
+                    if (!$row['error']) Db::exec('UPDATE {p}email_outbox SET error = ? WHERE id = ?', "Skupina „{$label}“ nemá odesílatele (Admin → Emailoví klienti).", $row['id']);
+                    continue;
                 }
+                // Neúspěšné odeslání zkusit znovu nejvýš jednou za hodinu (chyba se přepíše novou nebo smaže při úspěchu).
+                if ($row['error'] && get_transient('mistenka_retry_' . $row['id'])) continue;
+                if (count($pending) < 20) $pending[] = $row;
             }
             foreach ($pending as $mail) {
-                $sender = $this->senderFor($mail['kind']);
+                $sender = $senderOf($mail['kind']);
                 try {
                     $this->send((string) $mail['id'], $mail['to_email'], ['subject' => $mail['subject'], 'html' => $mail['body_html'], 'text' => $mail['body_text']], $sender['from'], $sender['account']);
                     Db::exec('UPDATE {p}email_outbox SET sent_at = ?, error = NULL, sender = ? WHERE id = ?', Time::nowIso(), $sender['label'], $mail['id']);

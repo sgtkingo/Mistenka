@@ -36,8 +36,8 @@
     <section class="hero">
       <div class="hero-copy">
         <div class="eyebrow"><span class="live-dot"></span> <span data-org-short></span></div>
-        <h1>Chyťte svůj<br><em>klid u vody.</em></h1>
-        <p class="hero-lead">Jednoduchá místenka pro revír <span data-revir-name></span>. Vyberte si den, zaplaťte převodem a vyrazte.</p>
+        <h1 id="heroTitle">Chyťte svůj<br><em>klid u vody.</em></h1>
+        <p class="hero-lead" id="heroLead">Jednoduchá místenka pro revír <span data-revir-name></span>. Vyberte si den, zaplaťte převodem a vyrazte.</p>
         <div class="hero-meta" id="heroMeta"></div>
         <a class="change-revir hidden" id="changeRevir" href="./">← Jiný revír</a>
       </div>
@@ -50,6 +50,54 @@
         <div class="reed reed-two"></div>
         <div class="fish">⌁</div>
         <div class="art-label" id="artLabel"></div>
+      </div>
+      <div class="hero-art hero-art-closed hidden" aria-hidden="true">
+        <svg viewBox="0 0 480 330" preserveAspectRatio="xMidYMax meet" overflow="visible" role="presentation">
+          <circle cx="408" cy="70" r="42" fill="#ffd79b"/>
+          <path d="M-400 262 C-200 250 -60 270 0 268 C90 250 170 262 250 256 S400 248 480 262 C560 274 700 250 880 262 V400 H-400Z" fill="#cfe3b5"/>
+          <path d="M-400 290 C-200 280 -80 298 0 292 C120 280 240 296 480 284 C600 278 740 296 880 288 V400 H-400Z" fill="#b9d79a"/>
+          <!-- houpací síť a ryba na dovolené -->
+          <rect x="44" y="118" width="12" height="176" rx="3" fill="#8a5a33"/>
+          <rect x="250" y="118" width="12" height="176" rx="3" fill="#8a5a33"/>
+          <path d="M56 136 L92 168 M262 136 L226 168" stroke="#a8825c" stroke-width="2"/>
+          <path d="M92 168 Q159 238 226 168 Q159 206 92 168Z" fill="#f08a5d"/>
+          <path d="M104 178 Q159 228 214 178" stroke="#f6b08d" stroke-width="5" fill="none"/>
+          <g transform="rotate(-4 159 176)">
+            <ellipse cx="164" cy="178" rx="50" ry="19" fill="#70b9db"/>
+            <path d="M118 178 L92 160 L96 178 L92 196Z" fill="#5aa6c9"/>
+            <path d="M150 162 Q164 146 180 162" fill="#5aa6c9"/>
+            <path d="M190 172 q6 5 12 0" stroke="#24485a" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+            <path d="M200 186 q5 3 9 -1" stroke="#24485a" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <circle cx="142" cy="174" r="3" fill="#a6d4ea"/><circle cx="156" cy="184" r="2.5" fill="#a6d4ea"/><circle cx="172" cy="174" r="2.5" fill="#a6d4ea"/>
+          </g>
+          <g fill="#365968" font-weight="700" font-family="Inter, system-ui, sans-serif">
+            <text x="208" y="140" font-size="14">z</text><text x="220" y="122" font-size="19">z</text><text x="234" y="99" font-size="25">Z</text>
+          </g>
+          <!-- cedule -->
+          <rect x="96" y="246" width="7" height="58" fill="#8a5a33"/>
+          <g transform="rotate(-6 100 236)">
+            <rect x="38" y="214" width="124" height="44" rx="5" fill="#f6e3c4" stroke="#8a5a33" stroke-width="3"/>
+            <text x="100" y="243" text-anchor="middle" font-size="19" font-weight="800" letter-spacing="1.5" fill="#c8302a" font-family="Inter, system-ui, sans-serif">ZAVŘENO</text>
+          </g>
+          <!-- prut opřený o bednu -->
+          <path d="M300 306 L462 92" stroke="#6b4a2b" stroke-width="4" stroke-linecap="round"/>
+          <circle cx="318" cy="283" r="7" fill="#4b3420"/>
+          <path d="M462 92 Q470 120 466 150" stroke="#365968" stroke-width="1.2" fill="none"/>
+          <path d="M466 150 v8 a4 4 0 0 1 -8 0" stroke="#365968" stroke-width="1.6" fill="none"/>
+          <!-- bedna a pivo -->
+          <rect x="318" y="250" width="124" height="60" rx="4" fill="#b07a47"/>
+          <path d="M318 270 H442 M318 290 H442" stroke="#8a5a33" stroke-width="2"/>
+          <path d="M407 190 h10 a15 15 0 0 1 15 15 v18 a15 15 0 0 1 -15 15 h-10" stroke="#e9a42a" stroke-width="9" fill="none"/>
+          <rect x="344" y="172" width="64" height="80" rx="8" fill="#f2b134"/>
+          <rect x="352" y="186" width="8" height="54" rx="4" fill="#f8cf6d"/>
+          <circle cx="378" cy="214" r="2.5" fill="#fde7a8"/><circle cx="388" cy="230" r="2" fill="#fde7a8"/><circle cx="372" cy="236" r="2.5" fill="#fde7a8"/><circle cx="392" cy="204" r="1.8" fill="#fde7a8"/>
+          <g fill="#fffaf0">
+            <circle cx="352" cy="172" r="13"/><circle cx="371" cy="163" r="16"/><circle cx="392" cy="168" r="14"/><circle cx="406" cy="177" r="9"/>
+            <rect x="344" y="170" width="64" height="12"/>
+            <path d="M398 180 q4 14 0 18 q-4 -4 0 -18Z"/>
+          </g>
+        </svg>
+        <div class="art-label">Sezona<br><span>uzavřena</span></div>
       </div>
     </section>
 
@@ -118,7 +166,7 @@
             <label class="field-label req" for="returnCode">Kód místenky</label>
             <input id="returnCode" class="code-input" maxlength="6" placeholder="S7K4P2" autocomplete="off">
             <label class="field-label req" for="returnMemberId">Číslo členské legitimace</label>
-            <div class="code-row"><input id="returnMemberId" type="text" inputmode="numeric" maxlength="8" placeholder="8 číslic" autocomplete="off"><button class="primary-button" id="returnFind" type="button">Najít místenku</button></div>
+            <div class="code-row"><input id="returnMemberId" class="code-input member-code-input" type="text" inputmode="numeric" maxlength="8" placeholder="8 číslic" autocomplete="off"><button class="primary-button" id="returnFind" type="button">Najít místenku</button></div>
           </div>
           <div id="checkPanel" class="panel-content hidden">
             <p class="panel-intro">Ověřte místenku načtením QR kódu nebo ručním zadáním jejího kódu.</p>
