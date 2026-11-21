@@ -146,7 +146,6 @@ qs("#submitReturn").addEventListener("click", async () => {
     if (!valid) return showToast("Doplňte druh a délku u každého úlovku, nebo zvolte „Bez úlovku“.", "warning");
   }
   if (!qs("#returnDeclaration").checked) return showToast("Potvrďte úplnost údajů.", "warning");
-  if (!window.confirm(noCatch ? "Odevzdat místenku bez úlovku?" : `Odevzdat místenku s ${catches.length} ${plural(catches.length, "úlovkem", "úlovky", "úlovky")}?`)) return;
   const button = qs("#submitReturn");
   button.disabled = true;
   try {
