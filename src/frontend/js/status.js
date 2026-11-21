@@ -111,7 +111,12 @@ function renderWarden(view) {
 
 qs("#nextCheck").addEventListener("click", () => {
   const nextCode = qs("#nextCode").value.trim().toUpperCase();
-  if (!/^[A-Z0-9]{6}$/.test(nextCode)) return qs("#nextCode").focus();
+  const error = qs("#nextCodeError");
+  const invalid = !/^[A-Z0-9]{6}$/.test(nextCode);
+  error.textContent = invalid ? (nextCode ? "Kód místenky má 6 znaků (písmena A–Z a číslice)." : "Zadejte kód místenky.") : "";
+  error.classList.toggle("hidden", !invalid);
+  qs("#nextCode").setAttribute("aria-invalid", String(invalid));
+  if (invalid) return qs("#nextCode").focus();
   window.location.href = `status.html?code=${encodeURIComponent(nextCode)}`;
 });
 qs("#nextCode").addEventListener("keydown", (event) => { if (event.key === "Enter") qs("#nextCheck").click(); });

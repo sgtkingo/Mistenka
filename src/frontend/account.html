@@ -20,8 +20,8 @@
     <section class="panel-card status-shell hidden" id="authView">
       <div class="panel-heading"><div><span class="section-kicker">Uživatelský účet</span><h1 id="authTitle">Přihlášení</h1></div></div>
       <div class="tabs" role="tablist">
-        <button class="tab active" type="button" data-tab="login" role="tab">Přihlášení</button>
-        <button class="tab" type="button" data-tab="register" role="tab">Registrace</button>
+        <button class="tab active" type="button" data-tab="login" role="tab" id="tabLogin" aria-selected="true" aria-controls="loginForm">Přihlášení</button>
+        <button class="tab" type="button" data-tab="register" role="tab" id="tabRegister" aria-selected="false" aria-controls="registerForm" tabindex="-1">Registrace</button>
       </div>
       <div id="authMessage" class="info-box hidden" role="status"></div>
 

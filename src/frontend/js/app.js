@@ -21,7 +21,7 @@ function renderSubs() {
   qs("#subGrid").innerHTML = subs.map((s) => {
     const n = free(s);
     const on = String(s.number) === String(selectedSub);
-    return `<button class="sub-option${on ? " selected" : ""}" type="button" data-sub="${esc(s.number)}"${n ? "" : " disabled"}><b>${esc(s.name ? `${s.number} – ${s.name}` : `Podrevír ${s.number}`)}</b><span>${esc(czk(Math.round(s.priceCzk * 100)))}</span><i>${day ? (n ? `${n} ${plural(n, "místo", "místa", "míst")}` : "obsazeno") : ""}</i></button>`;
+    return `<button class="sub-option${on ? " selected" : ""}" type="button" aria-pressed="${on}" data-sub="${esc(s.number)}"${n ? "" : " disabled"}><b>${esc(s.name ? `${s.number} – ${s.name}` : `Podrevír ${s.number}`)}</b><span>${esc(czk(Math.round(s.priceCzk * 100)))}</span><i>${day ? (n ? `${n} ${plural(n, "místo", "místa", "míst")}` : "obsazeno") : ""}</i></button>`;
   }).join("");
   qsa(".sub-option:not([disabled])").forEach((b) => b.addEventListener("click", () => { selectedSub = saleSubs().find((s) => String(s.number) === b.dataset.sub).number; renderSubs(); }));
 }
@@ -152,14 +152,13 @@ async function renderDates() {
       const info = dayInfo(day.date, today);
       const soldOut = day.available <= 0;
       const label = day.closed ? "uzavřeno" : soldOut ? "obsazeno" : `${day.available} ${plural(day.available, "místo", "místa", "míst")}`;
-      return `<button class="date-option${day.date === selectedDate ? " selected" : ""}${soldOut ? " sold-out" : ""}${day.closed ? " closed-day" : ""}" type="button" data-date="${esc(day.date)}"${soldOut ? " disabled" : ""}${day.closed ? ` title="${esc(day.closedReason)}"` : ""}><span class="date-weather hidden"></span><b>${esc(info.label)}</b><span>${esc(info.short)}</span><i>${esc(label)}</i></button>`;
+      return `<button class="date-option${day.date === selectedDate ? " selected" : ""}${soldOut ? " sold-out" : ""}${day.closed ? " closed-day" : ""}" type="button" aria-pressed="${day.date === selectedDate}" data-date="${esc(day.date)}"${soldOut ? " disabled" : ""}${day.closed ? ` title="${esc(day.closedReason)}"` : ""}><span class="date-weather hidden"></span><b>${esc(info.label)}</b><span>${esc(info.short)}</span><i>${esc(label)}</i></button>`;
     }).join("");
     const closedDay = days.find((day) => day.closed);
     qs("#availabilityNote").textContent = firstFree ? (closedDay ? `● Dostupná místa · ${closedDay.closedReason}` : "● Dostupná místa") : closedDay && days.every((day) => day.closed) ? closedDay.closedReason : "Všechny dny jsou obsazené nebo uzavřené";
     applyWeather();
     qsa(".date-option:not([disabled])").forEach((option) => option.addEventListener("click", () => {
-      qsa(".date-option").forEach((item) => item.classList.remove("selected"));
-      option.classList.add("selected");
+      qsa(".date-option").forEach((item) => { item.classList.toggle("selected", item === option); item.setAttribute("aria-pressed", String(item === option)); });
       selectedDate = option.dataset.date;
       renderSubs();
     }));

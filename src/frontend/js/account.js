@@ -24,10 +24,27 @@ function showAuthForm(name) {
   ["loginForm", "registerForm", "resetForm", "magicOtpForm"].forEach((id) => show(id, id === name));
   const tabbed = name === "loginForm" || name === "registerForm";
   qs(".tabs").classList.toggle("hidden", !tabbed);
-  qsa(".tab").forEach((tab) => tab.classList.toggle("active", `${tab.dataset.tab}Form` === name));
+  qsa(".tab").forEach((tab) => {
+    const on = `${tab.dataset.tab}Form` === name;
+    tab.classList.toggle("active", on);
+    tab.setAttribute("aria-selected", String(on));
+    tab.tabIndex = on ? 0 : -1;
+  });
   qs("#authTitle").textContent = { loginForm: "Přihlášení", registerForm: "Registrace", resetForm: "Nové heslo", magicOtpForm: "Dvoufázové ověření" }[name];
 }
 qsa(".tab").forEach((tab) => tab.addEventListener("click", () => { clearMessage(); showAuthForm(`${tab.dataset.tab}Form`); }));
+// Šipky / Home / End přepínají záložky (vzor WAI-ARIA tabs).
+qs(".tabs").addEventListener("keydown", (event) => {
+  const tabs = qsa(".tab");
+  const i = tabs.indexOf(document.activeElement);
+  if (i < 0) return;
+  const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[event.key];
+  if (next === undefined) return;
+  event.preventDefault();
+  const tab = tabs[(next + tabs.length) % tabs.length];
+  tab.focus();
+  tab.click();
+});
 
 function loggedIn(data, note) {
   setSession(data);

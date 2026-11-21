@@ -26,7 +26,9 @@
       <div class="quick-check">
         <span class="section-kicker">Rychlá akce</span>
         <h2>Ověřit další místenku</h2>
-        <div class="code-row"><input id="nextCode" class="code-input" maxlength="6" placeholder="S7K4P2" autocomplete="off"><button class="primary-button" id="nextCheck" type="button">Ověřit kód</button></div>
+        <label class="field-label" for="nextCode">Kód místenky</label>
+        <div class="code-row"><input id="nextCode" class="code-input" maxlength="6" placeholder="S7K4P2" autocomplete="off" aria-describedby="nextCodeError"><button class="primary-button" id="nextCheck" type="button">Ověřit kód</button></div>
+        <p id="nextCodeError" class="field-error hidden" role="alert"></p>
       </div>
       <a class="back-button status-back" href="./">← Zpět na revír</a>
     </section>
