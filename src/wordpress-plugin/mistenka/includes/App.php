@@ -387,7 +387,7 @@ final class App
                 if ($method === 'PUT') return self::json(200, $r->saveStocking($actor, $m[1], self::body($request)));
                 if ($method === 'DELETE') return self::json(200, $r->deleteStocking($actor, $m[1]));
             }
-            if ($path === '/manage/stats' && $method === 'GET') return self::json(200, $r->stats($q('from'), $q('to'), $q('revirId')));
+            if ($path === '/manage/stats' && $method === 'GET') return self::json(200, $r->stats($q('from'), $q('to'), $q('revirId'), $q('seasonId')));
             if ($path === '/manage/reports' && $method === 'GET') return self::json(200, $r->listReports());
             if ($path === '/manage/reports' && $method === 'POST') return self::json(201, $r->createReport($actor, self::body($request)));
             if ($match('#^/manage/reports/(\d+)$#') && $method === 'GET') return self::json(200, $r->getReport($m[1]));

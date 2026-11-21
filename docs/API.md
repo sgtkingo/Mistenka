@@ -416,7 +416,7 @@ Pro `manager`/`admin` (🛠).
 | `GET /manage/stocking/budget?year=` | – | `{ year, budgets: [{ revirId, revir, amountHalere, note, spentHalere, plannedHalere, total }] }` – poslední řádek `total: true` (`revirId: null`) je součet revírů |
 | `PUT /manage/stocking/budget` | `{ year, revirId, amountCzk (null = smazat), note? }` – jen pro revír (`400 unknown_revir` bez revíru) | jako GET |
 
-**Přehledy** – `GET /manage/stats?from=&to=&revirId=` (den lovu / den zarybnění v období):
+**Přehledy** – `GET /manage/stats?seasonId=` (přehled **za sezonu**: období od otevření do uzavření, neuzavřená do dneška, revír podle sezony; neznámá → `404`), nebo `GET /manage/stats?from=&to=&revirId=` (vlastní období, klidně přes více sezon; den lovu / den zarybnění v období). Odpověď vždy říká, z jaké sezony je: `season` (sezona přehledu, nebo `null` u vlastního období) a `seasons` (všechny sezony, do kterých období zasahuje: `[{ id, name, revirId, revir, opensOn, closesOn }]`). `groups` = úlovky a bilance po podrevírech (`[{ revirId, revir, subdistrict, label, catches: { total, weightKg, bySpecies }, balance }]`, `subdistrict: null` = celý revír), prázdné, když žádné úlovky ani zarybnění podrevír nemají. `bySubdistrict` = tržby po podrevírech (v portálu tabulka „Tržby“):
 
 ```jsonc
 { "from": "2026-01-01", "to": "2026-12-31", "revirId": null, "revir": "Všechny revíry", "generatedAt": "…",
@@ -435,8 +435,8 @@ Hmotnost úlovků se sčítá jen z vyplněných nebo dopočtených hodnot (`wei
 
 | Endpoint | Tělo | Odpověď |
 | --- | --- | --- |
-| `GET /manage/reports` | – | `{ reports: [{ id, name, kind, seasonId, revirId, revir, from, to, createdAt }] }` |
-| `POST /manage/reports` | `{ from, to, revirId?, name? }` | `201` uzávěrka s `data` (tvar jako `/manage/stats`) |
+| `GET /manage/reports` | – | `{ reports: [{ id, name, kind, seasonId, season (název sezony nebo null), revirId, revir, from, to, createdAt }] }` |
+| `POST /manage/reports` | `{ seasonId, name? }` (uzávěrka za sezonu, výchozí název „Uzávěrka – <sezona>“), nebo `{ from, to, revirId?, name? }` (vlastní období) | `201` uzávěrka s `data` (tvar jako `/manage/stats`); `404` neznámá sezona |
 | `GET /manage/reports/{id}` | – | uzávěrka s `data` |
 
 ## Zálohy a audit (B7)

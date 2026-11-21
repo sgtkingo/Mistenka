@@ -193,10 +193,86 @@ final class Reports
         return array_values($rows);
     }
 
-    public function stats($from, $to, $revirId): array
+    // Sezona přehledu: období od otevření do uzavření (neuzavřená do dneška), revír podle sezony.
+    private function seasonShape(array $s): array
     {
+        return ['id' => $s['id'], 'name' => $s['name'], 'revirId' => $s['revir_id'], 'revir' => $this->revirName($s['revir_id']), 'opensOn' => $s['opens_on'], 'closesOn' => $s['closes_on']];
+    }
+
+    private function seasonRange($seasonId): array
+    {
+        $season = Db::row('SELECT * FROM {p}seasons WHERE id = ? AND deleted_at IS NULL', (int) $seasonId);
+        if (!$season) throw new ApiError(404, 'not_found', 'Sezona neexistuje.');
+        $today = Time::pragueToday();
+        $end = $season['closes_on'] ?: ($today > $season['opens_on'] ? $today : $season['opens_on']);
+        return ['season' => $season, 'from' => $season['opens_on'], 'to' => $end < $season['opens_on'] ? $season['opens_on'] : $end, 'revirId' => $season['revir_id']];
+    }
+
+    // Úlovky po druzích (počet, hmotnost, délky).
+    private static function speciesRows(array $list): array
+    {
+        $bySpecies = [];
+        foreach ($list as $c) {
+            $s = $bySpecies[$c['species']] ?? ['species' => $c['species'], 'count' => 0, 'weightKg' => 0.0, 'weighed' => 0, 'estimated' => 0, 'lengthSum' => 0.0, 'maxLength' => 0];
+            $s['count']++;
+            $s['lengthSum'] += $c['length_cm'];
+            $s['maxLength'] = max($s['maxLength'], $c['length_cm']);
+            if ($c['weight_kg']) { $s['weightKg'] += $c['weight_kg']; $s['weighed']++; if ($c['weight_estimated']) $s['estimated']++; }
+            $bySpecies[$c['species']] = $s;
+        }
+        $rows = [];
+        foreach ($bySpecies as $s) {
+            $avg = Js::round1($s['lengthSum'] / $s['count']);
+            unset($s['lengthSum']);
+            $s['weightKg'] = Js::round2($s['weightKg']);
+            $s['avgLength'] = $avg;
+            $rows[] = $s;
+        }
+        usort($rows, fn($a, $b) => $b['count'] <=> $a['count']);
+        return $rows;
+    }
+
+    private static function stockedMap(array $list): array
+    {
+        $stocked = [];
+        foreach ($list as $s) {
+            $row = $stocked[$s['species_name']] ?? ['species' => $s['species_name'], 'pieces' => 0, 'kg' => 0.0, 'costHalere' => 0];
+            $row['pieces'] += $s['pieces'] ?? 0;
+            $row['kg'] += $s['kg'] ?? 0;
+            $row['costHalere'] += $s['cost_halere'] ?? 0;
+            $stocked[$s['species_name']] = $row;
+        }
+        return $stocked;
+    }
+
+    // Uloveno vs. nasazeno: podklad pro plán zarybnění.
+    private static function balanceRows(array $rows, array $stocked): array
+    {
+        $byName = [];
+        foreach ($rows as $c) $byName[$c['species']] = $c;
+        $names = array_unique(array_merge(array_map('strval', array_keys($byName)), array_map('strval', array_keys($stocked))));
+        $balance = [];
+        foreach ($names as $species) {
+            $caught = $byName[$species] ?? null;
+            $st = $stocked[$species] ?? null;
+            $balance[] = ['species' => $species, 'caughtCount' => $caught['count'] ?? 0, 'caughtKg' => $caught['weightKg'] ?? 0, 'stockedPieces' => $st['pieces'] ?? 0, 'stockedKg' => Js::round2($st['kg'] ?? 0), 'balanceKg' => Js::round2(($st['kg'] ?? 0) - ($caught['weightKg'] ?? 0))];
+        }
+        usort($balance, fn($a, $b) => ($b['caughtKg'] <=> $a['caughtKg']) ?: ($b['stockedKg'] <=> $a['stockedKg']));
+        return $balance;
+    }
+
+    // Statistika za sezonu ($seasonId), nebo za období (klidně přes více sezon), volitelně jen revír.
+    // Vždy uvádí, ze kterých sezon přehled je.
+    public function stats($from, $to, $revirId, $seasonId = null): array
+    {
+        $season = null;
+        if (Js::truthy($seasonId)) {
+            $bound = $this->seasonRange($seasonId);
+            ['season' => $season, 'from' => $from, 'to' => $to, 'revirId' => $revirId] = $bound;
+        }
         $range = self::validRange($from, $to);
         $revir = $this->validRevir($revirId);
+        $seasons = array_map([$this, 'seasonShape'], Db::all('SELECT * FROM {p}seasons WHERE deleted_at IS NULL AND opens_on <= ? AND (closes_on IS NULL OR closes_on >= ?) AND (? IS NULL OR revir_id IS NULL OR revir_id = ?) ORDER BY opens_on, id', $range['to'], $range['from'], $revir, $revir));
         $scope = '(? IS NULL OR revir_id = ?)';
         $tickets = Db::all("SELECT * FROM {p}tickets WHERE fishing_date BETWEEN ? AND ? AND {$scope}", $range['from'], $range['to'], $revir, $revir);
         $issued = array_values(array_filter($tickets, fn($t) => $t['status'] === 'issued'));
@@ -224,45 +300,34 @@ final class Reports
             'revenueHalere' => array_sum(array_map(fn($t) => $t['paid_at'] ? $t['amount_due_halere'] : 0, $issued)),
             'anglers' => count(array_unique(array_column($issued, 'member_id'))),
         ];
-        $catches = $issued ? Db::all("SELECT c.*, t.fishing_date FROM {p}catches c JOIN {p}tickets t ON t.id = c.ticket_id WHERE t.status = 'issued' AND t.fishing_date BETWEEN ? AND ? AND (? IS NULL OR t.revir_id = ?)", $range['from'], $range['to'], $revir, $revir) : [];
-        $bySpecies = [];
-        foreach ($catches as $c) {
-            $s = $bySpecies[$c['species']] ?? ['species' => $c['species'], 'count' => 0, 'weightKg' => 0.0, 'weighed' => 0, 'estimated' => 0, 'lengthSum' => 0.0, 'maxLength' => 0];
-            $s['count']++;
-            $s['lengthSum'] += $c['length_cm'];
-            $s['maxLength'] = max($s['maxLength'], $c['length_cm']);
-            if ($c['weight_kg']) { $s['weightKg'] += $c['weight_kg']; $s['weighed']++; if ($c['weight_estimated']) $s['estimated']++; }
-            $bySpecies[$c['species']] = $s;
-        }
-        $catchRows = [];
-        foreach ($bySpecies as $s) {
-            $avg = Js::round1($s['lengthSum'] / $s['count']);
-            unset($s['lengthSum']);
-            $s['weightKg'] = Js::round2($s['weightKg']);
-            $s['avgLength'] = $avg;
-            $catchRows[] = $s;
-        }
-        usort($catchRows, fn($a, $b) => $b['count'] <=> $a['count']);
+        $catches = $issued ? Db::all("SELECT c.*, t.fishing_date, t.revir_id, t.subdistrict FROM {p}catches c JOIN {p}tickets t ON t.id = c.ticket_id WHERE t.status = 'issued' AND t.fishing_date BETWEEN ? AND ? AND (? IS NULL OR t.revir_id = ?)", $range['from'], $range['to'], $revir, $revir) : [];
+        $catchRows = self::speciesRows($catches);
         $stocking = Db::all("SELECT * FROM {p}stocking_events WHERE deleted_at IS NULL AND planned = 0 AND date BETWEEN ? AND ? AND {$scope}", $range['from'], $range['to'], $revir, $revir);
-        $stocked = [];
-        foreach ($stocking as $s) {
-            $row = $stocked[$s['species_name']] ?? ['species' => $s['species_name'], 'pieces' => 0, 'kg' => 0.0, 'costHalere' => 0];
-            $row['pieces'] += $s['pieces'] ?? 0;
-            $row['kg'] += $s['kg'] ?? 0;
-            $row['costHalere'] += $s['cost_halere'] ?? 0;
-            $stocked[$s['species_name']] = $row;
+        $stocked = self::stockedMap($stocking);
+        $balance = self::balanceRows($catchRows, $stocked);
+        // Úlovky a bilance po podrevírech (jen když nějaké úlovky nebo zarybnění podrevír mají); null = celý revír.
+        $groups = [];
+        $hasSub = false;
+        foreach (array_merge($catches, $stocking) as $item) if (!empty($item['subdistrict'])) $hasSub = true;
+        if ($hasSub) {
+            $keys = [];
+            foreach (array_merge($catches, $stocking) as $item) {
+                $sub = !empty($item['subdistrict']) ? Js::str($item['subdistrict']) : null;
+                $keys[$item['revir_id'] . '|' . ($sub ?? '')] = ['revirId' => $item['revir_id'], 'subdistrict' => $sub];
+            }
+            $revirIds = array_column($this->app->config['reviry'], 'id');
+            $order = fn($k) => (int) array_search($k['revirId'], $revirIds, true) * 1000 + ($k['subdistrict'] === null ? 999 : (int) $k['subdistrict']);
+            $keys = array_values($keys);
+            usort($keys, fn($a, $b) => $order($a) <=> $order($b));
+            foreach ($keys as $k) {
+                $same = fn($item) => $item['revir_id'] === $k['revirId'] && (!empty($item['subdistrict']) ? Js::str($item['subdistrict']) : null) === $k['subdistrict'];
+                $rows = self::speciesRows(array_values(array_filter($catches, $same)));
+                $sub = $k['subdistrict'] !== null ? Config::subdistrictName(Config::getRevir($this->app->config, $k['revirId']), $k['subdistrict']) : 'celý revír';
+                $groups[] = ['revirId' => $k['revirId'], 'revir' => $this->revirName($k['revirId']), 'subdistrict' => $k['subdistrict'], 'label' => $revir ? $sub : $this->revirName($k['revirId']) . ' – ' . $sub,
+                    'catches' => ['total' => array_sum(array_column($rows, 'count')), 'weightKg' => Js::round2(array_sum(array_column($rows, 'weightKg'))), 'bySpecies' => $rows],
+                    'balance' => self::balanceRows($rows, self::stockedMap(array_values(array_filter($stocking, $same))))];
+            }
         }
-        // Uloveno vs. nasazeno.
-        $names = array_unique(array_merge(array_map('strval', array_keys($bySpecies)), array_map('strval', array_keys($stocked))));
-        $catchByName = [];
-        foreach ($catchRows as $c) $catchByName[$c['species']] = $c;
-        $balance = [];
-        foreach ($names as $species) {
-            $caught = $catchByName[$species] ?? null;
-            $st = $stocked[$species] ?? null;
-            $balance[] = ['species' => $species, 'caughtCount' => $caught['count'] ?? 0, 'caughtKg' => $caught['weightKg'] ?? 0, 'stockedPieces' => $st['pieces'] ?? 0, 'stockedKg' => Js::round2($st['kg'] ?? 0), 'balanceKg' => Js::round2(($st['kg'] ?? 0) - ($caught['weightKg'] ?? 0))];
-        }
-        usort($balance, fn($a, $b) => ($b['caughtKg'] <=> $a['caughtKg']) ?: ($b['stockedKg'] <=> $a['stockedKg']));
         $months = [];
         $month = function (string $date) use (&$months) {
             $key = substr($date, 0, 7);
@@ -274,6 +339,7 @@ final class Reports
         foreach ($stocking as $s) { $k = $month($s['date']); $months[$k]['stockingHalere'] += $s['cost_halere'] ?? 0; }
         ksort($months);
         return array_merge($range, [
+            'season' => $season ? $this->seasonShape($season) : null, 'seasons' => $seasons, 'groups' => $groups,
             'revirId' => $revir, 'revir' => $this->revirName($revir), 'generatedAt' => Time::nowIso(), 'summary' => $summary,
             'bySubdistrict' => $this->bySubdistrict($issued),
             'catches' => ['total' => count($catches), 'weightKg' => Js::round2(array_sum(array_column($catchRows, 'weightKg'))), 'bySpecies' => $catchRows],
@@ -286,7 +352,8 @@ final class Reports
     // ---------- uzávěrky ----------
     private function reportMeta(array $r): array
     {
-        return ['id' => $r['id'], 'name' => $r['name'], 'kind' => $r['kind'], 'seasonId' => $r['season_id'], 'revirId' => $r['revir_id'], 'revir' => $this->revirName($r['revir_id']), 'from' => $r['date_from'], 'to' => $r['date_to'], 'createdAt' => $r['created_at']];
+        $season = $r['season_id'] ? Db::val('SELECT name FROM {p}seasons WHERE id = ?', $r['season_id']) : null;
+        return ['id' => $r['id'], 'name' => $r['name'], 'kind' => $r['kind'], 'seasonId' => $r['season_id'], 'season' => $season !== null ? (string) $season : null, 'revirId' => $r['revir_id'], 'revir' => $this->revirName($r['revir_id']), 'from' => $r['date_from'], 'to' => $r['date_to'], 'createdAt' => $r['created_at']];
     }
 
     public function listReports(): array
@@ -303,20 +370,23 @@ final class Reports
 
     private function insertReport(string $name, string $kind, ?int $seasonId, ?string $revirId, string $from, string $to, ?array $actor): array
     {
-        $data = $this->stats($from, $to, $revirId);
+        $data = $seasonId ? $this->stats(null, null, null, $seasonId) : $this->stats($from, $to, $revirId);
         $id = Db::insert('INSERT INTO {p}season_reports (name, kind, season_id, revir_id, date_from, date_to, data, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             $name, $kind, $seasonId, $revirId ?: null, $from, $to, wp_json_encode($data), $actor['id'] ?? null, Time::nowIso());
         return ['id' => $id, 'data' => $data];
     }
 
+    // Ruční uzávěrka za sezonu (seasonId), nebo za libovolné období (from/to, klidně přes více sezon).
     public function createReport(array $actor, array $body): array
     {
-        $range = self::validRange($body['from'] ?? null, $body['to'] ?? null);
-        $revirId = $this->validRevir($body['revirId'] ?? null);
-        $name = Js::slice(trim(Js::s($body['name'] ?? null)), 0, 120) ?: "Uzávěrka {$range['from']} – {$range['to']}";
-        return Db::transaction(function () use ($actor, $range, $revirId, $name) {
-            $id = $this->insertReport($name, 'manual', null, $revirId, $range['from'], $range['to'], $actor)['id'];
-            $this->audit($actor, 'report_created', 'report', $id, array_merge($range, ['revirId' => $revirId]));
+        $bound = Js::truthy($body['seasonId'] ?? null) ? $this->seasonRange($body['seasonId']) : null;
+        $range = self::validRange($bound ? $bound['from'] : ($body['from'] ?? null), $bound ? $bound['to'] : ($body['to'] ?? null));
+        $revirId = $this->validRevir($bound ? $bound['revirId'] : ($body['revirId'] ?? null));
+        $seasonId = $bound ? (int) $bound['season']['id'] : null;
+        $name = Js::slice(trim(Js::s($body['name'] ?? null)), 0, 120) ?: ($bound ? 'Uzávěrka – ' . $bound['season']['name'] : "Uzávěrka {$range['from']} – {$range['to']}");
+        return Db::transaction(function () use ($actor, $range, $revirId, $name, $seasonId) {
+            $id = $this->insertReport($name, 'manual', $seasonId, $revirId, $range['from'], $range['to'], $actor)['id'];
+            $this->audit($actor, 'report_created', 'report', $id, array_merge($range, ['revirId' => $revirId, 'seasonId' => $seasonId]));
             return $this->getReport($id);
         });
     }

@@ -309,7 +309,7 @@ async function handleApi(req, res, url, ip) {
       if (method === "PUT") return send(res, 200, reports.saveStocking(actor, m[1], await readBody(req)));
       if (method === "DELETE") return send(res, 200, reports.deleteStocking(actor, m[1]));
     }
-    if (pathname === "/api/manage/stats" && method === "GET") return send(res, 200, reports.stats({ from: q("from"), to: q("to"), revirId: q("revirId") }));
+    if (pathname === "/api/manage/stats" && method === "GET") return send(res, 200, reports.stats({ from: q("from"), to: q("to"), revirId: q("revirId"), seasonId: q("seasonId") }));
     if (pathname === "/api/manage/reports" && method === "GET") return send(res, 200, reports.listReports());
     if (pathname === "/api/manage/reports" && method === "POST") return send(res, 201, reports.createReport(actor, await readBody(req)));
     if ((m = pathname.match(/^\/api\/manage\/reports\/(\d+)$/)) && method === "GET") return send(res, 200, reports.getReport(m[1]));

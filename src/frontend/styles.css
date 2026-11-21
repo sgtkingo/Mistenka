@@ -283,3 +283,24 @@ body.season-closed .action-card[data-panel="buy"]{display:none}body.season-close
 .sub-option.selected{border-color:var(--blue);box-shadow:0 0 0 3px rgba(9,127,232,.16)}.sub-option[disabled]{opacity:.5;cursor:not-allowed}.sub-option[disabled] i{color:var(--muted)}
 .pricing-revir td{background:#f7f6f4}.pricing-sub{padding-left:14px;font-weight:600}
 .sales-policy{margin-top:26px;padding-top:18px;border-top:1px solid var(--line)}
+.report-season{margin:6px 0 4px;padding:6px 12px;border-radius:8px;background:#e8f1fb;color:#1d4f80;font-size:14px;display:inline-block}.report-season.period{background:#f6f5f4;color:var(--ink)}
+.report-group{margin:16px 0 6px;font-size:15px;color:var(--muted)}.stats-period:not(.hidden){display:contents}
+/* Přehledy: výběr sezony a tlačítka v jedné řadě s odstupy */
+.stats-filters{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:22px}
+.stats-filters #sSeason{flex:1 1 320px;min-width:0;max-width:560px;padding:10px 12px}
+.stats-filters .stats-period:not(.hidden){display:flex;flex-wrap:wrap;gap:12px;flex:1 1 100%}
+.stats-filters .stats-period input{width:150px}.stats-filters .stats-period select{flex:1 1 200px}
+.stats-filters>button{flex:0 0 auto;padding-left:22px;padding-right:22px}
+.stats-filters{display:flex;flex-direction:column;gap:12px}.stats-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.stats-label{flex:0 0 120px;font-size:13px;font-weight:600;color:var(--muted)}.stats-row .date-input{width:140px}.stats-row #sRevir{flex:0 1 220px}
+.stats-filters #sSeason{flex:1 1 320px;max-width:560px}
+@media (max-width:640px){.stats-label{flex-basis:100%}}
+/* Přehledy: jedna mřížka – Od a Do vedle sebe, tlačítka zarovnaná ve stejném sloupci */
+.stats-filters{display:grid;grid-template-columns:110px minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 200px;gap:12px;align-items:center;margin-bottom:22px}
+.stats-row{display:contents}
+.stats-label{flex:none;font-size:13px;font-weight:600;color:var(--muted)}
+.stats-filters .date-wrap,.stats-filters select,.stats-filters input{width:100%;margin:0!important}
+.stats-filters select,.stats-filters input{height:46px}
+.stats-filters #sSeason{grid-column:span 3;max-width:none}
+.stats-filters .stats-row>button{width:100%;height:46px;margin:0;padding:0 14px;white-space:nowrap}
+@media (max-width:760px){.stats-filters{grid-template-columns:1fr 1fr}.stats-label{grid-column:1/-1}.stats-filters #sRevir,.stats-filters #sSeason{grid-column:1/-1}.stats-filters .stats-row>button{grid-column:1/-1}}

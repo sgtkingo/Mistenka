@@ -155,6 +155,14 @@
   const balanceTable = (rows) => rows.length ? `<table class="data-table"><thead><tr><th>Druh</th><th>Uloveno</th><th>Nasazeno</th><th>Rozdíl (kg)</th></tr></thead><tbody>${rows.map((b) => `
     <tr><td data-label="Druh"><b>${esc(b.species)}</b></td><td data-label="Uloveno">${esc(b.caughtCount)} ks · ${esc(kg(b.caughtKg))}</td><td data-label="Nasazeno">${b.stockedPieces ? `${esc(b.stockedPieces)} ks · ` : ""}${esc(kg(b.stockedKg))}</td>
     <td data-label="Rozdíl"><b class="bal-${sign(b.balanceKg) || "zero"}">${b.balanceKg > 0 ? "+" : ""}${esc(kg(b.balanceKg))}</b></td></tr>`).join("")}</tbody></table><p class="field-help">Hmotnost úlovků jen z vyplněných nebo dopočtených hodnot – skutečně odebrané množství může být vyšší.</p>` : '<p class="muted">Žádné úlovky ani zarybnění.</p>';
+  const catchTable = (rows) => (rows.length ? `<table class="data-table"><thead><tr><th>Druh</th><th>Kusů</th><th>Hmotnost</th><th>Prům. délka</th><th>Max. délka</th></tr></thead><tbody>${rows.map((c) => `<tr><td data-label="Druh"><b>${esc(c.species)}</b></td><td data-label="Kusů">${esc(c.count)}</td><td data-label="Hmotnost">${esc(kg(c.weightKg))}${c.weighed < c.count ? ` <small class="muted-inline">(${esc(c.weighed)}/${esc(c.count)} vážených)</small>` : ""}</td><td data-label="Prům. délka">${esc(c.avgLength)} cm</td><td data-label="Max. délka">${esc(c.maxLength)} cm</td></tr>`).join("")}</tbody></table>` : '<p class="muted">Žádné úlovky.</p>');
+  // Úlovky a bilance po podrevírech (když data podrevíry mají), jinak jedna tabulka.
+  const grouped = (s, render, whole) => (s.groups?.length ? s.groups.map((g) => `<h4 class="report-group">${esc(g.label)}</h4>${render(g)}`).join("") : whole);
+  const seasonPeriod = (x) => `${short(x.opensOn)} – ${x.closesOn ? short(x.closesOn) : "probíhá"}`;
+  // Z jaké sezony je přehled: navázaný na sezonu, nebo období (a sezony, do kterých zasahuje).
+  const seasonInfo = (s) => (s.season
+    ? `<div class="report-season">Sezona <b>${esc(s.season.name)}</b> · ${esc(s.season.revir)} · ${esc(seasonPeriod(s.season))}</div>`
+    : `<div class="report-season period">Vlastní období ${esc(short(s.from))} – ${esc(short(s.to))} · ${s.seasons?.length ? `zasahuje do sezon: ${s.seasons.map((x) => `<b>${esc(x.name)}</b> (${esc(x.revir)}, ${esc(seasonPeriod(x))})`).join(", ")}` : "mimo sezony"}</div>`);
   function statsHtml(s, title) {
     const sum = s.summary;
     const tiles = [["Prodané místenky", sum.sold], ["Rybářů", sum.anglers], ["Tržby", czk(sum.revenueHalere)], ["Odevzdané", `${sum.returned}${sum.returnedLate ? ` (${sum.returnedLate} opožděně)` : ""}`], ["Čeká na odevzdání", sum.awaitingReturn ? `${sum.awaitingReturn} (do ${short(sum.returnDeadline)})` : 0], ["Neodevzdané (po lhůtě)", sum.unreturned], ["Úlovky", `${s.catches.total} ks · ${kg(s.catches.weightKg)}`], ["Zarybnění", czk(s.stocking.costHalere)], ["Poukazy · zadržené", `${sum.vouchers} · ${sum.seized}`]];
@@ -164,12 +172,12 @@
     const money = sum.revenueHalere - s.stocking.costHalere;
     const fishKg = s.balance.reduce((total, b) => total + b.balanceKg, 0);
     tiles.push(["Finanční bilance", `${money > 0 ? "+" : ""}${czk(money)}`, sign(money), "tržby − náklady na zarybnění"], ["Bilance ryb", `${fishKg > 0 ? "+" : ""}${kg(fishKg)}`, sign(fishKg), "nasazeno − uloveno"]);
-    return `<div class="report-head"><div><span class="section-kicker">${esc(s.revir)}</span><h2>${esc(title || `${short(s.from)} – ${short(s.to)}`)}</h2><small class="muted-inline">Období ${esc(short(s.from))} – ${esc(short(s.to))} · vytvořeno ${esc(czDateTime(s.generatedAt))}</small></div><button class="secondary-button no-print" type="button" onclick="window.print()">⎙ Tisk / PDF</button></div>
+    return `<div class="report-head"><div><span class="section-kicker">${esc(s.revir)}</span><h2>${esc(title || s.season?.name || `${short(s.from)} – ${short(s.to)}`)}</h2>${s.seasons ? seasonInfo(s) : ""}<small class="muted-inline">Období ${esc(short(s.from))} – ${esc(short(s.to))} · vytvořeno ${esc(czDateTime(s.generatedAt))}</small></div><button class="secondary-button no-print" type="button" onclick="window.print()">⎙ Tisk / PDF</button></div>
       ${pendingNote}<div class="kpi-grid">${tiles.map(([label, value, tone, hint]) => `<div class="kpi${tone ? ` kpi-${tone}` : ""}"><small>${esc(label)}</small><b>${esc(value)}</b>${hint ? `<em>${esc(hint)}</em>` : ""}</div>`).join("")}</div>
       <div class="viz-root viz-grid-2"><div class="viz-card" data-chart="tickets"></div><div class="viz-card" data-chart="money"></div><div class="viz-card" data-chart="species"></div><div class="viz-card" data-chart="balance"></div></div>
-      <h3>Úlovky podle druhů</h3>${s.catches.bySpecies.length ? `<table class="data-table"><thead><tr><th>Druh</th><th>Kusů</th><th>Hmotnost</th><th>Prům. délka</th><th>Max. délka</th></tr></thead><tbody>${s.catches.bySpecies.map((c) => `<tr><td data-label="Druh"><b>${esc(c.species)}</b></td><td data-label="Kusů">${esc(c.count)}</td><td data-label="Hmotnost">${esc(kg(c.weightKg))}${c.weighed < c.count ? ` <small class="muted-inline">(${esc(c.weighed)}/${esc(c.count)} vážených)</small>` : ""}</td><td data-label="Prům. délka">${esc(c.avgLength)} cm</td><td data-label="Max. délka">${esc(c.maxLength)} cm</td></tr>`).join("")}</tbody></table>` : '<p class="muted">Žádné úlovky.</p>'}
-      ${s.bySubdistrict?.length ? `<h3>Po podrevírech</h3><table class="data-table"><thead><tr><th>Revír</th><th>Podrevír</th><th>Místenky</th><th>Tržby</th><th>Úlovky</th></tr></thead><tbody>${s.bySubdistrict.map((b) => `<tr><td data-label="Revír">${esc(b.revir)}</td><td data-label="Podrevír"><b>${esc(b.label)}</b></td><td data-label="Místenky">${esc(b.tickets)}</td><td data-label="Tržby">${esc(czk(b.revenueHalere))}</td><td data-label="Úlovky">${esc(b.catches)}</td></tr>`).join("")}</tbody></table>` : ""}
-      <h3>Uloveno vs. nasazeno</h3>${balanceTable(s.balance)}
+      <h3>Úlovky podle druhů</h3>${grouped(s, (g) => catchTable(g.catches.bySpecies), catchTable(s.catches.bySpecies))}
+      ${s.bySubdistrict?.length ? `<h3>Tržby</h3><table class="data-table"><thead><tr><th>Revír</th><th>Podrevír</th><th>Místenky</th><th>Tržby</th><th>Úlovky</th></tr></thead><tbody>${s.bySubdistrict.map((b) => `<tr><td data-label="Revír">${esc(b.revir)}</td><td data-label="Podrevír"><b>${esc(b.label)}</b></td><td data-label="Místenky">${esc(b.tickets)}</td><td data-label="Tržby">${esc(czk(b.revenueHalere))}</td><td data-label="Úlovky">${esc(b.catches)}</td></tr>`).join("")}</tbody></table>` : ""}
+      <h3>Uloveno vs. nasazeno</h3>${grouped(s, (g) => balanceTable(g.balance), balanceTable(s.balance))}
       <h3>Po měsících</h3>${s.byMonth.length ? `<table class="data-table"><thead><tr><th>Měsíc</th><th>Místenky</th><th>Úlovky</th><th>Tržby</th><th>Zarybnění</th></tr></thead><tbody>${s.byMonth.map((m) => `<tr><td data-label="Měsíc">${esc(monthName(m.month))}</td><td data-label="Místenky">${esc(m.tickets)}</td><td data-label="Úlovky">${esc(m.catches)}</td><td data-label="Tržby">${esc(czk(m.revenueHalere))}</td><td data-label="Zarybnění">${esc(czk(m.stockingHalere))}</td></tr>`).join("")}</tbody></table>` : '<p class="muted">Žádná data.</p>'}`;
   }
   function renderStatsCharts(s, root) {
@@ -186,17 +194,26 @@
     if (!qs("#statsForm")) {
       const y = new Date().getFullYear();
       panel.innerHTML = `
-        <form class="ticket-filters stats-filters no-print" id="statsForm"><input id="sFrom" class="date-input" inputmode="numeric" maxlength="10" value="1. 1. ${y}"><input id="sTo" class="date-input" inputmode="numeric" maxlength="10" value="31. 12. ${y}"><select id="sRevir">${revirOptions()}</select><button class="primary-button" type="submit">Zobrazit</button><button class="secondary-button" type="button" id="saveReport">Uložit jako uzávěrku</button></form>
+        <form class="stats-filters no-print" id="statsForm" novalidate>
+          <div class="stats-row"><span class="stats-label">Vlastní období</span><input id="sFrom" class="date-input" inputmode="numeric" maxlength="10" value="1. 1. ${y}" aria-label="Od"><input id="sTo" class="date-input" inputmode="numeric" maxlength="10" value="31. 12. ${y}" aria-label="Do"><select id="sRevir" aria-label="Revír">${revirOptions()}</select><button class="secondary-button" type="submit">Zobrazit období</button></div>
+          <div class="stats-row"><span class="stats-label">Sezona</span><select id="sSeason" aria-label="Sezona"></select><button class="primary-button" type="button" id="saveReport">Uložit jako uzávěrku</button></div>
+        </form>
         <div id="statsOut" class="report-body"></div>
-        <h2 class="manage-h2 no-print">Uzávěrky</h2><p class="field-help no-print">Po skončení sezony se uzávěrka vytvoří automaticky a správce dostane e-mail.</p><div id="reportList" class="no-print"></div>`;
-      qs("#statsForm").addEventListener("submit", (e) => { e.preventDefault(); showStats(); });
+        <h2 class="manage-h2 no-print">Uzávěrky</h2><p class="field-help no-print">Po skončení sezony (a lhůty pro odevzdání) se uzávěrka sezony vytvoří automaticky a příjemci upozornění dostanou e-mail. Ruční uzávěrku uložíte za vybranou sezonu, nebo za vlastní období (i přes více sezon).</p><div id="reportList" class="no-print"></div>`;
+      await loadSeasonOptions();
+      // Přehled je buď za sezonu (výběr), nebo za vlastní období (data nahoře, i přes více sezon); ukládá se ten zobrazený.
+      qs("#sSeason").addEventListener("change", () => { statsMode = qs("#sSeason").value ? "season" : "period"; showStats(); });
+      qs("#statsForm").addEventListener("submit", (e) => { e.preventDefault(); statsMode = "period"; showStats(); });
       qs("#saveReport").addEventListener("click", async (e) => {
         const button = e.currentTarget;
         try {
-          const name = window.prompt("Název uzávěrky:", `Uzávěrka ${qs("#sFrom").value} – ${qs("#sTo").value}`);
+          const seasonId = statsMode === "season" ? qs("#sSeason").value : "";
+          const seasonName = seasonId ? qs("#sSeason").selectedOptions[0].dataset.name : "";
+          const name = window.prompt("Název uzávěrky:", seasonId ? `Uzávěrka – ${seasonName}` : `Uzávěrka ${qs("#sFrom").value} – ${qs("#sTo").value}`);
           if (name === null) return;
           button.disabled = true;
-          const report = await api("/manage/reports", { method: "POST", body: { name, from: dateInput("sFrom", "Od"), to: dateInput("sTo", "Do"), revirId: qs("#sRevir").value || null } });
+          const body = seasonId ? { name, seasonId: Number(seasonId) } : { name, from: dateInput("sFrom", "Od"), to: dateInput("sTo", "Do"), revirId: qs("#sRevir").value || null };
+          const report = await api("/manage/reports", { method: "POST", body });
           showToast("Uzávěrka uložena.");
           listReports();
           showReport(report.id);
@@ -206,9 +223,22 @@
     listReports();
     if (reportId) showReport(reportId); else showStats();
   }
+  // Výběr přehledu: sezony (výchozí probíhající, jinak nejnovější), nebo vlastní období.
+  let statsMode = "season";
+  async function loadSeasonOptions() {
+    const select = qs("#sSeason");
+    let seasons = [];
+    try { seasons = (await api("/manage/seasons")).seasons; } catch { /* bez sezon jen vlastní období */ }
+    const current = seasons.find((x) => x.state === "open") || seasons[0];
+    select.innerHTML = seasons.length ? seasons.map((x) => `<option value="${x.id}" data-name="${esc(x.name)}"${x === current ? " selected" : ""}>${esc(`${x.name} · ${x.revirName} · ${short(x.opensOn)} – ${x.closesOn ? short(x.closesOn) : "probíhá"}`)}</option>`).join("") : '<option value="">Zatím žádná sezona</option>';
+    select.disabled = !seasons.length;
+    statsMode = seasons.length ? "season" : "period";
+  }
   async function showStats() {
     try {
-      const s = await api("/manage/stats", { query: Object.fromEntries(Object.entries({ from: dateInput("sFrom", "Od"), to: dateInput("sTo", "Do"), revirId: qs("#sRevir").value }).filter(([, v]) => v)) });
+      const seasonId = statsMode === "season" ? qs("#sSeason").value : "";
+      const query = seasonId ? { seasonId } : Object.fromEntries(Object.entries({ from: dateInput("sFrom", "Od"), to: dateInput("sTo", "Do"), revirId: qs("#sRevir").value }).filter(([, v]) => v));
+      const s = await api("/manage/stats", { query });
       qs("#statsOut").innerHTML = statsHtml(s);
       renderStatsCharts(s, qs("#statsOut"));
     } catch (error) { qs("#statsOut").innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
@@ -216,8 +246,8 @@
   async function listReports() {
     try {
       const { reports } = await api("/manage/reports");
-      qs("#reportList").innerHTML = reports.length ? `<table class="data-table"><thead><tr><th>Název</th><th>Revír</th><th>Období</th><th>Typ</th><th>Vytvořeno</th></tr></thead><tbody>${reports.map((r) => `
-        <tr class="clickable" data-report="${r.id}"><td data-label="Název"><b>${esc(r.name)}</b></td><td data-label="Revír">${esc(r.revir)}</td><td data-label="Období">${esc(short(r.from))} – ${esc(short(r.to))}</td><td data-label="Typ">${r.kind === "season" ? '<span class="badge badge-info">sezona</span>' : "ruční"}</td><td data-label="Vytvořeno">${esc(czDateTime(r.createdAt))}</td></tr>`).join("")}</tbody></table>` : '<p class="muted">Zatím žádné uzávěrky.</p>';
+      qs("#reportList").innerHTML = reports.length ? `<table class="data-table"><thead><tr><th>Název</th><th>Sezona</th><th>Revír</th><th>Období</th><th>Typ</th><th>Vytvořeno</th></tr></thead><tbody>${reports.map((r) => `
+        <tr class="clickable" data-report="${r.id}"><td data-label="Název"><b>${esc(r.name)}</b></td><td data-label="Sezona">${r.season ? esc(r.season) : '<span class="muted-inline">vlastní období</span>'}</td><td data-label="Revír">${esc(r.revir)}</td><td data-label="Období">${esc(short(r.from))} – ${esc(short(r.to))}</td><td data-label="Typ">${r.kind === "season" ? '<span class="badge badge-info">sezona</span>' : "ruční"}</td><td data-label="Vytvořeno">${esc(czDateTime(r.createdAt))}</td></tr>`).join("")}</tbody></table>` : '<p class="muted">Zatím žádné uzávěrky.</p>';
       qsa("[data-report]").forEach((row) => row.addEventListener("click", () => showReport(row.dataset.report)));
     } catch (error) { qs("#reportList").innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
   }

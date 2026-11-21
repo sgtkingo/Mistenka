@@ -128,10 +128,24 @@ function createReports({ db, config, appUrl }) {
   }
 
   // ---------- přehledy ----------
-  // Statistika za období (den lovu / den zarybnění v rozsahu), volitelně jen revír.
-  function stats({ from, to, revirId } = {}) {
+  // Sezona přehledu: období od otevření do uzavření (neuzavřená do dneška), revír podle sezony.
+  const seasonShape = (s) => ({ id: s.id, name: s.name, revirId: s.revir_id, revir: revirName(s.revir_id), opensOn: s.opens_on, closesOn: s.closes_on });
+  function seasonRange(seasonId) {
+    const season = db.prepare("SELECT * FROM seasons WHERE id = ? AND deleted_at IS NULL").get(Number(seasonId));
+    if (!season) throw new ApiError(404, "not_found", "Sezona neexistuje.");
+    const today = time.pragueToday();
+    const end = season.closes_on || (today > season.opens_on ? today : season.opens_on);
+    return { season, from: season.opens_on, to: end < season.opens_on ? season.opens_on : end, revirId: season.revir_id };
+  }
+  // Statistika za sezonu (seasonId), nebo za období (den lovu / den zarybnění v rozsahu, klidně přes více sezon),
+  // volitelně jen revír. Vždy uvádí, ze kterých sezon přehled je.
+  function stats({ from, to, revirId, seasonId } = {}) {
+    let season = null;
+    if (seasonId) ({ season, from, to, revirId } = seasonRange(seasonId));
     const range = validRange(from, to);
     const revir = validRevir(revirId);
+    const seasons = db.prepare("SELECT * FROM seasons WHERE deleted_at IS NULL AND opens_on <= ? AND (closes_on IS NULL OR closes_on >= ?) AND (? IS NULL OR revir_id IS NULL OR revir_id = ?) ORDER BY opens_on, id")
+      .all(range.to, range.from, revir, revir).map(seasonShape);
     const scope = "(? IS NULL OR revir_id = ?)";
     const tickets = db.prepare(`SELECT * FROM tickets WHERE fishing_date BETWEEN ? AND ? AND ${scope}`).all(range.from, range.to, revir, revir);
     const issued = tickets.filter((t) => t.status === "issued");
@@ -156,39 +170,63 @@ function createReports({ db, config, appUrl }) {
       anglers: new Set(issued.map((t) => t.member_id)).size
     };
     const ids = issued.map((t) => t.id);
-    const catches = ids.length ? db.prepare(`SELECT c.*, t.fishing_date FROM catches c JOIN tickets t ON t.id = c.ticket_id WHERE t.status = 'issued' AND t.fishing_date BETWEEN ? AND ? AND (? IS NULL OR t.revir_id = ?)`).all(range.from, range.to, revir, revir) : [];
-    const bySpecies = new Map();
-    for (const c of catches) {
-      const s = bySpecies.get(c.species) || { species: c.species, count: 0, weightKg: 0, weighed: 0, estimated: 0, lengthSum: 0, maxLength: 0 };
-      s.count += 1;
-      s.lengthSum += c.length_cm;
-      s.maxLength = Math.max(s.maxLength, c.length_cm);
-      if (c.weight_kg) { s.weightKg += c.weight_kg; s.weighed += 1; if (c.weight_estimated) s.estimated += 1; }
-      bySpecies.set(c.species, s);
-    }
-    const catchRows = [...bySpecies.values()].map(({ lengthSum, ...s }) => ({ ...s, weightKg: Math.round(s.weightKg * 100) / 100, avgLength: Math.round((lengthSum / s.count) * 10) / 10 })).sort((a, b) => b.count - a.count);
-    const stocking = db.prepare(`SELECT * FROM stocking_events WHERE deleted_at IS NULL AND planned = 0 AND date BETWEEN ? AND ? AND ${scope}`).all(range.from, range.to, revir, revir);
-    const stockedBySpecies = new Map();
-    for (const s of stocking) {
-      const row = stockedBySpecies.get(s.species_name) || { species: s.species_name, pieces: 0, kg: 0, costHalere: 0 };
-      row.pieces += s.pieces || 0;
-      row.kg += s.kg || 0;
-      row.costHalere += s.cost_halere || 0;
-      stockedBySpecies.set(s.species_name, row);
-    }
+    const catches = ids.length ? db.prepare(`SELECT c.*, t.fishing_date, t.revir_id, t.subdistrict FROM catches c JOIN tickets t ON t.id = c.ticket_id WHERE t.status = 'issued' AND t.fishing_date BETWEEN ? AND ? AND (? IS NULL OR t.revir_id = ?)`).all(range.from, range.to, revir, revir) : [];
+    // Úlovky po druzích (počet, hmotnost, délky).
+    const speciesRows = (list) => {
+      const bySpecies = new Map();
+      for (const c of list) {
+        const s = bySpecies.get(c.species) || { species: c.species, count: 0, weightKg: 0, weighed: 0, estimated: 0, lengthSum: 0, maxLength: 0 };
+        s.count += 1;
+        s.lengthSum += c.length_cm;
+        s.maxLength = Math.max(s.maxLength, c.length_cm);
+        if (c.weight_kg) { s.weightKg += c.weight_kg; s.weighed += 1; if (c.weight_estimated) s.estimated += 1; }
+        bySpecies.set(c.species, s);
+      }
+      return [...bySpecies.values()].map(({ lengthSum, ...s }) => ({ ...s, weightKg: Math.round(s.weightKg * 100) / 100, avgLength: Math.round((lengthSum / s.count) * 10) / 10 })).sort((a, b) => b.count - a.count);
+    };
+    const stockedMap = (list) => {
+      const map = new Map();
+      for (const s of list) {
+        const row = map.get(s.species_name) || { species: s.species_name, pieces: 0, kg: 0, costHalere: 0 };
+        row.pieces += s.pieces || 0;
+        row.kg += s.kg || 0;
+        row.costHalere += s.cost_halere || 0;
+        map.set(s.species_name, row);
+      }
+      return map;
+    };
     // Uloveno vs. nasazeno: podklad pro plán zarybnění.
-    const names = new Set([...bySpecies.keys(), ...stockedBySpecies.keys()]);
-    const balance = [...names].map((species) => {
-      const caught = catchRows.find((c) => c.species === species);
-      const stocked = stockedBySpecies.get(species);
-      return { species, caughtCount: caught?.count || 0, caughtKg: caught?.weightKg || 0, stockedPieces: stocked?.pieces || 0, stockedKg: Math.round((stocked?.kg || 0) * 100) / 100, balanceKg: Math.round(((stocked?.kg || 0) - (caught?.weightKg || 0)) * 100) / 100 };
+    const balanceRows = (rows, stocked) => [...new Set([...rows.map((c) => c.species), ...stocked.keys()])].map((species) => {
+      const caught = rows.find((c) => c.species === species);
+      const st = stocked.get(species);
+      return { species, caughtCount: caught?.count || 0, caughtKg: caught?.weightKg || 0, stockedPieces: st?.pieces || 0, stockedKg: Math.round((st?.kg || 0) * 100) / 100, balanceKg: Math.round(((st?.kg || 0) - (caught?.weightKg || 0)) * 100) / 100 };
     }).sort((a, b) => b.caughtKg - a.caughtKg || b.stockedKg - a.stockedKg);
+    const catchRows = speciesRows(catches);
+    const stocking = db.prepare(`SELECT * FROM stocking_events WHERE deleted_at IS NULL AND planned = 0 AND date BETWEEN ? AND ? AND ${scope}`).all(range.from, range.to, revir, revir);
+    const stockedBySpecies = stockedMap(stocking);
+    const balance = balanceRows(catchRows, stockedBySpecies);
+    // Úlovky a bilance po podrevírech (jen když nějaké úlovky nebo zarybnění podrevír mají); null = celý revír.
+    const groups = [];
+    if (catches.some((c) => c.subdistrict) || stocking.some((s) => s.subdistrict)) {
+      const keys = new Map();
+      for (const item of [...catches, ...stocking]) keys.set(`${item.revir_id}|${item.subdistrict || ""}`, { revirId: item.revir_id, subdistrict: item.subdistrict || null });
+      const order = (k) => config.reviry.findIndex((r) => r.id === k.revirId) * 1000 + (k.subdistrict === null ? 999 : Number(k.subdistrict) || 0);
+      for (const key of [...keys.values()].sort((a, b) => order(a) - order(b))) {
+        const same = (item) => item.revir_id === key.revirId && (item.subdistrict || null) === key.subdistrict;
+        const rows = speciesRows(catches.filter(same));
+        const sub = key.subdistrict ? subdistrictName(getRevir(config, key.revirId), key.subdistrict) : "celý revír";
+        groups.push({ revirId: key.revirId, revir: revirName(key.revirId), subdistrict: key.subdistrict, label: revir ? sub : `${revirName(key.revirId)} – ${sub}`,
+          catches: { total: rows.reduce((n, r) => n + r.count, 0), weightKg: Math.round(rows.reduce((n, r) => n + r.weightKg, 0) * 100) / 100, bySpecies: rows },
+          balance: balanceRows(rows, stockedMap(stocking.filter(same))) });
+      }
+    }
     const months = new Map();
     const month = (date) => { const key = date.slice(0, 7); if (!months.has(key)) months.set(key, { month: key, tickets: 0, catches: 0, revenueHalere: 0, stockingHalere: 0 }); return months.get(key); };
     for (const t of issued) { const m = month(t.fishing_date); m.tickets += 1; if (t.paid_at) m.revenueHalere += t.amount_due_halere; }
     for (const c of catches) month(c.fishing_date).catches += 1;
     for (const s of stocking) month(s.date).stockingHalere += s.cost_halere || 0;
     return {
+      season: season ? seasonShape(season) : null, seasons, groups,
       // Místenky na podrevír (revíry s podrevíry v prodeji): počet, tržby, úlovky.
       bySubdistrict: [...issued.filter((t) => t.subdistrict).reduce((map, t) => {
         const key = `${t.revir_id}|${t.subdistrict}`;
@@ -207,7 +245,7 @@ function createReports({ db, config, appUrl }) {
   }
 
   // ---------- uzávěrky ----------
-  const reportMeta = (r) => ({ id: r.id, name: r.name, kind: r.kind, seasonId: r.season_id, revirId: r.revir_id, revir: revirName(r.revir_id), from: r.date_from, to: r.date_to, createdAt: r.created_at });
+  const reportMeta = (r) => ({ id: r.id, name: r.name, kind: r.kind, seasonId: r.season_id, season: r.season_id ? db.prepare("SELECT name FROM seasons WHERE id = ?").get(r.season_id)?.name || null : null, revirId: r.revir_id, revir: revirName(r.revir_id), from: r.date_from, to: r.date_to, createdAt: r.created_at });
   function listReports() {
     return { reports: db.prepare("SELECT * FROM season_reports ORDER BY id DESC LIMIT 200").all().map(reportMeta) };
   }
@@ -217,19 +255,20 @@ function createReports({ db, config, appUrl }) {
     return { ...reportMeta(row), data: JSON.parse(row.data) };
   }
   function insertReport({ name, kind, seasonId = null, revirId, from, to, actor = null }) {
-    const data = stats({ from, to, revirId });
+    const data = seasonId ? stats({ seasonId }) : stats({ from, to, revirId });
     const id = Number(db.prepare("INSERT INTO season_reports (name, kind, season_id, revir_id, date_from, date_to, data, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .run(name, kind, seasonId, revirId || null, from, to, JSON.stringify(data), actor?.id ?? null, iso(time.now())).lastInsertRowid);
     return { id, data };
   }
-  // Ruční uzávěrka za libovolné období (rok, měsíc, probíhající sezona …).
+  // Ruční uzávěrka za sezonu (seasonId), nebo za libovolné období (from/to, klidně přes více sezon).
   function createReport(actor, body = {}) {
-    const range = validRange(body.from, body.to);
-    const revirId = validRevir(body.revirId);
-    const name = String(body.name || "").trim().slice(0, 120) || `Uzávěrka ${range.from} – ${range.to}`;
+    const bound = body.seasonId ? seasonRange(body.seasonId) : null;
+    const range = validRange(bound ? bound.from : body.from, bound ? bound.to : body.to);
+    const revirId = validRevir(bound ? bound.revirId : body.revirId);
+    const name = String(body.name || "").trim().slice(0, 120) || (bound ? `Uzávěrka – ${bound.season.name}` : `Uzávěrka ${range.from} – ${range.to}`);
     return transaction(db, () => {
-      const { id } = insertReport({ name, kind: "manual", revirId, ...range, actor });
-      audit(actor, "report_created", "report", id, { ...range, revirId });
+      const { id } = insertReport({ name, kind: "manual", seasonId: bound ? bound.season.id : null, revirId, ...range, actor });
+      audit(actor, "report_created", "report", id, { ...range, revirId, seasonId: bound ? bound.season.id : null });
       return getReport(id);
     });
   }

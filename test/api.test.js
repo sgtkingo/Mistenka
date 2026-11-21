@@ -1204,6 +1204,24 @@ test("uzávěrky: ruční za období; čeká na odevzdání vs. neodevzdané; au
   await paidTicket({ date: "2026-08-03" }); // neodevzdaná – lhůta 7 dní po dni lovu
   const season = await call("POST", "/manage/seasons", { body: { name: "Letní sezona", revirId: "revir-a", opensOn: "2026-08-01", closesOn: "2026-08-03" }, session });
   assert.equal(season.status, 201);
+  // Přehled navázaný na sezonu: období a revír podle sezony; přehled za období uvádí, ze kterých sezon je.
+  const bySeason = (await call("GET", `/manage/stats?seasonId=${season.data.season.id}`, { session })).data;
+  assert.deepEqual([bySeason.season.name, bySeason.from, bySeason.to, bySeason.revirId, bySeason.summary.sold], ["Letní sezona", "2026-08-01", "2026-08-03", "revir-a", 3]);
+  assert.equal((await call("GET", "/manage/stats?seasonId=999999", { session })).status, 404);
+  const period = (await call("GET", "/manage/stats?from=2026-08-01&to=2026-08-31&revirId=revir-a", { session })).data;
+  assert.equal(period.season, null);
+  assert.ok(["Letní sezona", "Sezona 2026"].every((n) => period.seasons.some((x) => x.name === n)), JSON.stringify(period.seasons));
+  // Úlovky a bilance po podrevírech.
+  const sub1 = bySeason.groups.find((g) => g.revirId === "revir-a" && g.subdistrict === "1");
+  assert.ok(sub1, JSON.stringify(bySeason.groups));
+  assert.deepEqual([sub1.label, sub1.catches.total], ["1 – Horní nádrž", 3]);
+  assert.ok(sub1.balance.some((b) => b.species === "kapr obecný" && b.caughtCount === 2));
+  // Ruční uzávěrka za sezonu.
+  const seasonManual = await call("POST", "/manage/reports", { body: { seasonId: season.data.season.id }, session });
+  assert.equal(seasonManual.status, 201, JSON.stringify(seasonManual.data));
+  assert.deepEqual([seasonManual.data.name, seasonManual.data.seasonId, seasonManual.data.data.season.name], ["Uzávěrka – Letní sezona", season.data.season.id, "Letní sezona"]);
+  assert.equal((await call("GET", "/manage/reports", { session })).data.reports.find((r) => r.id === seasonManual.data.id).season, "Letní sezona");
+
   const before = (await call("GET", "/manage/reports", { session })).data.reports.filter((r) => r.kind === "season").length;
   const seasonReport = async () => (await call("GET", "/manage/reports", { session })).data.reports.find((r) => r.kind === "season" && r.seasonId === season.data.season.id);
 
