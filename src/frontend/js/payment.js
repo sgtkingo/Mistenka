@@ -106,17 +106,17 @@ qs("#simulatePayment").addEventListener("click", async () => {
   button.disabled = true;
   try {
     const { result } = await api("/dev/payments", { method: "POST", body: { code } });
-    if (result !== "matched") showToast(`Platba nebyla spárována (${result}).`);
+    if (result !== "matched") showToast(`Platba nebyla spárována (${result}).`, "warning");
     ticket = await api(`/orders/${code}`, credentials);
     render();
-  } catch (error) { showToast(error.message); } finally { button.disabled = false; }
+  } catch (error) { showToast(error.message, "error"); } finally { button.disabled = false; }
 });
 qs("#cancelPayment").addEventListener("click", async () => {
   if (!window.confirm("Opravdu zrušit objednávku? Pokud jste už zaplatili, objednávku nerušte.")) return;
   try {
     ticket = await api(`/orders/${code}/cancel`, { method: "POST", ...credentials });
     render();
-  } catch (error) { showToast(error.message); }
+  } catch (error) { showToast(error.message, "error"); }
 });
 qs("#downloadTicket").addEventListener("click", () => {
   const revir = revirOf(ticket);

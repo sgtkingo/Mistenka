@@ -49,9 +49,14 @@ final class Emails
     }
 
     // ---------- vzhled (tabulky a inline styly – Gmail, Outlook, mobily) ----------
-    private static function layout(array $config, string $title, string $rowsHtml, string $footerHtml = '', string $preheader = ''): string
+    // Barva hlavičky podle typu zprávy: info modrá, success zelená (vystaveno, uloženo),
+    // warning oranžová (upozornění, je potřeba něco udělat), danger červená (zrušeno, zadrženo, blokace).
+    private const TONES = ['info' => ['#0075de', '#cfe5fb'], 'success' => ['#1a8245', '#d3f0dc'], 'warning' => ['#c2610c', '#fde3c8'], 'danger' => ['#c8302a', '#f9d2cf']];
+
+    private static function layout(array $config, string $tone, string $title, string $rowsHtml, string $footerHtml = '', string $preheader = ''): string
     {
         $c = self::C;
+        [$toneBg, $toneSub] = self::TONES[$tone] ?? self::TONES['info'];
         $org = $config['organization'];
         $contactParts = [];
         if (!empty($org['contact']['email'])) $contactParts[] = '<a href="mailto:' . self::esc($org['contact']['email']) . '" style="color:' . $c['muted'] . '">' . self::esc($org['contact']['email']) . '</a>';
@@ -67,10 +72,10 @@ final class Emails
 <span style=\"display:none!important;visibility:hidden;opacity:0;height:0;width:0;overflow:hidden;mso-hide:all\">{$pre}</span>
 <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:{$c['soft']}\"><tr><td align=\"center\" style=\"padding:24px 12px\">
 <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:560px\">
-<tr><td style=\"background:{$c['brand']};border-radius:12px 12px 0 0;padding:18px 24px\">
-  <span style=\"display:inline-block;width:28px;height:28px;line-height:28px;text-align:center;border-radius:7px;background:#fff;color:{$c['brand']};font-weight:700;font-size:18px;vertical-align:middle\">⌁</span>
+<tr><td style=\"background:{$toneBg};border-radius:12px 12px 0 0;padding:18px 24px\">
+  <span style=\"display:inline-block;width:28px;height:28px;line-height:28px;text-align:center;border-radius:7px;background:#fff;color:{$toneBg};font-weight:700;font-size:18px;vertical-align:middle\">⌁</span>
   <span style=\"color:#fff;font-size:18px;font-weight:700;vertical-align:middle;margin-left:8px\">Místenka</span>
-  <span style=\"color:#cfe5fb;font-size:13px;vertical-align:middle;margin-left:8px\">{$short}</span>
+  <span style=\"color:{$toneSub};font-size:13px;vertical-align:middle;margin-left:8px\">{$short}</span>
 </td></tr>
 <tr><td style=\"background:#fff;border:1px solid {$c['line']};border-top:0;border-radius:0 0 12px 12px;padding:28px 24px 24px\">
   <h1 style=\"margin:0 0 16px;font-size:22px;line-height:1.25;color:{$c['ink']}\">{$t}</h1>
@@ -161,7 +166,7 @@ final class Emails
         $amount = self::czk($t['amount_due_halere']);
         return self::mail(
             "Místenka {$t['code']} – pokyny k platbě",
-            self::layout($config, 'Dokončete platbu místenky', '<p style="margin:0 0 16px">Místo na revíru <b>' . self::esc($revir['name']) . '</b> je pro vás rezervované. Místenku vystavíme hned po připsání platby a pošleme vám ji e-mailem.</p>
+            self::layout($config, 'info', 'Dokončete platbu místenky', '<p style="margin:0 0 16px">Místo na revíru <b>' . self::esc($revir['name']) . '</b> je pro vás rezervované. Místenku vystavíme hned po připsání platby a pošleme vám ji e-mailem.</p>
       ' . self::highlight('K úhradě', $amount, 'VS ' . $t['variable_symbol']) . self::table($rows) . self::button($x['links']['payment'], 'Zobrazit QR platbu') . '
       ' . self::note('Nejrychlejší je zaplatit načtením QR kódu v bankovní aplikaci – údaje se vyplní samy. Při ručním převodu nezapomeňte variabilní symbol.'), '', "Zaplaťte {$amount} do " . self::czDateTime($t['reserved_until']) . ", VS {$t['variable_symbol']}"),
             self::text(array_merge(['Dokončete platbu místenky.', "Částka: {$amount}"], self::rowsText($rows), ["QR platba: {$x['links']['payment']}"]))
@@ -184,7 +189,7 @@ final class Emails
         $late = self::esc(Js::str($revir['lateReturnDays'] ?? ''));
         return self::mail(
             "Místenka {$t['code']} – {$revir['name']}, " . self::czDate($t['fishing_date']),
-            self::layout($config, 'Vaše místenka je vystavena', self::highlight('Kód místenky', $t['code'], "{$day} · {$revir['name']}", 'ok') . self::table($rows) . '
+            self::layout($config, 'success', 'Vaše místenka je vystavena', self::highlight('Kód místenky', $t['code'], "{$day} · {$revir['name']}", 'ok') . self::table($rows) . '
       ' . self::button($x['links']['ticket'], 'Zobrazit místenku a QR kód') . '
       <p style="margin:0 0 8px;font-weight:600">Než vyrazíte</p>' . self::checklist(['Platný rybářský lístek a povolenka – místenka je nenahrazuje.', 'Místenka v telefonu nebo vytištěná (QR kód pro kontrolu).', 'Každý úlovek ihned zapište do povolenky.']) . '
       <p style="margin:0 0 8px;font-weight:600">Po skončení lovu</p><p style="margin:0 0 8px">Místenku odevzdejte ještě týž den a zapište úlovky (nebo „bez úlovku“). Opožděně ji lze odevzdat do ' . $late . ' dnů, pak se uzavře jako neodevzdaná.</p>
@@ -200,7 +205,7 @@ final class Emails
         $deadline = self::czDateTime($x['deadline']);
         return self::mail(
             "Místenka {$t['code']} – nezapomeňte ji odevzdat",
-            self::layout($config, 'Odevzdejte prosím místenku', '<p style="margin:0 0 16px">Lov na revíru <b>' . self::esc($revir['name']) . '</b> dne ' . self::esc(self::czDate($t['fishing_date'])) . ' skončil a místenka <b>' . self::esc($t['code']) . '</b> ještě nebyla odevzdána.</p>
+            self::layout($config, 'warning', 'Odevzdejte prosím místenku', '<p style="margin:0 0 16px">Lov na revíru <b>' . self::esc($revir['name']) . '</b> dne ' . self::esc(self::czDate($t['fishing_date'])) . ' skončil a místenka <b>' . self::esc($t['code']) . '</b> ještě nebyla odevzdána.</p>
       ' . self::highlight('Odevzdejte nejpozději', $deadline, 'Odevzdání po dni lovu se označí jako opožděné.', 'warn') . self::button($x['links']['return'], 'Odevzdat místenku') . '
       ' . self::note('Po této lhůtě se místenka automaticky uzavře jako neodevzdaná, bez úlovku. Pokud jste nic nechytili, zvolte při odevzdání „Bez úlovku“.'), '', "Místenku {$t['code']} odevzdejte do {$deadline}"),
             self::text(["Místenka {$t['code']} ještě nebyla odevzdána.", "Odevzdání je možné do {$deadline} (opožděně). Poté se místenka automaticky uzavře jako neodevzdaná, bez úlovku.", "Odevzdat: {$x['links']['return']}"])
@@ -214,7 +219,7 @@ final class Emails
         $contactLine = self::contactLine($config);
         return self::mail(
             "Místenka {$t['code']} byla uzavřena jako neodevzdaná",
-            self::layout($config, 'Místenka byla uzavřena jako neodevzdaná', '<p>Místenku <b>' . self::esc($t['code']) . '</b> na revír ' . self::esc($revir['name']) . ' (den lovu ' . self::esc(self::czDate($t['fishing_date'])) . ') jste neodevzdali ani v prodloužené lhůtě. Byla proto automaticky uzavřena jako <b>neodevzdaná, bez zapsaného úlovku</b>.</p><p>Pokud jste na revíru něco ulovili nebo jde o omyl, kontaktujte prosím hospodáře' . ($contactLine ? ': ' . self::esc($contactLine) : '') . '.</p>'),
+            self::layout($config, 'danger', 'Místenka byla uzavřena jako neodevzdaná', '<p>Místenku <b>' . self::esc($t['code']) . '</b> na revír ' . self::esc($revir['name']) . ' (den lovu ' . self::esc(self::czDate($t['fishing_date'])) . ') jste neodevzdali ani v prodloužené lhůtě. Byla proto automaticky uzavřena jako <b>neodevzdaná, bez zapsaného úlovku</b>.</p><p>Pokud jste na revíru něco ulovili nebo jde o omyl, kontaktujte prosím hospodáře' . ($contactLine ? ': ' . self::esc($contactLine) : '') . '.</p>'),
             self::text(["Místenka {$t['code']} ({$revir['name']}, " . self::czDate($t['fishing_date']) . ') byla automaticky uzavřena jako neodevzdaná, bez zapsaného úlovku.', 'Pokud jde o omyl, kontaktujte hospodáře' . ($contactLine ? ": {$contactLine}" : '') . '.'])
         );
     }
@@ -229,7 +234,7 @@ final class Emails
         $deadline = self::czDateTime($x['deadline']);
         return self::mail(
             "Místenka {$t['code']} byla zadržena rybářskou stráží",
-            self::layout($config, 'Místenka byla zadržena', '<p>Rybářská stráž zadržela vaši místenku. <b>Místenka od této chvíle neopravňuje k lovu.</b></p>' . self::table($rows) . '<p>Místenku musíte i tak odevzdat a zapsat všechny úlovky, nejpozději do <b>' . self::esc($deadline) . '</b>.</p>' . self::button($x['links']['return'], 'Odevzdat místenku')),
+            self::layout($config, 'danger', 'Místenka byla zadržena', '<p>Rybářská stráž zadržela vaši místenku. <b>Místenka od této chvíle neopravňuje k lovu.</b></p>' . self::table($rows) . '<p>Místenku musíte i tak odevzdat a zapsat všechny úlovky, nejpozději do <b>' . self::esc($deadline) . '</b>.</p>' . self::button($x['links']['return'], 'Odevzdat místenku')),
             self::text(array_merge(['Rybářská stráž zadržela vaši místenku. Místenka od této chvíle neopravňuje k lovu.'], self::rowsText($rows), ["Místenku musíte i tak odevzdat s úlovky do {$deadline}: {$x['links']['return']}"]))
         );
     }
@@ -242,7 +247,7 @@ final class Emails
         if (!empty($t['seized_place'])) $rows[] = ['Místo', $t['seized_place']];
         return self::mail(
             "Zadržená místenka {$t['code']} – {$t['first_name']} {$t['last_name']}",
-            self::layout($config, 'Porybný zadržel místenku', '<p>Pro informaci: místenka byla zadržena. Zadržení není potřeba potvrzovat.</p>' . self::table($rows) . self::button($x['links']['status'], 'Stav místenky')),
+            self::layout($config, 'warning', 'Porybný zadržel místenku', '<p>Pro informaci: místenka byla zadržena. Zadržení není potřeba potvrzovat.</p>' . self::table($rows) . self::button($x['links']['status'], 'Stav místenky')),
             self::text(array_merge(['Porybný zadržel místenku (není potřeba potvrzovat).'], self::rowsText($rows), ["Stav: {$x['links']['status']}"]))
         );
     }
@@ -262,7 +267,7 @@ final class Emails
         $items = implode('', array_map(fn($l) => '<li>' . self::esc(self::limitLine($l)) . '</li>', $x['limits']));
         return self::mail(
             "Překročený limit úlovků – {$t['first_name']} {$t['last_name']} ({$t['code']})",
-            self::layout($config, 'Překročený limit úlovků', '<p>Při odevzdání místenky byly podle místenek v Místence překročeny limity:</p><ul>' . $items . '</ul>' . self::table($rows) . '<p style="color:#5b6b64;font-size:13px">Místenka vidí jen úlovky ze svých místenek; limity platí na všech revírech svazu dohromady.</p>' . self::button($x['links']['status'], 'Stav místenky')),
+            self::layout($config, 'warning', 'Překročený limit úlovků', '<p>Při odevzdání místenky byly podle místenek v Místence překročeny limity:</p><ul>' . $items . '</ul>' . self::table($rows) . '<p style="color:#5b6b64;font-size:13px">Místenka vidí jen úlovky ze svých místenek; limity platí na všech revírech svazu dohromady.</p>' . self::button($x['links']['status'], 'Stav místenky')),
             self::text(array_merge(['Překročené limity úlovků (podle místenek v Místence):'], array_map(fn($l) => '- ' . self::limitLine($l), $x['limits']), self::rowsText($rows), ["Stav: {$x['links']['status']}"]))
         );
     }
@@ -276,7 +281,7 @@ final class Emails
         $email = $config['organization']['contact']['email'] ?? '';
         return self::mail(
             'Místenka – nákup místenek je pozastaven',
-            self::layout($config, 'Nákup místenek je pozastaven', '<p>Nákup místenek na číslo legitimace <b>' . self::esc($t['member_id']) . '</b> je pozastaven <b>' . self::esc($until) . '</b>.</p><p>Důvod: ' . self::esc($block['reason']) . '</p>' . ($limits ? '<ul>' . implode('', array_map(fn($l) => '<li>' . self::esc(self::limitLine($l)) . '</li>', $limits)) . '</ul>' : '') . '<p>Pokud jde o omyl, kontaktujte správce organizace' . ($email ? ' (' . self::esc($email) . ')' : '') . '.</p>'),
+            self::layout($config, 'danger', 'Nákup místenek je pozastaven', '<p>Nákup místenek na číslo legitimace <b>' . self::esc($t['member_id']) . '</b> je pozastaven <b>' . self::esc($until) . '</b>.</p><p>Důvod: ' . self::esc($block['reason']) . '</p>' . ($limits ? '<ul>' . implode('', array_map(fn($l) => '<li>' . self::esc(self::limitLine($l)) . '</li>', $limits)) . '</ul>' : '') . '<p>Pokud jde o omyl, kontaktujte správce organizace' . ($email ? ' (' . self::esc($email) . ')' : '') . '.</p>'),
             self::text(["Nákup místenek na číslo legitimace {$t['member_id']} je pozastaven {$until}.", "Důvod: {$block['reason']}", 'Pokud jde o omyl, kontaktujte správce organizace.'])
         );
     }
@@ -289,7 +294,7 @@ final class Emails
         $rows = [['Revír', $x['revir']], ['Období', self::czDate($data['from']) . ' – ' . self::czDate($data['to'])], ['Prodané místenky', (string) $s['sold']], ['Rybářů', (string) $s['anglers']], ['Tržby', self::czk((int) $s['revenueHalere'])], ['Odevzdané / neodevzdané', "{$s['returned']} / {$s['unreturned']}"], ['Úlovky', $data['catches']['total'] . ' ks, ' . Js::str($data['catches']['weightKg']) . ' kg'], ['Zarybnění', self::czk((int) $data['stocking']['costHalere'])]];
         return self::mail(
             "Uzávěrka – {$x['name']}",
-            self::layout($config, "Uzávěrka: {$x['name']}", '<p>Sezona skončila, uzávěrka je vytvořená a uložená v manažerském portálu.</p>' . self::table($rows) . self::button($x['link'], 'Otevřít uzávěrku')),
+            self::layout($config, 'success', "Uzávěrka: {$x['name']}", '<p>Sezona skončila, uzávěrka je vytvořená a uložená v manažerském portálu.</p>' . self::table($rows) . self::button($x['link'], 'Otevřít uzávěrku')),
             self::text(array_merge(["Uzávěrka: {$x['name']}"], self::rowsText($rows), ["Uzávěrka: {$x['link']}"]))
         );
     }
@@ -303,7 +308,7 @@ final class Emails
         $rows = [['Hlášení', "#{$r['id']}"], ['Čas', self::czDateTime($r['createdAt'])], ['Nahlásil', $who], ['Stránka', $r['url'] ?: '—'], ['Snímek obrazovky', $r['hasScreenshot'] ? 'ano' : 'ne']];
         return self::mail(
             "Místenka – nahlášená chyba #{$r['id']}",
-            self::layout($config, 'Nahlášená chyba', '<p style="margin:0 0 16px;white-space:pre-wrap">' . self::esc($r['description']) . '</p>' . self::table($rows) . self::button($x['link'], 'Otevřít v portálu')),
+            self::layout($config, 'warning', 'Nahlášená chyba', '<p style="margin:0 0 16px;white-space:pre-wrap">' . self::esc($r['description']) . '</p>' . self::table($rows) . self::button($x['link'], 'Otevřít v portálu')),
             self::text(array_merge(['Nahlášená chyba', '', $r['description'], ''], self::rowsText($rows), ["Portál: {$x['link']}"]))
         );
     }
@@ -320,7 +325,7 @@ final class Emails
         $at = self::czDateTime($x['at']);
         return self::mail(
             'Místenka – změněny platební údaje',
-            self::layout($config, 'Změněny platební údaje', '<p>' . self::esc($x['actorName']) . ' změnil(a) ' . self::esc($at) . ' platební údaje Místenky. Nové objednávky se platí podle nových údajů.</p>' . self::table($rows ?: [['Změna', 'beze změny hodnot']]) . '<p><b>Pokud o změně nevíte, okamžitě ji prověřte</b> – změna účtu je nejčastější podvod.</p>'),
+            self::layout($config, 'warning', 'Změněny platební údaje', '<p>' . self::esc($x['actorName']) . ' změnil(a) ' . self::esc($at) . ' platební údaje Místenky. Nové objednávky se platí podle nových údajů.</p>' . self::table($rows ?: [['Změna', 'beze změny hodnot']]) . '<p><b>Pokud o změně nevíte, okamžitě ji prověřte</b> – změna účtu je nejčastější podvod.</p>'),
             self::text(array_merge(["{$x['actorName']} změnil(a) {$at} platební údaje Místenky."], self::rowsText($rows), ['Pokud o změně nevíte, okamžitě ji prověřte.']))
         );
     }
@@ -334,7 +339,7 @@ final class Emails
         $rows = [['Kód místenky', $t['code']], ['Revír', $revir['name']], ['Datum lovu', self::czDate($t['fishing_date'])], ['Důvod', $t['cancel_reason']]];
         return self::mail(
             "Místenka {$t['code']} byla zrušena",
-            self::layout($config, 'Místenka byla zrušena', '<p>Správce organizace vaši místenku zrušil. <b>Místenka neplatí a neopravňuje k lovu.</b></p>' . self::table($rows) . '<p>Pokud máte nárok na vrácení peněz, vyřídí ho správce převodem' . ($contact ? '; kontakt: ' . self::esc($contact) : '') . '.</p>'),
+            self::layout($config, 'danger', 'Místenka byla zrušena', '<p>Správce organizace vaši místenku zrušil. <b>Místenka neplatí a neopravňuje k lovu.</b></p>' . self::table($rows) . '<p>Pokud máte nárok na vrácení peněz, vyřídí ho správce převodem' . ($contact ? '; kontakt: ' . self::esc($contact) : '') . '.</p>'),
             self::text(array_merge(['Správce organizace vaši místenku zrušil. Místenka neplatí a neopravňuje k lovu.'], self::rowsText($rows), ['Vrácení peněz vyřídí správce' . ($contact ? " ({$contact})" : '') . '.']))
         );
     }
@@ -350,7 +355,7 @@ final class Emails
         $rows = [['Kód místenky', $t['code']], ['Revír', $revir['name']], ['Datum lovu', self::czDate($t['fishing_date'])], ['Uzavřeno', $range], ['Důvod', $closure['reason']]];
         return self::mail(
             "Revír {$revir['name']} je mimořádně uzavřen – místenka {$t['code']}",
-            self::layout($config, 'Revír je mimořádně uzavřen', '<p>Na den vaší místenky je revír mimořádně uzavřen. <b>Lovit v tento den nelze.</b></p>' . self::table($rows) . '<p>Ohledně vrácení peněz nebo náhradního termínu kontaktujte prosím správce' . ($contact ? ': ' . self::esc($contact) : '') . '.</p>' . self::button($x['links']['status'], 'Stav místenky')),
+            self::layout($config, 'warning', 'Revír je mimořádně uzavřen', '<p>Na den vaší místenky je revír mimořádně uzavřen. <b>Lovit v tento den nelze.</b></p>' . self::table($rows) . '<p>Ohledně vrácení peněz nebo náhradního termínu kontaktujte prosím správce' . ($contact ? ': ' . self::esc($contact) : '') . '.</p>' . self::button($x['links']['status'], 'Stav místenky')),
             self::text(array_merge(['Revír je na den vaší místenky mimořádně uzavřen. Lovit v tento den nelze.'], self::rowsText($rows), ['Vrácení peněz nebo náhradní termín: kontaktujte správce' . ($contact ? " ({$contact})" : '') . '.']))
         );
     }
@@ -363,7 +368,7 @@ final class Emails
         $l = $x['links'];
         return self::mail(
             "Žádost o funkci porybného – {$x['name']}",
-            self::layout($config, 'Žádost o funkci porybného', '<p>Uživatel Místenky uvádí, že je porybný (rybářská stráž MO nebo státní rybářská stráž), a žádá o funkci porybného v aplikaci. Po schválení uvidí při kontrole místenky plné údaje a bude moct místenku zadržet.</p>' . self::table($rows) . '
+            self::layout($config, 'info', 'Žádost o funkci porybného', '<p>Uživatel Místenky uvádí, že je porybný (rybářská stráž MO nebo státní rybářská stráž), a žádá o funkci porybného v aplikaci. Po schválení uvidí při kontrole místenky plné údaje a bude moct místenku zadržet.</p>' . self::table($rows) . '
       <table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 18px"><tr><td style="padding-right:8px">' . self::button($l['approve'], 'Schválit') . '</td><td>' . self::button($l['reject'], 'Zamítnout', true) . '</td></tr></table>
       <p style="margin:0 0 16px"><a href="' . self::esc($l['open']) . '" style="color:' . self::C['brand'] . '">Otevřít notifikace v portálu</a></p>
       ' . self::note('Tlačítka otevřou stránku s potvrzením rozhodnutí. Odkaz platí 7 dní a lze ho použít jen jednou; žádost můžete vyřídit i v portálu (Notifikace).'), '', "{$x['name']} žádá o funkci porybného"),
@@ -379,7 +384,7 @@ final class Emails
             : 'Vaše žádost o funkci porybného nebyla schválena. Pokud jde o omyl, kontaktujte správce organizace.';
         return self::mail(
             'Místenka – ' . mb_strtolower($title, 'UTF-8'),
-            self::layout($config, $title, '<p>' . self::esc($intro) . '</p>' . ($note !== '' ? self::table([['Poznámka správce', $note]]) : '') . ($approved ? self::button($link, 'Otevřít Místenku') : '')),
+            self::layout($config, ($approved ? 'success' : 'info'), $title, '<p>' . self::esc($intro) . '</p>' . ($note !== '' ? self::table([['Poznámka správce', $note]]) : '') . ($approved ? self::button($link, 'Otevřít Místenku') : '')),
             self::text([$title, $intro, $note !== '' ? "Poznámka správce: {$note}" : null, $approved ? $link : null])
         );
     }
@@ -396,7 +401,7 @@ final class Emails
         $outroText = $outro ?: 'Pokud jste o nic nežádali, zprávu ignorujte.';
         return self::mail(
             $subject,
-            self::layout($config, $title, '<p>' . self::esc($intro) . '</p>' . ($link ? self::button($link, $label) : '') . ($note ? '<p style="color:#5b6b64;font-size:13px">' . self::esc($note) . '</p>' : '') . '<p style="color:#5b6b64;font-size:13px">' . self::esc($outroText) . '</p>'),
+            self::layout($config, 'info', $title, '<p>' . self::esc($intro) . '</p>' . ($link ? self::button($link, $label) : '') . ($note ? '<p style="color:#5b6b64;font-size:13px">' . self::esc($note) . '</p>' : '') . '<p style="color:#5b6b64;font-size:13px">' . self::esc($outroText) . '</p>'),
             self::text([$title, $intro, $link ? "{$label}: {$link}" : null, $note ?: null, $outroText])
         );
     }

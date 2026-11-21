@@ -319,3 +319,10 @@ body.season-closed .action-card[data-panel="buy"]{display:none}body.season-close
 .bug-description{white-space:pre-wrap;background:#f6f5f4;padding:14px 16px;border-radius:10px}.bug-screenshot{max-width:100%;border:1px solid var(--line);border-radius:8px}
 .bug-log-table td{font-size:12px}.bug-log-table .log-error td{color:#b52f27}.nav-count{display:inline-block;min-width:18px;padding:0 6px;margin-left:4px;border-radius:9px;background:#b52f27;color:#fff;font-size:11px;line-height:18px;text-align:center}
 .danger-button.toggle-close{display:inline-flex;align-items:center;gap:6px}
+/* Toasty podle typu: info modrá, úspěch zelená, varování oranžová, chyba červená. */
+.toast{display:flex;align-items:center;gap:9px;max-width:min(560px,calc(100vw - 32px));width:max-content;font-size:14px;font-weight:500;line-height:1.4;padding:12px 18px 12px 14px;border-radius:8px;background:var(--blue);color:#fff;box-shadow:0 10px 28px rgba(0,0,0,.18)}
+.toast::before{content:"i";flex:none;display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,.22);font:700 12px/1 Georgia,serif;font-style:italic}
+.toast[data-tone=success]{background:#1a8245}.toast[data-tone=success]::before{content:"✓";font:700 12px/1 Inter,sans-serif}
+.toast[data-tone=warning]{background:#c2610c}.toast[data-tone=warning]::before{content:"!";font:700 13px/1 Inter,sans-serif}
+.toast[data-tone=error]{background:#c8302a}.toast[data-tone=error]::before{content:"×";font:700 16px/1 Inter,sans-serif}
+.info-box.info-success{background:#eef8f1;border-color:#bfe3cb;color:#17703a}.info-box.info-warning{background:#fff6e5;border-color:#f3d9a4;color:#8a4b00}

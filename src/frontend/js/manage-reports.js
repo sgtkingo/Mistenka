@@ -91,7 +91,7 @@
       qsa("[data-edit]", qs("#stockingPanel")).forEach((b) => b.addEventListener("click", () => editStocking(stocking.find((s) => s.id === Number(b.dataset.edit)))));
       qsa("[data-delete]", qs("#stockingPanel")).forEach((b) => b.addEventListener("click", async () => {
         if (!window.confirm("Smazat záznam zarybnění?")) return;
-        try { await api(`/manage/stocking/${b.dataset.delete}`, { method: "DELETE" }); refreshStocking(); } catch (error) { showToast(error.message); }
+        try { await api(`/manage/stocking/${b.dataset.delete}`, { method: "DELETE" }); refreshStocking(); } catch (error) { showToast(error.message, "error"); }
       }));
       renderBudget(budget);
       qs("#stockBalance").innerHTML = balanceTable(stats.balance);
@@ -112,7 +112,7 @@
       ${total ? `<tfoot><tr class="total-row"><td data-label="Celkem">${esc(total.revir)} <small class="muted-inline">(součet)</small></td><td data-label="Rozpočet">${total.amountHalere === null ? "—" : esc(czk(total.amountHalere))}</td><td data-label="Nasazeno">${esc(czk(total.spentHalere))}</td><td data-label="Plán">${esc(czk(total.plannedHalere))}</td><td data-label="Zbývá">${leftCell(total)}</td><td></td></tr></tfoot>` : ""}</table>`;
     qsa(".save-budget").forEach((b) => b.addEventListener("click", async () => {
       const input = qs(`.budget-input[data-revir="${b.dataset.revir}"]`);
-      try { renderBudget(await api("/manage/stocking/budget", { method: "PUT", body: { year: budget.year, revirId: b.dataset.revir, amountCzk: input.value === "" ? null : Number(input.value) } })); showToast("Rozpočet uložen."); } catch (error) { showToast(error.message); }
+      try { renderBudget(await api("/manage/stocking/budget", { method: "PUT", body: { year: budget.year, revirId: b.dataset.revir, amountCzk: input.value === "" ? null : Number(input.value) } })); showToast("Rozpočet uložen.", "success"); } catch (error) { showToast(error.message, "error"); }
     }));
   }
   function editStocking(s) {
@@ -144,10 +144,10 @@
         kg: qs("#stKg").value, pieces: qs("#stPieces").value, costCzk: qs("#stCost").value, supplier: qs("#stSupplier").value.trim(), note: qs("#stNote").value.trim(), planned: qs("#stPlanned").checked };
       button.disabled = true;
       await api(id ? `/manage/stocking/${id}` : "/manage/stocking", { method: id ? "PUT" : "POST", body });
-      showToast(body.planned ? "Plán uložen." : "Zarybnění zapsáno.");
+      showToast(body.planned ? "Plán uložen." : "Zarybnění zapsáno.", "success");
       editStocking(null);
       refreshStocking();
-    } catch (error) { showToast(error.message); } finally { button.disabled = false; }
+    } catch (error) { showToast(error.message, "error"); } finally { button.disabled = false; }
   }
 
   // ---------- přehledy a uzávěrky ----------
@@ -214,10 +214,10 @@
           button.disabled = true;
           const body = seasonId ? { name, seasonId: Number(seasonId) } : { name, from: dateInput("sFrom", "Od"), to: dateInput("sTo", "Do"), revirId: qs("#sRevir").value || null };
           const report = await api("/manage/reports", { method: "POST", body });
-          showToast("Uzávěrka uložena.");
+          showToast("Uzávěrka uložena.", "success");
           listReports();
           showReport(report.id);
-        } catch (error) { showToast(error.message); } finally { button.disabled = false; }
+        } catch (error) { showToast(error.message, "error"); } finally { button.disabled = false; }
       });
     }
     listReports();
@@ -259,7 +259,7 @@
       qs("#backToStats").addEventListener("click", showStats);
       history.replaceState(null, "", `#reports/${id}`);
       qs("#statsOut").scrollIntoView({ behavior: "smooth", block: "start" });
-    } catch (error) { showToast(error.message); }
+    } catch (error) { showToast(error.message, "error"); }
   }
 
   window.MistenkaReports = { loadStocking, loadReports };

@@ -338,7 +338,7 @@
           tick();
         } catch (error) {
           finish(null);
-          showToast(error.name === "NotAllowedError" ? "Přístup ke kameře byl zamítnut. Povolte ho v prohlížeči, nebo údaj opište." : error.message?.startsWith("Čtečku") ? error.message : "Kameru se nepodařilo spustit. Údaj opište ručně.");
+          showToast(error.name === "NotAllowedError" ? "Přístup ke kameře byl zamítnut. Povolte ho v prohlížeči, nebo údaj opište." : error.message?.startsWith("Čtečku") ? error.message : "Kameru se nepodařilo spustit. Údaj opište ručně.", "error");
         }
       })();
     });
@@ -431,7 +431,7 @@
       input.value = result.value;
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.dispatchEvent(new Event("blur"));
-      showToast(`Číslo legitimace ${result.value} načteno (${formatLabel(result.format)}).`);
+      showToast(`Číslo legitimace ${result.value} načteno (${formatLabel(result.format)}).`, "success");
     });
   }
   // Všechna pole s číslem legitimace (memberId, regMemberId, pMemberId, …) dostanou čtečku automaticky.
@@ -461,14 +461,20 @@
 
   const ticketCheckUrl = (code) => new URL(`status.html?code=${encodeURIComponent(code)}`, location.href).href;
 
-  function showToast(message) {
-    logEvent("toast", message);
+  // Barva podle typu: info (modrá), success (zelená), warning (oranžová – chybějící/špatný údaj),
+  // error (červená – akce selhala). Varování a chyby zůstanou déle, ať se dají dočíst.
+  const TOAST_TONES = ["info", "success", "warning", "error"];
+  function showToast(message, tone = "info") {
+    if (!TOAST_TONES.includes(tone)) tone = "info";
+    logEvent("toast", tone === "info" ? message : `${tone}: ${message}`);
     const toast = qs("#toast");
     if (!toast) return window.alert(message);
     toast.textContent = message;
+    toast.dataset.tone = tone;
+    toast.setAttribute("role", tone === "error" || tone === "warning" ? "alert" : "status");
     toast.classList.add("show");
     window.clearTimeout(showToast.timer);
-    showToast.timer = window.setTimeout(() => toast.classList.remove("show"), 3200);
+    showToast.timer = window.setTimeout(() => toast.classList.remove("show"), tone === "info" || tone === "success" ? 3200 : 5500);
   }
 
   // Stav místenky pro seznamy (klientská zóna, správa). Podrobné texty má status.js.
@@ -656,7 +662,7 @@
       qs("#bugPreview", dialog).classList.toggle("hidden", !data);
       if (data) qs("#bugPreview img", dialog).src = data;
     };
-    const useFile = async (file) => { try { setShot(await shrinkImage(file)); } catch (error) { showToast(error.message); } };
+    const useFile = async (file) => { try { setShot(await shrinkImage(file)); } catch (error) { showToast(error.message, "error"); } };
     qs("#bugFile", dialog).addEventListener("change", (e) => { if (e.target.files[0]) useFile(e.target.files[0]); });
     dialog.onpaste = (e) => { const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith("image/")); if (item) { e.preventDefault(); useFile(item.getAsFile()); } };
     qs("#bugRemoveShot", dialog).addEventListener("click", () => { setShot(null); qs("#bugFile", dialog).value = ""; });
@@ -664,7 +670,7 @@
     qs("form", dialog).addEventListener("submit", async (event) => {
       event.preventDefault();
       const description = qs("#bugText", dialog).value.trim();
-      if (description.length < 10) { qs("#bugText", dialog).focus(); return showToast("Popište prosím, co se stalo (aspoň 10 znaků)."); }
+      if (description.length < 10) { qs("#bugText", dialog).focus(); return showToast("Popište prosím, co se stalo (aspoň 10 znaků).", "warning"); }
       const button = qs("#bugSend", dialog);
       button.disabled = true;
       try {
@@ -673,8 +679,8 @@
           viewport: `${window.innerWidth}x${window.innerHeight}`, clientTime: new Date().toISOString(), log: readLog(), screenshot
         } });
         dialog.close();
-        showToast(`Děkujeme, chyba je nahlášená (č. ${id}).`);
-      } catch (error) { showToast(error.message); button.disabled = false; }
+        showToast(`Děkujeme, chyba je nahlášená (č. ${id}).`, "success");
+      } catch (error) { showToast(error.message, "error"); button.disabled = false; }
     });
     dialog.showModal();
     qs("#bugText", dialog).focus();

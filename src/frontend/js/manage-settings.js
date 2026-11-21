@@ -266,15 +266,15 @@
         const result = await api(request[0], { method: request[1], body: request[2] });
         view = result.settings;
         if (scope === "new-revir") tab = `revir:${request[2].id}`;
-        showToast("Nastavení uloženo.");
+        showToast("Nastavení uloženo.", "success");
         renderTabs();
         render();
-      } catch (error) { showToast(error.message); if (button) button.disabled = false; }
+      } catch (error) { showToast(error.message, "error"); if (button) button.disabled = false; }
     });
     qs("[data-history]")?.addEventListener("click", (e) => showHistory(e.target.dataset.history));
     qs("[data-reset]")?.addEventListener("click", async (e) => {
       if (!window.confirm("Obnovit výchozí hodnoty ze souboru? Uloží se jako nová verze, historie zůstane.")) return;
-      try { view = (await api("/manage/settings/reset", { method: "POST", body: { scope: e.target.dataset.reset } })).settings; showToast("Obnoveny výchozí hodnoty."); renderTabs(); render(); } catch (error) { showToast(error.message); }
+      try { view = (await api("/manage/settings/reset", { method: "POST", body: { scope: e.target.dataset.reset } })).settings; showToast("Obnoveny výchozí hodnoty.", "success"); renderTabs(); render(); } catch (error) { showToast(error.message, "error"); }
     });
     qs("[data-json]")?.addEventListener("click", (e) => showJson(e.target.dataset.json));
   }
@@ -291,7 +291,7 @@
       box.innerHTML = versions.length ? `<ul class="plain-list">${versions.map((v, i) => `<li>#${esc(v.version)} · ${esc(czDateTime(v.createdAt))} · ${esc(v.createdBy || "—")}${v.note ? ` · ${esc(v.note)}` : ""} ${i ? `<button class="text-button inline-link" type="button" data-restore="${esc(v.version)}">Obnovit</button>` : "<b>(platná)</b>"}</li>`).join("")}</ul>` : '<p class="muted">Zatím beze změn – platí hodnoty ze souboru.</p>';
       qsa("[data-restore]", box).forEach((b) => b.addEventListener("click", async () => {
         if (!window.confirm(`Obnovit verzi #${b.dataset.restore}? Uloží se jako nová verze.`)) return;
-        try { view = (await api(`/manage/settings/versions/${b.dataset.restore}/restore`, { method: "POST" })).settings; showToast("Verze obnovena."); renderTabs(); render(); } catch (error) { showToast(error.message); }
+        try { view = (await api(`/manage/settings/versions/${b.dataset.restore}/restore`, { method: "POST" })).settings; showToast("Verze obnovena.", "success"); renderTabs(); render(); } catch (error) { showToast(error.message, "error"); }
       }));
     } catch (error) { box.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
   }
@@ -301,9 +301,9 @@
     box.innerHTML = `<textarea id="jsonEditor" class="json-editor" rows="18" spellcheck="false">${esc(JSON.stringify(currentPart(scope).data, null, 2))}</textarea><button class="secondary-button" type="button" id="saveJson">Uložit JSON</button>`;
     qs("#saveJson").addEventListener("click", async () => {
       let data;
-      try { data = JSON.parse(qs("#jsonEditor").value); } catch { return showToast("Neplatný JSON."); }
+      try { data = JSON.parse(qs("#jsonEditor").value); } catch { return showToast("Neplatný JSON.", "warning"); }
       const path = scope === "organization" ? ["/manage/settings/organization", { data }] : scope === "payment" ? ["/manage/settings/payment", { data }] : scope.startsWith("species:") ? ["/manage/settings/species", { ref: scope.slice(8), data }] : [`/manage/settings/reviry/${scope.slice(6)}`, { data }];
-      try { view = (await api(path[0], { method: path[0].endsWith("/reviry") ? "POST" : "PUT", body: { ...path[1], note: "Úprava JSON" } })).settings; showToast("Nastavení uloženo."); renderTabs(); render(); } catch (error) { showToast(error.message); }
+      try { view = (await api(path[0], { method: path[0].endsWith("/reviry") ? "POST" : "PUT", body: { ...path[1], note: "Úprava JSON" } })).settings; showToast("Nastavení uloženo.", "success"); renderTabs(); render(); } catch (error) { showToast(error.message, "error"); }
     });
   }
 

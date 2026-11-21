@@ -104,7 +104,7 @@ async function loadTicket() {
   try {
     ticket = await api(`/orders/${code}`, credentials);
   } catch (error) {
-    if (error.code === "forbidden") { qs("#ticketSummary").classList.add("hidden"); show("accessForm"); if (credentials.memberId) showToast(error.message); return; }
+    if (error.code === "forbidden") { qs("#ticketSummary").classList.add("hidden"); show("accessForm"); if (credentials.memberId) showToast(error.message, "error"); return; }
     throw error;
   }
   if (ticket.status === "expired_returned") return showError("Tato místenka už byla odevzdána.");
@@ -115,7 +115,7 @@ async function loadTicket() {
 
 qs("#accessButton").addEventListener("click", () => {
   const memberId = normalizeMemberId(qs("#accessMemberId").value);
-  if (!isMemberId(memberId)) return showToast("Zadejte 8místné číslo členské legitimace.");
+  if (!isMemberId(memberId)) return showToast("Zadejte 8místné číslo členské legitimace.", "warning");
   credentials = { memberId };
   rememberMemberId(code, memberId);
   loadTicket().catch((error) => showError(error.message));
@@ -142,10 +142,10 @@ qs("#submitReturn").addEventListener("click", async () => {
       }
       return { species: name, length, weight: weight || null, weightEstimated: Boolean(weight) && row.dataset.estimated === "true" };
     });
-    if (undersized) return showToast("Některou rybu je nutné vrátit (míra nebo hájení) – takový úlovek nelze zapsat.");
-    if (!valid) return showToast("Doplňte druh a délku u každého úlovku, nebo zvolte „Bez úlovku“.");
+    if (undersized) return showToast("Některou rybu je nutné vrátit (míra nebo hájení) – takový úlovek nelze zapsat.", "warning");
+    if (!valid) return showToast("Doplňte druh a délku u každého úlovku, nebo zvolte „Bez úlovku“.", "warning");
   }
-  if (!qs("#returnDeclaration").checked) return showToast("Potvrďte úplnost údajů.");
+  if (!qs("#returnDeclaration").checked) return showToast("Potvrďte úplnost údajů.", "warning");
   if (!window.confirm(noCatch ? "Odevzdat místenku bez úlovku?" : `Odevzdat místenku s ${catches.length} ${plural(catches.length, "úlovkem", "úlovky", "úlovky")}?`)) return;
   const button = qs("#submitReturn");
   button.disabled = true;
@@ -159,7 +159,7 @@ qs("#submitReturn").addEventListener("click", async () => {
     qs("#ticketSummary").classList.add("hidden");
     show("returnedState");
   } catch (error) {
-    showToast(error.message);
+    showToast(error.message, "error");
     button.disabled = false;
   }
 });

@@ -16,8 +16,12 @@ const czDateTime = (iso) => new Date(iso).toLocaleString("cs-CZ", { timeZone: "E
 // Tabulkové rozvržení a inline styly – spolehlivé v Gmailu, Outlooku i mobilních klientech. Barvy jako aplikace.
 const C = { brand: "#0075de", brandDark: "#005bab", ink: "#252321", muted: "#6d6862", line: "#e6e4e0", soft: "#f6f5f4", okBg: "#eef8f1", ok: "#17803f", warnBg: "#fff6e5", warn: "#8a5a00" };
 const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
-// layout(config, nadpis, obsah, patička, { preheader }) – preheader = náhled v seznamu zpráv.
-function layout(config, title, rowsHtml, footerHtml = "", { preheader = "" } = {}) {
+// Barva hlavičky podle typu zprávy: info modrá, success zelená (vystaveno, uloženo),
+// warning oranžová (upozornění, je potřeba něco udělat), danger červená (zrušeno, zadrženo, blokace).
+const TONES = { info: ["#0075de", "#cfe5fb"], success: ["#1a8245", "#d3f0dc"], warning: ["#c2610c", "#fde3c8"], danger: ["#c8302a", "#f9d2cf"] };
+// layout(config, typ, nadpis, obsah, patička, { preheader }) – preheader = náhled v seznamu zpráv.
+function layout(config, tone, title, rowsHtml, footerHtml = "", { preheader = "" } = {}) {
+  const [toneBg, toneSub] = TONES[tone] || TONES.info;
   const org = config.organization;
   const contact = [org.contact?.email && `<a href="mailto:${esc(org.contact.email)}" style="color:${C.muted}">${esc(org.contact.email)}</a>`, org.contact?.phone && esc(org.contact.phone)].filter(Boolean).join(" · ");
   return `<!doctype html><html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${esc(title)}</title></head>
@@ -25,10 +29,10 @@ function layout(config, title, rowsHtml, footerHtml = "", { preheader = "" } = {
 <span style="display:none!important;visibility:hidden;opacity:0;height:0;width:0;overflow:hidden;mso-hide:all">${esc(preheader || title)}</span>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.soft}"><tr><td align="center" style="padding:24px 12px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">
-<tr><td style="background:${C.brand};border-radius:12px 12px 0 0;padding:18px 24px">
-  <span style="display:inline-block;width:28px;height:28px;line-height:28px;text-align:center;border-radius:7px;background:#fff;color:${C.brand};font-weight:700;font-size:18px;vertical-align:middle">⌁</span>
+<tr><td style="background:${toneBg};border-radius:12px 12px 0 0;padding:18px 24px">
+  <span style="display:inline-block;width:28px;height:28px;line-height:28px;text-align:center;border-radius:7px;background:#fff;color:${toneBg};font-weight:700;font-size:18px;vertical-align:middle">⌁</span>
   <span style="color:#fff;font-size:18px;font-weight:700;vertical-align:middle;margin-left:8px">Místenka</span>
-  <span style="color:#cfe5fb;font-size:13px;vertical-align:middle;margin-left:8px">${esc(org.shortName)}</span>
+  <span style="color:${toneSub};font-size:13px;vertical-align:middle;margin-left:8px">${esc(org.shortName)}</span>
 </td></tr>
 <tr><td style="background:#fff;border:1px solid ${C.line};border-top:0;border-radius:0 0 12px 12px;padding:28px 24px 24px">
   <h1 style="margin:0 0 16px;font-size:22px;line-height:1.25;color:${C.ink}">${esc(title)}</h1>
@@ -64,7 +68,7 @@ function paymentInstructions(config, { ticket, revir, links }) {
   const rows = [["Revír", revir.name], ...(sub ? [[sub.title, sub.label]] : []), ["Datum lovu", `${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)}`], ["Číslo účtu", `${config.payment.accountNumber}/${config.payment.bankCode}`], ["Variabilní symbol", ticket.variable_symbol], ["Zaplaťte do", czDateTime(ticket.reserved_until)]];
   return {
     subject: `Místenka ${ticket.code} – pokyny k platbě`,
-    html: layout(config, "Dokončete platbu místenky", `<p style="margin:0 0 16px">Místo na revíru <b>${esc(revir.name)}</b> je pro vás rezervované. Místenku vystavíme hned po připsání platby a pošleme vám ji e-mailem.</p>
+    html: layout(config, "info", "Dokončete platbu místenky", `<p style="margin:0 0 16px">Místo na revíru <b>${esc(revir.name)}</b> je pro vás rezervované. Místenku vystavíme hned po připsání platby a pošleme vám ji e-mailem.</p>
       ${highlight("K úhradě", czk(ticket.amount_due_halere), `VS ${ticket.variable_symbol}`)}${table(rows)}${button(links.payment, "Zobrazit QR platbu")}
       ${noteBox("Nejrychlejší je zaplatit načtením QR kódu v bankovní aplikaci – údaje se vyplní samy. Při ručním převodu nezapomeňte variabilní symbol.")}`, "", { preheader: `Zaplaťte ${czk(ticket.amount_due_halere)} do ${czDateTime(ticket.reserved_until)}, VS ${ticket.variable_symbol}` }),
     text: textBlock(["Dokončete platbu místenky.", `Částka: ${czk(ticket.amount_due_halere)}`, ...rows.map(([k, v]) => `${k}: ${v}`), `QR platba: ${links.payment}`])
@@ -77,7 +81,7 @@ function ticketIssued(config, { ticket, revir, links }) {
   const rows = [["Revír", [revir.name, revir.number].filter(Boolean).join(" · ")], ...(sub ? [[sub.title, sub.label]] : []), ["Datum lovu", `${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)}`], ...(hours ? [["Doba lovu", hours]] : []), ["Rybář", `${ticket.first_name} ${ticket.last_name}`], ["Číslo členské legitimace", ticket.member_id]];
   return {
     subject: `Místenka ${ticket.code} – ${revir.name}, ${czDate(ticket.fishing_date)}`,
-    html: layout(config, "Vaše místenka je vystavena", `${highlight("Kód místenky", ticket.code, `${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)} · ${revir.name}`, "ok")}${table(rows)}
+    html: layout(config, "success", "Vaše místenka je vystavena", `${highlight("Kód místenky", ticket.code, `${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)} · ${revir.name}`, "ok")}${table(rows)}
       ${button(links.ticket, "Zobrazit místenku a QR kód")}
       <p style="margin:0 0 8px;font-weight:600">Než vyrazíte</p>${checklist(["Platný rybářský lístek a povolenka – místenka je nenahrazuje.", "Místenka v telefonu nebo vytištěná (QR kód pro kontrolu).", "Každý úlovek ihned zapište do povolenky."])}
       <p style="margin:0 0 8px;font-weight:600">Po skončení lovu</p><p style="margin:0 0 8px">Místenku odevzdejte ještě týž den a zapište úlovky (nebo „bez úlovku“). Opožděně ji lze odevzdat do ${esc(revir.lateReturnDays)} dnů, pak se uzavře jako neodevzdaná.</p>
@@ -89,7 +93,7 @@ function ticketIssued(config, { ticket, revir, links }) {
 function returnReminder(config, { ticket, revir, links, deadline }) {
   return {
     subject: `Místenka ${ticket.code} – nezapomeňte ji odevzdat`,
-    html: layout(config, "Odevzdejte prosím místenku", `<p style="margin:0 0 16px">Lov na revíru <b>${esc(revir.name)}</b> dne ${esc(czDate(ticket.fishing_date))} skončil a místenka <b>${esc(ticket.code)}</b> ještě nebyla odevzdána.</p>
+    html: layout(config, "warning", "Odevzdejte prosím místenku", `<p style="margin:0 0 16px">Lov na revíru <b>${esc(revir.name)}</b> dne ${esc(czDate(ticket.fishing_date))} skončil a místenka <b>${esc(ticket.code)}</b> ještě nebyla odevzdána.</p>
       ${highlight("Odevzdejte nejpozději", czDateTime(deadline), "Odevzdání po dni lovu se označí jako opožděné.", "warn")}${button(links.return, "Odevzdat místenku")}
       ${noteBox("Po této lhůtě se místenka automaticky uzavře jako neodevzdaná, bez úlovku. Pokud jste nic nechytili, zvolte při odevzdání „Bez úlovku“.")}`, "", { preheader: `Místenku ${ticket.code} odevzdejte do ${czDateTime(deadline)}` }),
     text: textBlock([`Místenka ${ticket.code} ještě nebyla odevzdána.`, `Odevzdání je možné do ${czDateTime(deadline)} (opožděně). Poté se místenka automaticky uzavře jako neodevzdaná, bez úlovku.`, `Odevzdat: ${links.return}`])
@@ -101,7 +105,7 @@ function ticketClosed(config, { ticket, revir }) {
   const contactLine = [contact.email, contact.phone].filter(Boolean).join(", ");
   return {
     subject: `Místenka ${ticket.code} byla uzavřena jako neodevzdaná`,
-    html: layout(config, "Místenka byla uzavřena jako neodevzdaná", `<p>Místenku <b>${esc(ticket.code)}</b> na revír ${esc(revir.name)} (den lovu ${esc(czDate(ticket.fishing_date))}) jste neodevzdali ani v prodloužené lhůtě. Byla proto automaticky uzavřena jako <b>neodevzdaná, bez zapsaného úlovku</b>.</p><p>Pokud jste na revíru něco ulovili nebo jde o omyl, kontaktujte prosím hospodáře${contactLine ? `: ${esc(contactLine)}` : ""}.</p>`),
+    html: layout(config, "danger", "Místenka byla uzavřena jako neodevzdaná", `<p>Místenku <b>${esc(ticket.code)}</b> na revír ${esc(revir.name)} (den lovu ${esc(czDate(ticket.fishing_date))}) jste neodevzdali ani v prodloužené lhůtě. Byla proto automaticky uzavřena jako <b>neodevzdaná, bez zapsaného úlovku</b>.</p><p>Pokud jste na revíru něco ulovili nebo jde o omyl, kontaktujte prosím hospodáře${contactLine ? `: ${esc(contactLine)}` : ""}.</p>`),
     text: textBlock([`Místenka ${ticket.code} (${revir.name}, ${czDate(ticket.fishing_date)}) byla automaticky uzavřena jako neodevzdaná, bez zapsaného úlovku.`, `Pokud jde o omyl, kontaktujte hospodáře${contactLine ? `: ${contactLine}` : ""}.`])
   };
 }
@@ -111,7 +115,7 @@ function ticketSeized(config, { ticket, revir, links, deadline }) {
   const rows = [["Kód místenky", ticket.code], ["Revír", revir.name], ["Datum lovu", czDate(ticket.fishing_date)], ["Zadrženo", czDateTime(ticket.seized_at)], ["Důvod", ticket.seized_reason], ...(ticket.seized_place ? [["Místo", ticket.seized_place]] : [])];
   return {
     subject: `Místenka ${ticket.code} byla zadržena rybářskou stráží`,
-    html: layout(config, "Místenka byla zadržena", `<p>Rybářská stráž zadržela vaši místenku. <b>Místenka od této chvíle neopravňuje k lovu.</b></p>${table(rows)}<p>Místenku musíte i tak odevzdat a zapsat všechny úlovky, nejpozději do <b>${esc(czDateTime(deadline))}</b>.</p>${button(links.return, "Odevzdat místenku")}`),
+    html: layout(config, "danger", "Místenka byla zadržena", `<p>Rybářská stráž zadržela vaši místenku. <b>Místenka od této chvíle neopravňuje k lovu.</b></p>${table(rows)}<p>Místenku musíte i tak odevzdat a zapsat všechny úlovky, nejpozději do <b>${esc(czDateTime(deadline))}</b>.</p>${button(links.return, "Odevzdat místenku")}`),
     text: textBlock(["Rybářská stráž zadržela vaši místenku. Místenka od této chvíle neopravňuje k lovu.", ...rows.map(([k, v]) => `${k}: ${v}`), `Místenku musíte i tak odevzdat s úlovky do ${czDateTime(deadline)}: ${links.return}`])
   };
 }
@@ -119,7 +123,7 @@ function seizureNotice(config, { ticket, revir, links, wardenName }) {
   const rows = [["Kód místenky", ticket.code], ["Revír", revir.name], ["Datum lovu", czDate(ticket.fishing_date)], ["Držitel", `${ticket.first_name} ${ticket.last_name}`], ["Č. legitimace", ticket.member_id], ["Porybný", wardenName], ["Zadrženo", czDateTime(ticket.seized_at)], ["Důvod", ticket.seized_reason], ...(ticket.seized_place ? [["Místo", ticket.seized_place]] : [])];
   return {
     subject: `Zadržená místenka ${ticket.code} – ${ticket.first_name} ${ticket.last_name}`,
-    html: layout(config, "Porybný zadržel místenku", `<p>Pro informaci: místenka byla zadržena. Zadržení není potřeba potvrzovat.</p>${table(rows)}${button(links.status, "Stav místenky")}`),
+    html: layout(config, "warning", "Porybný zadržel místenku", `<p>Pro informaci: místenka byla zadržena. Zadržení není potřeba potvrzovat.</p>${table(rows)}${button(links.status, "Stav místenky")}`),
     text: textBlock(["Porybný zadržel místenku (není potřeba potvrzovat).", ...rows.map(([k, v]) => `${k}: ${v}`), `Stav: ${links.status}`])
   };
 }
@@ -131,7 +135,7 @@ function limitExceeded(config, { ticket, revir, links, limits }) {
   const rows = [["Kód místenky", ticket.code], ["Revír", revir.name], ["Datum lovu", czDate(ticket.fishing_date)], ["Držitel", `${ticket.first_name} ${ticket.last_name}`], ["Č. legitimace", ticket.member_id]];
   return {
     subject: `Překročený limit úlovků – ${ticket.first_name} ${ticket.last_name} (${ticket.code})`,
-    html: layout(config, "Překročený limit úlovků", `<p>Při odevzdání místenky byly podle místenek v Místence překročeny limity:</p><ul>${limits.map((l) => `<li>${esc(limitLine(l))}</li>`).join("")}</ul>${table(rows)}<p style="color:#5b6b64;font-size:13px">Místenka vidí jen úlovky ze svých místenek; limity platí na všech revírech svazu dohromady.</p>${button(links.status, "Stav místenky")}`),
+    html: layout(config, "warning", "Překročený limit úlovků", `<p>Při odevzdání místenky byly podle místenek v Místence překročeny limity:</p><ul>${limits.map((l) => `<li>${esc(limitLine(l))}</li>`).join("")}</ul>${table(rows)}<p style="color:#5b6b64;font-size:13px">Místenka vidí jen úlovky ze svých místenek; limity platí na všech revírech svazu dohromady.</p>${button(links.status, "Stav místenky")}`),
     text: textBlock(["Překročené limity úlovků (podle místenek v Místence):", ...limits.map((l) => `- ${limitLine(l)}`), ...rows.map(([k, v]) => `${k}: ${v}`), `Stav: ${links.status}`])
   };
 }
@@ -139,7 +143,7 @@ function memberBlocked(config, { ticket, block, limits }) {
   const until = block.until ? `do ${czDate(block.until)}` : "do odvolání";
   return {
     subject: "Místenka – nákup místenek je pozastaven",
-    html: layout(config, "Nákup místenek je pozastaven", `<p>Nákup místenek na číslo legitimace <b>${esc(ticket.member_id)}</b> je pozastaven <b>${esc(until)}</b>.</p><p>Důvod: ${esc(block.reason)}</p>${limits?.length ? `<ul>${limits.map((l) => `<li>${esc(limitLine(l))}</li>`).join("")}</ul>` : ""}<p>Pokud jde o omyl, kontaktujte správce organizace${config.organization.contact?.email ? ` (${esc(config.organization.contact.email)})` : ""}.</p>`),
+    html: layout(config, "danger", "Nákup místenek je pozastaven", `<p>Nákup místenek na číslo legitimace <b>${esc(ticket.member_id)}</b> je pozastaven <b>${esc(until)}</b>.</p><p>Důvod: ${esc(block.reason)}</p>${limits?.length ? `<ul>${limits.map((l) => `<li>${esc(limitLine(l))}</li>`).join("")}</ul>` : ""}<p>Pokud jde o omyl, kontaktujte správce organizace${config.organization.contact?.email ? ` (${esc(config.organization.contact.email)})` : ""}.</p>`),
     text: textBlock([`Nákup místenek na číslo legitimace ${ticket.member_id} je pozastaven ${until}.`, `Důvod: ${block.reason}`, "Pokud jde o omyl, kontaktujte správce organizace."])
   };
 }
@@ -150,7 +154,7 @@ function seasonReport(config, { name, revir, data, link }) {
   const rows = [["Revír", revir], ["Období", `${czDate(data.from)} – ${czDate(data.to)}`], ["Prodané místenky", String(s.sold)], ["Rybářů", String(s.anglers)], ["Tržby", czk(s.revenueHalere)], ["Odevzdané / neodevzdané", `${s.returned} / ${s.unreturned}`], ["Úlovky", `${data.catches.total} ks, ${data.catches.weightKg} kg`], ["Zarybnění", czk(data.stocking.costHalere)]];
   return {
     subject: `Uzávěrka – ${name}`,
-    html: layout(config, `Uzávěrka: ${name}`, `<p>Sezona skončila, uzávěrka je vytvořená a uložená v manažerském portálu.</p>${table(rows)}${button(link, "Otevřít uzávěrku")}`),
+    html: layout(config, "success", `Uzávěrka: ${name}`, `<p>Sezona skončila, uzávěrka je vytvořená a uložená v manažerském portálu.</p>${table(rows)}${button(link, "Otevřít uzávěrku")}`),
     text: textBlock([`Uzávěrka: ${name}`, ...rows.map(([k, v]) => `${k}: ${v}`), `Uzávěrka: ${link}`])
   };
 }
@@ -160,7 +164,7 @@ function databaseAutoRestored(config, info) {
   const rows = [["Kdy", czDateTime(info.at)], ["Obnoveno ze zálohy", info.from], ["Problém", info.problem], ["Poškozený soubor", info.corruptFile]];
   return {
     subject: "Místenka – databáze byla automaticky obnovena ze zálohy",
-    html: layout(config, "Databáze obnovena ze zálohy", `<p>Při startu serveru byla databáze poškozená a automaticky se obnovila z nejnovější platné zálohy. <b>Data vzniklá po této záloze chybí</b> – zkontrolujte poslední objednávky a platby (fronta plateb se z banky načte znovu).</p>${table(rows)}`),
+    html: layout(config, "danger", "Databáze obnovena ze zálohy", `<p>Při startu serveru byla databáze poškozená a automaticky se obnovila z nejnovější platné zálohy. <b>Data vzniklá po této záloze chybí</b> – zkontrolujte poslední objednávky a platby (fronta plateb se z banky načte znovu).</p>${table(rows)}`),
     text: textBlock(["Databáze byla při startu poškozená a automaticky se obnovila ze zálohy. Data po záloze chybí – zkontrolujte poslední objednávky a platby.", ...rows.map(([k, v]) => `${k}: ${v}`)])
   };
 }
@@ -171,7 +175,7 @@ function paymentSettingsChanged(config, { actorName, before, after, at }) {
   const rows = Object.keys(labels).filter((key) => String(before?.[key] ?? "") !== String(after?.[key] ?? "")).map((key) => [labels[key], `${before?.[key] ?? "—"} → ${after?.[key] ?? "—"}`]);
   return {
     subject: "Místenka – změněny platební údaje",
-    html: layout(config, "Změněny platební údaje", `<p>${esc(actorName)} změnil(a) ${esc(czDateTime(at))} platební údaje Místenky. Nové objednávky se platí podle nových údajů.</p>${table(rows.length ? rows : [["Změna", "beze změny hodnot"]])}<p><b>Pokud o změně nevíte, okamžitě ji prověřte</b> – změna účtu je nejčastější podvod.</p>`),
+    html: layout(config, "warning", "Změněny platební údaje", `<p>${esc(actorName)} změnil(a) ${esc(czDateTime(at))} platební údaje Místenky. Nové objednávky se platí podle nových údajů.</p>${table(rows.length ? rows : [["Změna", "beze změny hodnot"]])}<p><b>Pokud o změně nevíte, okamžitě ji prověřte</b> – změna účtu je nejčastější podvod.</p>`),
     text: textBlock([`${actorName} změnil(a) ${czDateTime(at)} platební údaje Místenky.`, ...rows.map(([k, v]) => `${k}: ${v}`), "Pokud o změně nevíte, okamžitě ji prověřte."])
   };
 }
@@ -182,7 +186,7 @@ function bugReport(config, { report, link }) {
   const rows = [["Hlášení", `#${report.id}`], ["Čas", czDateTime(report.createdAt)], ["Nahlásil", who], ["Stránka", report.url || "—"], ["Snímek obrazovky", report.hasScreenshot ? "ano" : "ne"]];
   return {
     subject: `Místenka – nahlášená chyba #${report.id}`,
-    html: layout(config, "Nahlášená chyba", `<p style="margin:0 0 16px;white-space:pre-wrap">${esc(report.description)}</p>${table(rows)}${button(link, "Otevřít v portálu")}`),
+    html: layout(config, "warning", "Nahlášená chyba", `<p style="margin:0 0 16px;white-space:pre-wrap">${esc(report.description)}</p>${table(rows)}${button(link, "Otevřít v portálu")}`),
     text: textBlock(["Nahlášená chyba", "", report.description, "", ...rows.map(([k, v]) => `${k}: ${v}`), `Portál: ${link}`])
   };
 }
@@ -193,7 +197,7 @@ function ticketCancelled(config, { ticket, revir }) {
   const rows = [["Kód místenky", ticket.code], ["Revír", revir.name], ["Datum lovu", czDate(ticket.fishing_date)], ["Důvod", ticket.cancel_reason]];
   return {
     subject: `Místenka ${ticket.code} byla zrušena`,
-    html: layout(config, "Místenka byla zrušena", `<p>Správce organizace vaši místenku zrušil. <b>Místenka neplatí a neopravňuje k lovu.</b></p>${table(rows)}<p>Pokud máte nárok na vrácení peněz, vyřídí ho správce převodem${contact ? `; kontakt: ${esc(contact)}` : ""}.</p>`),
+    html: layout(config, "danger", "Místenka byla zrušena", `<p>Správce organizace vaši místenku zrušil. <b>Místenka neplatí a neopravňuje k lovu.</b></p>${table(rows)}<p>Pokud máte nárok na vrácení peněz, vyřídí ho správce převodem${contact ? `; kontakt: ${esc(contact)}` : ""}.</p>`),
     text: textBlock(["Správce organizace vaši místenku zrušil. Místenka neplatí a neopravňuje k lovu.", ...rows.map(([k, v]) => `${k}: ${v}`), `Vrácení peněz vyřídí správce${contact ? ` (${contact})` : ""}.`])
   };
 }
@@ -205,7 +209,7 @@ function closureNotice(config, { ticket, revir, closure, links }) {
   const rows = [["Kód místenky", ticket.code], ["Revír", revir.name], ["Datum lovu", czDate(ticket.fishing_date)], ["Uzavřeno", range], ["Důvod", closure.reason]];
   return {
     subject: `Revír ${revir.name} je mimořádně uzavřen – místenka ${ticket.code}`,
-    html: layout(config, "Revír je mimořádně uzavřen", `<p>Na den vaší místenky je revír mimořádně uzavřen. <b>Lovit v tento den nelze.</b></p>${table(rows)}<p>Ohledně vrácení peněz nebo náhradního termínu kontaktujte prosím správce${contact ? `: ${esc(contact)}` : ""}.</p>${button(links.status, "Stav místenky")}`),
+    html: layout(config, "warning", "Revír je mimořádně uzavřen", `<p>Na den vaší místenky je revír mimořádně uzavřen. <b>Lovit v tento den nelze.</b></p>${table(rows)}<p>Ohledně vrácení peněz nebo náhradního termínu kontaktujte prosím správce${contact ? `: ${esc(contact)}` : ""}.</p>${button(links.status, "Stav místenky")}`),
     text: textBlock(["Revír je na den vaší místenky mimořádně uzavřen. Lovit v tento den nelze.", ...rows.map(([k, v]) => `${k}: ${v}`), `Vrácení peněz nebo náhradní termín: kontaktujte správce${contact ? ` (${contact})` : ""}.`])
   };
 }
@@ -215,7 +219,7 @@ function wardenRequest(config, { name, email, memberId, note, links }) {
   const rows = [["Žadatel", name], ["E-mail", email], ["Č. legitimace", memberId || "—"], ...(note ? [["Poznámka", note]] : [])];
   return {
     subject: `Žádost o funkci porybného – ${name}`,
-    html: layout(config, "Žádost o funkci porybného", `<p>Uživatel Místenky uvádí, že je porybný (rybářská stráž MO nebo státní rybářská stráž), a žádá o funkci porybného v aplikaci. Po schválení uvidí při kontrole místenky plné údaje a bude moct místenku zadržet.</p>${table(rows)}
+    html: layout(config, "info", "Žádost o funkci porybného", `<p>Uživatel Místenky uvádí, že je porybný (rybářská stráž MO nebo státní rybářská stráž), a žádá o funkci porybného v aplikaci. Po schválení uvidí při kontrole místenky plné údaje a bude moct místenku zadržet.</p>${table(rows)}
       <table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 18px"><tr><td style="padding-right:8px">${button(links.approve, "Schválit")}</td><td>${button(links.reject, "Zamítnout", true)}</td></tr></table>
       <p style="margin:0 0 16px"><a href="${esc(links.open)}" style="color:${C.brand}">Otevřít notifikace v portálu</a></p>
       ${noteBox("Tlačítka otevřou stránku s potvrzením rozhodnutí. Odkaz platí 7 dní a lze ho použít jen jednou; žádost můžete vyřídit i v portálu (Notifikace).")}`, "", { preheader: `${name} žádá o funkci porybného` }),
@@ -229,7 +233,7 @@ function wardenRequestDecided(config, { approved, note, link }) {
     : "Vaše žádost o funkci porybného nebyla schválena. Pokud jde o omyl, kontaktujte správce organizace.";
   return {
     subject: `Místenka – ${title.toLowerCase()}`,
-    html: layout(config, title, `<p>${esc(intro)}</p>${note ? table([["Poznámka správce", note]]) : ""}${approved ? button(link, "Otevřít Místenku") : ""}`),
+    html: layout(config, (approved ? "success" : "info"), title, `<p>${esc(intro)}</p>${note ? table([["Poznámka správce", note]]) : ""}${approved ? button(link, "Otevřít Místenku") : ""}`),
     text: textBlock([title, intro, note ? `Poznámka správce: ${note}` : null, approved ? link : null])
   };
 }
@@ -240,7 +244,7 @@ function accountMail(config, { subject, title, intro, link, label, minutes, outr
   const note = minutes ? `Odkaz platí ${validFor(minutes)} a lze ho použít jen jednou.` : "";
   return {
     subject,
-    html: layout(config, title, `<p>${esc(intro)}</p>${link ? button(link, label) : ""}${note ? `<p style="color:#5b6b64;font-size:13px">${esc(note)}</p>` : ""}<p style="color:#5b6b64;font-size:13px">${esc(outro || "Pokud jste o nic nežádali, zprávu ignorujte.")}</p>`),
+    html: layout(config, "info", title, `<p>${esc(intro)}</p>${link ? button(link, label) : ""}${note ? `<p style="color:#5b6b64;font-size:13px">${esc(note)}</p>` : ""}<p style="color:#5b6b64;font-size:13px">${esc(outro || "Pokud jste o nic nežádali, zprávu ignorujte.")}</p>`),
     text: textBlock([title, intro, link ? `${label}: ${link}` : null, note || null, outro || "Pokud jste o nic nežádali, zprávu ignorujte."])
   };
 }

@@ -43,7 +43,7 @@ function markInvalid(input, className, message) {
   input.classList.add(className);
   input.scrollIntoView({ behavior: "smooth", block: "center" });
   input.focus({ preventScroll: true });
-  showToast(message);
+  showToast(message, "warning");
 }
 
 // ---------- výběr revíru ----------
@@ -211,12 +211,12 @@ qs("#declaration").addEventListener("change", (event) => { if (event.target.chec
 qs("#continueButton").addEventListener("click", () => {
   const memberId = normalizeMemberId(qs("#memberId").value);
   if (!isMemberId(memberId)) return markInvalid(qs("#memberId"), "member-invalid", "Zadejte 8místné číslo členské legitimace (pod čárovým kódem).");
-  if (!selectedDate) return showToast("Vyberte den s volnými místy.");
-  if (saleSubs().length && selectedSub === null) { qs("#subPicker").scrollIntoView({ behavior: "smooth", block: "center" }); return showToast("Vyberte podrevír, na který místenku kupujete."); }
+  if (!selectedDate) return showToast("Vyberte den s volnými místy.", "warning");
+  if (saleSubs().length && selectedSub === null) { qs("#subPicker").scrollIntoView({ behavior: "smooth", block: "center" }); return showToast("Vyberte podrevír, na který místenku kupujete.", "warning"); }
   if (!qs("#declaration").checked) {
     qs("#declarationLabel").classList.add("declaration-invalid");
     qs("#declarationLabel").scrollIntoView({ behavior: "smooth", block: "center" });
-    return showToast("Potvrďte čestné prohlášení a podmínky rezervace.");
+    return showToast("Potvrďte čestné prohlášení a podmínky rezervace.", "warning");
   }
   purchase = { revirId: revir.id, memberId, date: selectedDate, declaration: true, ...(selectedSub !== null ? { subdistrict: selectedSub } : {}) };
   showPanel("person");
@@ -228,8 +228,8 @@ qs("#continuePerson").addEventListener("click", () => {
   const lastName = qs("#lastName").value.trim();
   const birthDate = parseCzDate(qs("#birthDate").value);
   const email = qs("#email").value.trim();
-  if (!firstName || !lastName) return showToast("Vyplňte jméno a příjmení.");
-  if (!birthDate) return showToast("Zadejte datum narození ve tvaru den.měsíc.rok, např. 3.2.1988.");
+  if (!firstName || !lastName) return showToast("Vyplňte jméno a příjmení.", "success");
+  if (!birthDate) return showToast("Zadejte datum narození ve tvaru den.měsíc.rok, např. 3.2.1988.", "warning");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return markInvalid(qs("#email"), "email-invalid", "Zadejte platný e-mail pro zaslání místenky.");
   Object.assign(purchase, { firstName, lastName, birthDate, email });
   qs("#summaryDate").textContent = czDate(purchase.date, { weekday: true });
@@ -280,7 +280,7 @@ qs("#verifyVoucher").addEventListener("click", async () => {
   const code = input.value.trim().toUpperCase();
   if (!/^[A-Z0-9]{16}$/.test(code)) {
     input.classList.add("voucher-invalid");
-    return showToast("Zadejte 16 znaků A–Z nebo 0–9.");
+    return showToast("Zadejte 16 znaků A–Z nebo 0–9.", "warning");
   }
   button.disabled = true;
   button.innerHTML = '<span class="voucher-spinner" aria-label="Ověřuji"></span>';
@@ -292,11 +292,11 @@ qs("#verifyVoucher").addEventListener("click", async () => {
     input.classList.add("voucher-valid");
     input.disabled = true;
     button.textContent = "Zrušit";
-    showToast("Poukaz je platný, místenka je zdarma!");
+    showToast("Poukaz je platný, místenka je zdarma!", "success");
   } catch (error) {
     input.classList.add("voucher-invalid");
     button.textContent = "Ověřit";
-    showToast(error.message);
+    showToast(error.message, "error");
   } finally {
     button.disabled = false;
     updateSummaryTotal();
@@ -304,7 +304,7 @@ qs("#verifyVoucher").addEventListener("click", async () => {
 });
 
 qs("#startPayment").addEventListener("click", async () => {
-  if (qs("#voucherCode").value.trim() && !voucherState.valid) return showToast("Ověřte platnost dárkového poukazu, nebo kód smažte.");
+  if (qs("#voucherCode").value.trim() && !voucherState.valid) return showToast("Ověřte platnost dárkového poukazu, nebo kód smažte.", "warning");
   const button = qs("#startPayment");
   button.disabled = true;
   try {
@@ -312,7 +312,7 @@ qs("#startPayment").addEventListener("click", async () => {
     saveToken(ticket.code, token);
     window.location.href = `payment.html?code=${encodeURIComponent(ticket.code)}`;
   } catch (error) {
-    showToast(error.message);
+    showToast(error.message, "error");
     if (error.code === "sold_out") { renderDates(); showPanel("buy"); }
     button.disabled = false;
   }
@@ -322,8 +322,8 @@ qs("#startPayment").addEventListener("click", async () => {
 qs("#returnFind").addEventListener("click", async () => {
   const code = qs("#returnCode").value.trim().toUpperCase();
   const memberId = normalizeMemberId(qs("#returnMemberId").value);
-  if (!/^[A-Z0-9]{6}$/.test(code)) return showToast("Zadejte šestimístný kód místenky.");
-  if (!isMemberId(memberId)) return showToast("Zadejte 8místné číslo členské legitimace.");
+  if (!/^[A-Z0-9]{6}$/.test(code)) return showToast("Zadejte šestimístný kód místenky.", "warning");
+  if (!isMemberId(memberId)) return showToast("Zadejte 8místné číslo členské legitimace.", "warning");
   try {
     const ticket = await api(`/orders/${code}`, { memberId });
     if (ticket.status === "expired_returned") throw new Error("Tato místenka už byla odevzdána.");
@@ -331,12 +331,12 @@ qs("#returnFind").addEventListener("click", async () => {
     if (!ticket.returnable) throw new Error(ticket.status === "closed_unreturned" ? "Lhůta pro odevzdání uplynula, místenka byla uzavřena jako neodevzdaná. Kontaktujte hospodáře." : "Tuto místenku nelze odevzdat.");
     rememberMemberId(code, memberId);
     window.location.href = `return.html?code=${encodeURIComponent(code)}`;
-  } catch (error) { showToast(error.message); }
+  } catch (error) { showToast(error.message, "error"); }
 });
 qs("#returnMemberId").addEventListener("keydown", (event) => { if (event.key === "Enter") qs("#returnFind").click(); });
 qs("#checkButton").addEventListener("click", () => {
   const code = qs("#checkCode").value.trim().toUpperCase();
-  if (!/^[A-Z0-9]{6}$/.test(code)) return showToast("Zadejte platný šestimístný kód místenky.");
+  if (!/^[A-Z0-9]{6}$/.test(code)) return showToast("Zadejte platný šestimístný kód místenky.", "warning");
   window.location.href = `status.html?code=${encodeURIComponent(code)}`;
 });
 qs("#checkCode").addEventListener("keydown", (event) => { if (event.key === "Enter") qs("#checkButton").click(); });

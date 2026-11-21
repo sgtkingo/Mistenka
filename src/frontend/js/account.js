@@ -9,7 +9,8 @@ const show = (id, visible = true) => qs(`#${id}`).classList.toggle("hidden", !vi
 function message(text, tone = "info") {
   const box = qs("#authMessage");
   box.textContent = text;
-  box.className = `info-box${tone === "error" ? " info-error" : ""}`;
+  // info modrá, success zelená, warning oranžová (chybí/špatný údaj), error červená (akce selhala).
+  box.className = `info-box${tone === "info" ? "" : ` info-${tone}`}`;
 }
 const clearMessage = () => qs("#authMessage").classList.add("hidden");
 // Tlačítko během požadavku zablokuje, aby nešlo odeslat dvakrát.
@@ -31,7 +32,7 @@ qsa(".tab").forEach((tab) => tab.addEventListener("click", () => { clearMessage(
 function loggedIn(data, note) {
   setSession(data);
   user = data.user;
-  if (note) showToast(note);
+  if (note) showToast(note, "success");
   renderAccount();
 }
 
@@ -40,7 +41,7 @@ qs("#loginForm").addEventListener("submit", (event) => {
   const button = event.submitter || qs("#loginForm button[type=submit]");
   busy(button, async () => {
     const body = { email: qs("#loginEmail").value.trim(), password: qs("#loginPassword").value, otp: qs("#loginOtp").value.trim() || undefined };
-    if (!body.email || !body.password) return message("Vyplňte e-mail a heslo, nebo si nechte poslat odkaz pro přihlášení.", "error");
+    if (!body.email || !body.password) return message("Vyplňte e-mail a heslo, nebo si nechte poslat odkaz pro přihlášení.", "warning");
     try {
       loggedIn(await api("/auth/login", { method: "POST", body }));
     } catch (error) {
@@ -52,18 +53,18 @@ qs("#loginForm").addEventListener("submit", (event) => {
 });
 qs("#sendMagicLink").addEventListener("click", (event) => busy(event.currentTarget, async () => {
   const email = qs("#loginEmail").value.trim();
-  if (!email) { qs("#loginEmail").focus(); return message("Vyplňte e-mail, na který vám pošleme odkaz.", "error"); }
+  if (!email) { qs("#loginEmail").focus(); return message("Vyplňte e-mail, na který vám pošleme odkaz.", "warning"); }
   try {
     await api("/auth/magic-link", { method: "POST", body: { email } });
-    message(`Pokud účet s adresou ${email} existuje, poslali jsme na ni odkaz pro přihlášení. Platí 15 minut.`);
+    message(`Pokud účet s adresou ${email} existuje, poslali jsme na ni odkaz pro přihlášení. Platí 15 minut.`, "success");
   } catch (error) { message(error.message, "error"); }
 }));
 qs("#sendReset").addEventListener("click", (event) => busy(event.currentTarget, async () => {
   const email = qs("#loginEmail").value.trim();
-  if (!email) { qs("#loginEmail").focus(); return message("Vyplňte e-mail, na který vám pošleme odkaz pro obnovu hesla.", "error"); }
+  if (!email) { qs("#loginEmail").focus(); return message("Vyplňte e-mail, na který vám pošleme odkaz pro obnovu hesla.", "warning"); }
   try {
     await api("/auth/password-reset", { method: "POST", body: { email } });
-    message(`Pokud účet s adresou ${email} existuje, poslali jsme na ni odkaz pro nastavení nového hesla.`);
+    message(`Pokud účet s adresou ${email} existuje, poslali jsme na ni odkaz pro nastavení nového hesla.`, "success");
   } catch (error) { message(error.message, "error"); }
 }));
 
@@ -75,18 +76,18 @@ qs("#registerForm").addEventListener("submit", (event) => {
       firstName: qs("#regFirstName").value.trim(), lastName: qs("#regLastName").value.trim(), birthDate: parseCzDate(qs("#regBirthDate").value),
       memberId, email: qs("#regEmail").value.trim(), password: qs("#regPassword").value || undefined, consent: qs("#regConsent").checked, wardenRequest: qs("#regWarden").checked || undefined
     };
-    if (!body.firstName || !body.lastName || !body.email) return message("Vyplňte jméno, příjmení a e-mail.", "error");
-    if (!body.birthDate) return message("Zadejte datum narození ve tvaru den.měsíc.rok, např. 3.2.1988.", "error");
-    if (!isMemberId(memberId)) return message("Zadejte 8místné číslo členské legitimace (pod čárovým kódem).", "error");
+    if (!body.firstName || !body.lastName || !body.email) return message("Vyplňte jméno, příjmení a e-mail.", "warning");
+    if (!body.birthDate) return message("Zadejte datum narození ve tvaru den.měsíc.rok, např. 3.2.1988.", "warning");
+    if (!isMemberId(memberId)) return message("Zadejte 8místné číslo členské legitimace (pod čárovým kódem).", "warning");
     const passwordError = (body.password || qs("#regPassword2").value) && passwordProblem(qs("#regPassword").value, qs("#regPassword2").value);
-    if (passwordError) return message(passwordError, "error");
-    if (!body.consent) return message("Potvrďte, že jste se seznámili se zásadami zpracování osobních údajů.", "error");
+    if (passwordError) return message(passwordError, "warning");
+    if (!body.consent) return message("Potvrďte, že jste se seznámili se zásadami zpracování osobních údajů.", "warning");
     try {
       await api("/auth/register", { method: "POST", body });
       qs("#registerForm").reset();
       showAuthForm("loginForm");
       qs("#loginEmail").value = body.email;
-      message(`Poslali jsme vám e-mail na ${body.email}. Účet aktivujete kliknutím na odkaz v něm (platí 48 hodin).`);
+      message(`Poslali jsme vám e-mail na ${body.email}. Účet aktivujete kliknutím na odkaz v něm (platí 48 hodin).`, "success");
     } catch (error) { message(error.message, "error"); }
   });
 });
@@ -95,7 +96,7 @@ qs("#resetForm").addEventListener("submit", (event) => {
   event.preventDefault();
   busy(event.submitter, async () => {
     const passwordError = passwordProblem(qs("#resetPassword").value, qs("#resetPassword2").value);
-    if (passwordError) return message(passwordError, "error");
+    if (passwordError) return message(passwordError, "warning");
     try {
       loggedIn(await api("/auth/password-reset/confirm", { method: "POST", body: { token: pendingResetToken, password: qs("#resetPassword").value, otp: qs("#resetOtp").value.trim() || undefined } }), "Heslo je uložené, jste přihlášeni.");
     } catch (error) {
@@ -143,7 +144,7 @@ async function handleLinkFragment() {
     }
     if (kind === "email") {
       await api("/auth/email/confirm", { method: "POST", body: { token } });
-      showToast("Nový e-mail je potvrzený.");
+      showToast("Nový e-mail je potvrzený.", "success");
       return false; // pokračuje běžné načtení (přihlášený / nepřihlášený)
     }
   } catch (error) {
@@ -266,28 +267,28 @@ qs("#profileForm").addEventListener("submit", (event) => {
   busy(event.submitter, async () => {
     const birthRaw = qs("#pBirthDate").value.trim();
     const birthDate = birthRaw ? parseCzDate(birthRaw) : "";
-    if ((birthRaw || !isStaff(user)) && !birthDate) return showToast("Zadejte datum narození ve tvaru den.měsíc.rok, např. 3.2.1988.");
+    if ((birthRaw || !isStaff(user)) && !birthDate) return showToast("Zadejte datum narození ve tvaru den.měsíc.rok, např. 3.2.1988.", "warning");
     try {
       const result = await api("/me", { method: "PATCH", body: { firstName: qs("#pFirstName").value.trim(), lastName: qs("#pLastName").value.trim(), birthDate, memberId: normalizeMemberId(qs("#pMemberId").value), email: qs("#pEmail").value.trim() } });
       user = result.user;
       setSessionUser(user);
       renderAccount();
-      showToast(result.emailChangePending ? `Údaje uloženy. Novou adresu ${result.emailChangePending} potvrďte odkazem z e-mailu.` : "Údaje uloženy.");
-    } catch (error) { showToast(error.message); }
+      showToast(result.emailChangePending ? `Údaje uloženy. Novou adresu ${result.emailChangePending} potvrďte odkazem z e-mailu.` : "Údaje uloženy.", "success");
+    } catch (error) { showToast(error.message, "error"); }
   });
 });
 qs("#passwordForm").addEventListener("submit", (event) => {
   event.preventDefault();
   busy(event.submitter, async () => {
     const passwordError = passwordProblem(qs("#newPassword").value, qs("#newPassword2").value);
-    if (passwordError) return showToast(passwordError);
+    if (passwordError) return showToast(passwordError, "warning");
     try {
       const result = await api("/me/password", { method: "PUT", body: { currentPassword: qs("#currentPassword").value, newPassword: qs("#newPassword").value } });
       user = result.user;
       qs("#passwordForm").reset();
       renderAccount();
-      showToast("Heslo uloženo. Ostatní zařízení jsme odhlásili.");
-    } catch (error) { showToast(error.message); }
+      showToast("Heslo uloženo. Ostatní zařízení jsme odhlásili.", "success");
+    } catch (error) { showToast(error.message, "error"); }
   });
 });
 
@@ -297,29 +298,29 @@ function renderTwoFactor(setup = null) {
     const required = user.roles.includes("admin");
     box.innerHTML = `<div class="two-factor-state"><span class="badge badge-ok">Zapnuto</span><span>Dvoufázové ověření chrání váš účet kódem z aplikace.</span></div>${required ? '<p class="field-help">Admin musí mít dvoufázové ověření zapnuté.</p>' : `<div class="code-row"><input id="disableOtp" class="otp-input" inputmode="numeric" maxlength="6" placeholder="Kód z aplikace"><button class="secondary-button" type="button" id="disable2fa">Vypnout</button></div>`}`;
     qs("#disable2fa")?.addEventListener("click", (event) => busy(event.currentTarget, async () => {
-      try { user = (await api("/me/2fa/disable", { method: "POST", body: { otp: qs("#disableOtp").value.trim() } })).user; renderTwoFactor(); showToast("Dvoufázové ověření vypnuto."); }
-      catch (error) { showToast(error.message); }
+      try { user = (await api("/me/2fa/disable", { method: "POST", body: { otp: qs("#disableOtp").value.trim() } })).user; renderTwoFactor(); showToast("Dvoufázové ověření vypnuto.", "success"); }
+      catch (error) { showToast(error.message, "error"); }
     }));
     return;
   }
   if (setup) {
     box.innerHTML = `<div class="two-factor-setup"><div class="qr-holder">${qrSvg(setup.otpauthUrl, "QR kód pro ověřovací aplikaci")}</div><div><p>1. Naskenujte QR kód aplikací (Google Authenticator, Microsoft Authenticator, Aegis…), nebo zadejte klíč ručně:</p><code class="secret">${esc(setup.secret.replace(/(.{4})/g, "$1 ").trim())}</code><p>2. Opište šestimístný kód z aplikace:</p><div class="code-row"><input id="enableOtp" class="otp-input" inputmode="numeric" maxlength="6" placeholder="123456"><button class="primary-button" type="button" id="enable2fa">Zapnout</button></div></div></div>`;
     qs("#enable2fa").addEventListener("click", (event) => busy(event.currentTarget, async () => {
-      try { user = (await api("/me/2fa/enable", { method: "POST", body: { otp: qs("#enableOtp").value.trim() } })).user; renderAccount(); showToast("Dvoufázové ověření je zapnuté."); }
-      catch (error) { showToast(error.message); }
+      try { user = (await api("/me/2fa/enable", { method: "POST", body: { otp: qs("#enableOtp").value.trim() } })).user; renderAccount(); showToast("Dvoufázové ověření je zapnuté.", "success"); }
+      catch (error) { showToast(error.message, "error"); }
     }));
     return;
   }
   box.innerHTML = `<div class="two-factor-state"><span class="badge badge-off">Vypnuto</span><span>${user.roles.includes("admin") ? "Pro admina je dvoufázové ověření povinné." : isStaff(user) ? "Doporučujeme zapnout – spravujete údaje ostatních." : "Volitelné zabezpečení přihlášení kódem z mobilní aplikace."}</span></div><button class="secondary-button" type="button" id="setup2fa">Nastavit dvoufázové ověření</button>`;
   qs("#setup2fa").addEventListener("click", (event) => busy(event.currentTarget, async () => {
     try { renderTwoFactor(await api("/me/2fa/setup", { method: "POST" })); }
-    catch (error) { showToast(error.message); }
+    catch (error) { showToast(error.message, "error"); }
   }));
 }
 
 qs("#deleteForm").addEventListener("submit", (event) => {
   event.preventDefault();
-  if (!qs("#deleteConfirm").checked) return showToast("Potvrďte, že rozumíte nevratnosti smazání.");
+  if (!qs("#deleteConfirm").checked) return showToast("Potvrďte, že rozumíte nevratnosti smazání.", "warning");
   busy(event.submitter, async () => {
     try {
       await api("/me/delete", { method: "POST", body: { confirm: true, password: qs("#deletePassword").value } });
@@ -327,7 +328,7 @@ qs("#deleteForm").addEventListener("submit", (event) => {
       user = null;
       renderAuth();
       message("Účet byl smazán.");
-    } catch (error) { showToast(error.message); }
+    } catch (error) { showToast(error.message, "error"); }
   });
 });
 
@@ -434,8 +435,8 @@ function renderWardenBox() {
         user = result.user;
         setSessionUser(user);
         renderWardenBox();
-        showToast("Žádost odeslána správci ke schválení.");
-      } catch (error) { showToast(error.message); }
+        showToast("Žádost odeslána správci ke schválení.", "success");
+      } catch (error) { showToast(error.message, "error"); }
     });
   });
 }

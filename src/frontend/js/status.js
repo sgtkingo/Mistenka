@@ -94,16 +94,16 @@ function renderWarden(view) {
   panel.classList.remove("hidden");
   qs("#seizeButton")?.addEventListener("click", async (event) => {
     const reason = qs("#seizeReason").value.trim();
-    if (reason.length < 3) return showToast("Uveďte důvod zadržení.");
+    if (reason.length < 3) return showToast("Uveďte důvod zadržení.", "warning");
     if (!window.confirm("Opravdu zadržet místenku? Lov tím okamžitě končí.")) return;
     const button = event.currentTarget;
     button.disabled = true;
     try {
       await api(`/warden/tickets/${code}/seize`, { method: "POST", body: { reason, place: qs("#seizePlace").value.trim() } });
-      showToast("Místenka byla zadržena.");
+      showToast("Místenka byla zadržena.", "success");
       loadStatus();
     } catch (error) {
-      showToast(error.message);
+      showToast(error.message, "error");
       button.disabled = false;
     }
   });

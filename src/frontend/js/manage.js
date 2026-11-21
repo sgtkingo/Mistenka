@@ -73,10 +73,10 @@ async function loadUsers(q = userQuery) {
         const roles = qsa("input[type=checkbox]:checked", row).map((box) => box.value);
         try {
           const { user } = await api(`/manage/users/${row.dataset.user}/roles`, { method: "PUT", body: { roles } });
-          showToast(`${user.firstName} ${user.lastName}: ${user.roles.map((role) => ROLE_LABELS[role]).join(", ")}`);
+          showToast(`${user.firstName} ${user.lastName}: ${user.roles.map((role) => ROLE_LABELS[role]).join(", ")}`, "success");
           if (user.id === me.id) location.reload();
         } catch (error) {
-          showToast(error.message);
+          showToast(error.message, "error");
           button.disabled = false;
         }
       });
@@ -93,10 +93,10 @@ qs("#inviteForm").addEventListener("submit", async (event) => {
     const { user } = await api("/manage/users", { method: "POST", body: { firstName: qs("#invFirstName").value.trim(), lastName: qs("#invLastName").value.trim(), email: qs("#invEmail").value.trim(), roles: [qs("#invRole").value] } });
     qs("#inviteForm").reset();
     qs("#inviteBox").open = false;
-    showToast(`Pozvánka odeslána na ${user.email}.`);
+    showToast(`Pozvánka odeslána na ${user.email}.`, "success");
     loadUsers();
   } catch (error) {
-    showToast(error.message);
+    showToast(error.message, "error");
   } finally {
     button.disabled = false;
   }
@@ -165,7 +165,7 @@ qs("#penaltyForm").addEventListener("submit", (event) => submitForm(event, async
     seizure: { count: count("seizure", "Zadržení"), blockDays: days("seizure", "Zadržení") }
   };
   await api("/manage/settings/organization", { method: "PUT", body: { data, note: "Pravidla při porušení" } });
-  showToast("Pravidla uložena.");
+  showToast("Pravidla uložena.", "success");
   loadPenaltyRules();
 }));
 
@@ -174,7 +174,7 @@ qs("#returnPolicyForm").addEventListener("submit", (event) => submitForm(event, 
   if (!Number.isInteger(days) || days < 0 || days > 60) throw new Error("Lhůta pro odevzdání musí být celé číslo 0–60 dní.");
   const data = { ...structuredClone(penaltyOrg), returnPolicy: { lateReturnDays: days } };
   await api("/manage/settings/organization", { method: "PUT", body: { data, note: "Lhůta pro odevzdání" } });
-  showToast(`Lhůta pro odevzdání: ${days} dní.`);
+  showToast(`Lhůta pro odevzdání: ${days} dní.`, "success");
   loadPenaltyRules();
 }));
 
@@ -192,8 +192,8 @@ async function loadLimits() {
     qsa(".lift-block", blocks).forEach((button) => button.addEventListener("click", async () => {
       if (!window.confirm("Zrušit blokaci nákupu?")) return;
       button.disabled = true;
-      try { await api(`/manage/blocks/${button.dataset.id}/lift`, { method: "POST" }); showToast("Blokace zrušena."); loadLimits(); }
-      catch (error) { showToast(error.message); button.disabled = false; }
+      try { await api(`/manage/blocks/${button.dataset.id}/lift`, { method: "POST" }); showToast("Blokace zrušena.", "success"); loadLimits(); }
+      catch (error) { showToast(error.message, "error"); button.disabled = false; }
     }));
     violations.innerHTML = v.violations.length ? `<table class="data-table"><thead><tr><th>Místenka</th><th>Člen</th><th>Limit</th><th>Počet</th></tr></thead><tbody>${v.violations.map((x) => `
       <tr><td data-label="Místenka"><a class="text-link" href="status.html?code=${encodeURIComponent(x.code)}">${esc(x.code)}</a><br><small class="muted-inline">${esc(czDate(x.date))}</small></td>
@@ -208,15 +208,15 @@ qs("#blockForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const untilRaw = qs("#blockUntil").value.trim();
   const until = untilRaw ? parseCzDate(untilRaw) : null;
-  if (untilRaw && !until) return showToast("Datum zadejte ve tvaru den.měsíc.rok.");
+  if (untilRaw && !until) return showToast("Datum zadejte ve tvaru den.měsíc.rok.", "warning");
   const button = event.submitter;
   button.disabled = true;
   try {
     await api("/manage/blocks", { method: "POST", body: { memberId: qs("#blockMemberId").value, reason: qs("#blockReason").value.trim(), until } });
     qs("#blockForm").reset();
-    showToast("Člen je zablokován.");
+    showToast("Člen je zablokován.", "success");
     loadLimits();
-  } catch (error) { showToast(error.message); }
+  } catch (error) { showToast(error.message, "error"); }
   finally { button.disabled = false; }
 });
 
@@ -234,7 +234,7 @@ async function submitForm(event, fn) {
   event.preventDefault();
   const button = event.submitter;
   if (button) button.disabled = true;
-  try { await fn(); } catch (error) { showToast(error.message); } finally { if (button) button.disabled = false; }
+  try { await fn(); } catch (error) { showToast(error.message, "error"); } finally { if (button) button.disabled = false; }
 }
 function fillRevirSelects() {
   qsa("[data-revir-select]").forEach((select) => {
@@ -252,7 +252,7 @@ const queryString = (params) => Object.entries(params).filter(([, v]) => v !== "
 async function loadTickets(append = false) {
   const table = qs("#ticketTable");
   let filters;
-  try { filters = currentFilters(); } catch (error) { return showToast(error.message); }
+  try { filters = currentFilters(); } catch (error) { return showToast(error.message, "error"); }
   if (!append) ticketQuery.offset = 0;
   // Export CSV se stejnými filtry (prefix API může obsahovat "?").
   const base = (window.MISTENKA_ENV && window.MISTENKA_ENV.apiBase) || "/api";
@@ -314,12 +314,12 @@ async function openTicket(code) {
     qs("#closeDialog").addEventListener("click", () => dialog.close());
     qs("#cancelTicket")?.addEventListener("click", async (event) => {
       const reason = qs("#cancelReason").value.trim();
-      if (reason.length < 3) return showToast("Uveďte důvod zrušení.");
+      if (reason.length < 3) return showToast("Uveďte důvod zrušení.", "warning");
       if (!window.confirm(`Opravdu zrušit místenku ${t.code}?`)) return;
       const button = event.currentTarget;
       button.disabled = true;
-      try { await api(`/manage/tickets/${t.code}/cancel`, { method: "POST", body: { reason } }); showToast("Místenka zrušena."); openTicket(t.code); loadTickets(); }
-      catch (error) { showToast(error.message); button.disabled = false; }
+      try { await api(`/manage/tickets/${t.code}/cancel`, { method: "POST", body: { reason } }); showToast("Místenka zrušena.", "success"); openTicket(t.code); loadTickets(); }
+      catch (error) { showToast(error.message, "error"); button.disabled = false; }
     });
   } catch (error) { body.innerHTML = `<p class="status-error">${esc(error.message)}</p><button class="text-button" type="button" onclick="this.closest('dialog').close()">Zavřít</button>`; }
 }
@@ -351,8 +351,8 @@ async function loadPayments() {
       const body = { action, note: form.note.value.trim(), ticketCode: form.ticketCode.value.trim().toUpperCase() || undefined };
       if (action === "assign" && !window.confirm(`Přiřadit platbu k místence ${body.ticketCode || ""} a vystavit ji? Odpovídáte za částku i volné místo.`)) return;
       event.submitter.disabled = true;
-      try { await api(`/manage/payments/${form.dataset.id}/resolve`, { method: "POST", body }); showToast("Platba vyřešena."); loadPayments(); }
-      catch (error) { showToast(error.message); event.submitter.disabled = false; }
+      try { await api(`/manage/payments/${form.dataset.id}/resolve`, { method: "POST", body }); showToast("Platba vyřešena.", "success"); loadPayments(); }
+      catch (error) { showToast(error.message, "error"); event.submitter.disabled = false; }
     }));
   } catch (error) { list.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
 }
@@ -377,7 +377,7 @@ async function loadVouchers() {
     qsa("[data-open]", list).forEach((b) => b.addEventListener("click", () => openTicket(b.dataset.open)));
     qsa(".void-voucher", list).forEach((b) => b.addEventListener("click", async () => {
       if (!window.confirm(`Zneplatnit poukaz ${b.dataset.code}?`)) return;
-      try { await api(`/manage/vouchers/${b.dataset.code}/void`, { method: "POST" }); loadVouchers(); } catch (error) { showToast(error.message); }
+      try { await api(`/manage/vouchers/${b.dataset.code}/void`, { method: "POST" }); loadVouchers(); } catch (error) { showToast(error.message, "error"); }
     }));
   } catch (error) { list.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
 }
@@ -404,7 +404,7 @@ async function loadAnnouncements() {
     qsa(".edit-ann", list).forEach((b) => b.addEventListener("click", () => editAnnouncement(announcements.find((a) => a.id === Number(b.dataset.id)))));
     qsa(".delete-ann", list).forEach((b) => b.addEventListener("click", async () => {
       if (!window.confirm("Smazat zprávu?")) return;
-      try { await api(`/manage/announcements/${b.dataset.id}`, { method: "DELETE" }); showToast("Zpráva smazána."); loadAnnouncements(); } catch (error) { showToast(error.message); }
+      try { await api(`/manage/announcements/${b.dataset.id}`, { method: "DELETE" }); showToast("Zpráva smazána.", "success"); loadAnnouncements(); } catch (error) { showToast(error.message, "error"); }
     }));
   } catch (error) { list.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
 }
@@ -426,7 +426,7 @@ qs("#announcementForm").addEventListener("submit", (event) => submitForm(event, 
   const id = qs("#annId").value;
   const body = { title: qs("#annTitle").value.trim(), text: qs("#annText").value.trim(), revirId: qs("#annRevir").value || null, pinned: qs("#annPinned").checked, validFrom: dateField("annFrom", "Zobrazit od"), validTo: dateField("annTo", "Zobrazit do") };
   await api(id ? `/manage/announcements/${id}` : "/manage/announcements", { method: id ? "PUT" : "POST", body });
-  showToast(id ? "Zpráva upravena." : "Zpráva zveřejněna.");
+  showToast(id ? "Zpráva upravena." : "Zpráva zveřejněna.", "success");
   editAnnouncement(null);
   loadAnnouncements();
 }));
@@ -492,18 +492,18 @@ async function showBug(id) {
       </form></div>`;
     qs("#bugForm").addEventListener("submit", (event) => submitForm(event, async () => {
       await api(`/manage/bug-reports/${r.id}`, { method: "PATCH", body: { status: qs("#bugStatus").value, priority: qs("#bugPriority").value, note: qs("#bugNote").value, githubUrl: qs("#bugGithubUrl").value.trim() } });
-      showToast("Hlášení uloženo.");
+      showToast("Hlášení uloženo.", "success");
       loadBugs(r.id);
     }));
     qs("#bugToGithub")?.addEventListener("click", async (event) => {
       event.currentTarget.disabled = true;
-      try { await api(`/manage/bug-reports/${r.id}/github`, { method: "POST" }); showToast("GitHub issue založeno."); loadBugs(r.id); } catch (error) { showToast(error.message); event.currentTarget.disabled = false; }
+      try { await api(`/manage/bug-reports/${r.id}/github`, { method: "POST" }); showToast("GitHub issue založeno.", "success"); loadBugs(r.id); } catch (error) { showToast(error.message, "error"); event.currentTarget.disabled = false; }
     });
     qs("#bugCopy")?.addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(bugMarkdown(r)); showToast("Text pro GitHub zkopírován."); } catch { showToast("Kopírování se nepodařilo – označte text ručně."); }
+      try { await navigator.clipboard.writeText(bugMarkdown(r)); showToast("Text pro GitHub zkopírován.", "success"); } catch { showToast("Kopírování se nepodařilo – označte text ručně.", "warning"); }
     });
     box.scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (error) { showToast(error.message); }
+  } catch (error) { showToast(error.message, "error"); }
 }
 
 // ---------- ceny a místa ----------
@@ -546,9 +546,9 @@ async function loadPricing() {
         delete data.lateReturnDays; // lhůta pro odevzdání a prodej dopředu jsou u MO
         delete data.bookingDaysAhead;
         await api(`/manage/settings/reviry/${encodeURIComponent(revir.id)}`, { method: "PUT", body: { data, note: "Ceny a místa" } });
-        showToast(`${revir.data.name}${row.dataset.sub ? `, podrevír ${row.dataset.sub}` : ""}: uloženo.`);
+        showToast(`${revir.data.name}${row.dataset.sub ? `, podrevír ${row.dataset.sub}` : ""}: uloženo.`, "success");
         loadPricing();
-      } catch (error) { showToast(error.message); button.disabled = false; }
+      } catch (error) { showToast(error.message, "error"); button.disabled = false; }
     }));
   } catch (error) { panel.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
 }
@@ -594,7 +594,7 @@ function renderRevirStatus(seasons) {
       }
       if (!window.confirm(`Uzavřít „${form.dataset.name}“ ${from === seasonToday ? "ihned" : `od ${shortDate(from)}`}?`)) return;
       await api(`/manage/seasons/${form.dataset.id}/close`, { method: "POST", body: { from } });
-      showToast("Sezona uzavřena.");
+      showToast("Sezona uzavřena.", "success");
       loadSeasons();
     }));
   });
@@ -605,13 +605,13 @@ async function loadSalesPolicy() {
   try {
     salesOrg = (await api("/manage/settings")).organization.data;
     qs("#bookingDaysAhead").value = salesOrg.salesPolicy?.bookingDaysAhead ?? 3;
-  } catch (error) { showToast(error.message); }
+  } catch (error) { showToast(error.message, "error"); }
 }
 qs("#salesPolicyForm").addEventListener("submit", (event) => submitForm(event, async () => {
   const days = Number(qs("#bookingDaysAhead").value);
   if (!Number.isInteger(days) || days < 0 || days > 60) throw new Error("Prodej dopředu musí být celé číslo 0–60 dní.");
   await api("/manage/settings/organization", { method: "PUT", body: { data: { ...structuredClone(salesOrg), salesPolicy: { bookingDaysAhead: days } }, note: "Prodej dopředu" } });
-  showToast(days ? `Místenky se prodávají ${days} dní dopředu.` : "Místenky se prodávají jen na dnešek.");
+  showToast(days ? `Místenky se prodávají ${days} dní dopředu.` : "Místenky se prodávají jen na dnešek.", "success");
   loadSalesPolicy();
 }));
 async function loadSeasons() {
@@ -630,14 +630,14 @@ async function loadSeasons() {
     }).join("")}</tbody></table>` : '<p class="muted">Zatím žádná sezona.</p>';
     qsa(".delete-season").forEach((b) => b.addEventListener("click", async () => {
       if (!window.confirm("Smazat sezonu? Revír bez sezony je zavřený – místenky se na něj neprodávají.")) return;
-      try { await api(`/manage/seasons/${b.dataset.id}`, { method: "DELETE" }); loadSeasons(); } catch (error) { showToast(error.message); }
+      try { await api(`/manage/seasons/${b.dataset.id}`, { method: "DELETE" }); loadSeasons(); } catch (error) { showToast(error.message, "error"); }
     }));
     qs("#closureList").innerHTML = closures.length ? `<table class="data-table"><thead><tr><th>Dny</th><th>Revír</th><th>Důvod</th><th></th></tr></thead><tbody>${closures.map((c) => `
       <tr><td data-label="Dny"><b>${esc(shortDate(c.dateFrom))}${c.dateTo !== c.dateFrom ? ` – ${esc(shortDate(c.dateTo))}` : ""}</b></td><td data-label="Revír">${esc(c.revirName)}</td><td data-label="Důvod">${esc(c.reason)}</td>
       <td><button class="text-button delete-closure" type="button" data-id="${c.id}">Zrušit</button></td></tr>`).join("")}</tbody></table>` : '<p class="muted">Žádná uzavření.</p>';
     qsa(".delete-closure").forEach((b) => b.addEventListener("click", async () => {
       if (!window.confirm("Zrušit uzavření? Na tyto dny půjde znovu kupovat místenky.")) return;
-      try { await api(`/manage/closures/${b.dataset.id}`, { method: "DELETE" }); loadSeasons(); } catch (error) { showToast(error.message); }
+      try { await api(`/manage/closures/${b.dataset.id}`, { method: "DELETE" }); loadSeasons(); } catch (error) { showToast(error.message, "error"); }
     }));
   } catch (error) { qs("#revirStatus").innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
 }
@@ -657,7 +657,7 @@ qs("#seasonForm").addEventListener("submit", (event) => submitForm(event, async 
   const opensOn = dateField("seasonFrom", "Otevřít od");
   if (!opensOn) throw new Error("Zadejte datum otevření.");
   const { season } = await api("/manage/seasons", { method: "POST", body: { name: qs("#seasonName").value.trim(), revirId: qs("#seasonRevir").value || null, opensOn, closesOn: dateField("seasonTo", "Plánované uzavření") } });
-  showToast(`${season.name} otevřena.`);
+  showToast(`${season.name} otevřena.`, "success");
   toggleSeasonForm(false);
   loadSeasons();
 }));
@@ -666,7 +666,7 @@ qs("#closureForm").addEventListener("submit", (event) => submitForm(event, async
   qs("#closureForm").reset();
   fillRevirSelects();
   const n = result.affectedTickets.length;
-  showToast(n ? `Revír uzavřen. ${n} dotčených místenek dostalo e-mail – vrácení peněz vyřiďte ručně.` : "Revír uzavřen. Žádná prodaná místenka se ho netýká.");
+  showToast(n ? `Revír uzavřen. ${n} dotčených místenek dostalo e-mail – vrácení peněz vyřiďte ručně.` : "Revír uzavřen. Žádná prodaná místenka se ho netýká.", "success");
   loadSeasons();
 }));
 
@@ -695,13 +695,13 @@ Pro potvrzení napište OBNOVIT:`);
       b.disabled = true;
       try {
         const result = await api(`/manage/backups/${b.dataset.id}/restore`, { method: "POST", body: { confirm: confirmText.trim().toUpperCase(), otp: otp.trim() } });
-        showToast(`Obnoveno ze zálohy ${result.file}. Pojistná záloha: ${result.safetyBackup.file}.`);
+        showToast(`Obnoveno ze zálohy ${result.file}. Pojistná záloha: ${result.safetyBackup.file}.`, "success");
         loadBackups();
-      } catch (error) { showToast(error.message); b.disabled = false; }
+      } catch (error) { showToast(error.message, "error"); b.disabled = false; }
     }));
     qsa(".delete-backup", list).forEach((b) => b.addEventListener("click", async () => {
       if (!window.confirm("Smazat zálohu? Nelze vrátit.")) return;
-      try { await api(`/manage/backups/${b.dataset.id}`, { method: "DELETE" }); loadBackups(); } catch (error) { showToast(error.message); }
+      try { await api(`/manage/backups/${b.dataset.id}`, { method: "DELETE" }); loadBackups(); } catch (error) { showToast(error.message, "error"); }
     }));
   } catch (error) { list.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
 }
@@ -710,7 +710,7 @@ qs("#createBackup").addEventListener("click", async (event) => {
   const note = window.prompt("Poznámka k záloze (volitelné):", "");
   if (note === null) return;
   button.disabled = true;
-  try { await api("/manage/backups", { method: "POST", body: { note } }); showToast("Záloha vytvořena."); loadBackups(); } catch (error) { showToast(error.message); } finally { button.disabled = false; }
+  try { await api("/manage/backups", { method: "POST", body: { note } }); showToast("Záloha vytvořena.", "success"); loadBackups(); } catch (error) { showToast(error.message, "error"); } finally { button.disabled = false; }
 });
 const ACTION_LABELS = { roles_changed: "změna rolí", roles_forced: "role (příkazová řádka)", staff_invited: "pozvání do správy", admin_setup: "založení admina", settings_changed: "nastavení", ticket_seized: "zadržení místenky", ticket_cancelled: "zrušení místenky",
   payment_resolved: "vyřešení platby", member_blocked: "blokace člena", member_blocked_auto: "automatická blokace", member_unblocked: "zrušení blokace", backup_created: "záloha", backup_deleted: "smazání zálohy", season_created: "sezona", season_updated: "úprava sezony", season_deleted: "smazání sezony",
@@ -768,7 +768,7 @@ async function loadEmail() {
       const body = Object.fromEntries(qsa("#senderForm select").map((select) => [select.dataset.group, select.value ? Number(select.value) : null]));
       body.noticeRecipients = qs("#noticeRecipients").value;
       await api("/manage/email/senders", { method: "PUT", body });
-      showToast("Odesílatelé a příjemci uloženi.");
+      showToast("Odesílatelé a příjemci uloženi.", "success");
       loadEmail();
     }));
     if (!canEdit) return;
@@ -777,7 +777,7 @@ async function loadEmail() {
       const id = form.dataset.id;
       const body = { label: qs("#aLabel").value.trim(), fromEmail: qs("#aFrom").value.trim(), fromName: qs("#aName").value.trim(), host: qs("#aHost").value.trim(), port: Number(qs("#aPort").value), encryption: qs("#aEnc").value, username: qs("#aUser").value.trim(), password: qs("#aPass").value };
       await api(id ? `/manage/email/accounts/${id}` : "/manage/email/accounts", { method: id ? "PUT" : "POST", body });
-      showToast(id ? "Účet upraven. Pokud se změnilo připojení, otestujte ho znovu." : "Účet přidán. Ověřte ho testovacím e-mailem.");
+      showToast(id ? "Účet upraven. Pokud se změnilo připojení, otestujte ho znovu." : "Účet přidán. Ověřte ho testovacím e-mailem.", "success");
       loadEmail();
     }));
     // Obvyklý port podle šifrování (jen pokud uživatel nezadal vlastní).
@@ -797,12 +797,12 @@ async function loadEmail() {
         const to = window.prompt("Na jakou adresu poslat testovací e-mail?", me.email);
         if (to === null) return;
         event.currentTarget.disabled = true;
-        try { await api(`/manage/email/accounts/${account.id}/verify`, { method: "POST", body: { to: to.trim() } }); showToast(`Testovací e-mail odeslán na ${to.trim()}. Účet je ověřený.`); } catch (error) { showToast(error.message); }
+        try { await api(`/manage/email/accounts/${account.id}/verify`, { method: "POST", body: { to: to.trim() } }); showToast(`Testovací e-mail odeslán na ${to.trim()}. Účet je ověřený.`, "success"); } catch (error) { showToast(error.message, "error"); }
         loadEmail();
       });
       qs(".delete-account", row).addEventListener("click", async () => {
         if (!window.confirm(`Smazat účet ${account.label}?${account.usedFor.length ? " Skupiny, které ho používají, zůstanou bez odesílatele a jejich e-maily neodejdou." : ""}`)) return;
-        try { await api(`/manage/email/accounts/${account.id}`, { method: "DELETE" }); showToast("Účet smazán."); loadEmail(); } catch (error) { showToast(error.message); }
+        try { await api(`/manage/email/accounts/${account.id}`, { method: "DELETE" }); showToast("Účet smazán.", "success"); loadEmail(); } catch (error) { showToast(error.message, "error"); }
       });
     });
   } catch (error) { panel.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
@@ -856,8 +856,8 @@ async function loadNotifications() {
       try {
         await api(`/manage/notifications/${card.dataset.id}/${button.dataset.action}`, { method: "POST", body: { note: qs(".decision-note", card).value.trim() } });
         const texts = notificationKind(card.dataset.kind);
-        showToast(button.dataset.action === "approve" ? texts.approved : texts.rejected);
-      } catch (error) { showToast(error.message); }
+        showToast(button.dataset.action === "approve" ? texts.approved : texts.rejected, "success");
+      } catch (error) { showToast(error.message, "error"); }
       loadNotifications();
     }));
   } catch (error) { list.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
