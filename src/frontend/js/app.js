@@ -4,6 +4,27 @@ const panels = { buy: qs("#buyPanel"), person: qs("#personPanel"), return: qs("#
 let config = null;
 let revir = null;
 let selectedDate = "";
+let selectedSub = null; // podrevír místenky (revír s podrevíry v prodeji)
+let lastDays = [];
+const saleSubs = () => revir?.saleSubdistricts || [];
+const subPrice = () => saleSubs().find((s) => String(s.number) === String(selectedSub))?.priceCzk ?? revir.priceCzk;
+// Podrevíry pro vybraný den: jediný se vybere sám, jinak volí rybář (vyprodaný nejde vybrat).
+function renderSubs() {
+  const picker = qs("#subPicker");
+  const subs = saleSubs();
+  picker.classList.toggle("hidden", !subs.length);
+  if (!subs.length) { selectedSub = null; return; }
+  const day = lastDays.find((d) => d.date === selectedDate);
+  const free = (s) => day?.subdistricts?.find((x) => String(x.number) === String(s.number))?.available ?? 0;
+  if (subs.length === 1) selectedSub = subs[0].number;
+  else if (selectedSub !== null && !free(subs.find((s) => String(s.number) === String(selectedSub)) || {})) selectedSub = null;
+  qs("#subGrid").innerHTML = subs.map((s) => {
+    const n = free(s);
+    const on = String(s.number) === String(selectedSub);
+    return `<button class="sub-option${on ? " selected" : ""}" type="button" data-sub="${esc(s.number)}"${n ? "" : " disabled"}><b>${esc(s.name ? `${s.number} – ${s.name}` : `Podrevír ${s.number}`)}</b><span>${esc(czk(Math.round(s.priceCzk * 100)))}</span><i>${day ? (n ? `${n} ${plural(n, "místo", "místa", "míst")}` : "obsazeno") : ""}</i></button>`;
+  }).join("");
+  qsa(".sub-option:not([disabled])").forEach((b) => b.addEventListener("click", () => { selectedSub = saleSubs().find((s) => String(s.number) === b.dataset.sub).number; renderSubs(); }));
+}
 let purchase = {};
 let voucherState = { code: "", valid: false };
 let weatherDays = null; // předpověď podle data, null = nedostupná
@@ -41,7 +62,7 @@ function renderRevir() {
   document.title = `Místenka · ${revir.name}`;
   qsa("[data-revir-name]").forEach((el) => { el.textContent = revir.name; });
   if (config.reviry.length > 1) qs("#changeRevir").classList.remove("hidden");
-  const meta = [revir.area && `<span>${icon("water")}<strong>${esc(revir.area)}</strong> vodní plochy</span>`, revir.subdistrictCount && `<span>${icon("map")}<strong>${esc(revir.subdistrictCount)}</strong> ${plural(revir.subdistrictCount, "podrevír", "podrevíry", "podrevírů")}</span>`, `<span>${icon("ticket")}<strong>${esc(czk(Math.round(revir.priceCzk * 100)))} / den</strong></span>`].filter(Boolean);
+  const meta = [revir.area && `<span>${icon("water")}<strong>${esc(revir.area)}</strong> vodní plochy</span>`, revir.subdistrictCount && `<span>${icon("map")}<strong>${esc(revir.subdistrictCount)}</strong> ${plural(revir.subdistrictCount, "podrevír", "podrevíry", "podrevírů")}</span>`, `<span>${icon("ticket")}<strong>${(() => { const prices = saleSubs().length ? saleSubs().map((s) => s.priceCzk) : [revir.priceCzk]; const min = Math.min(...prices); return `${prices.some((p) => p !== min) ? "od " : ""}${esc(czk(Math.round(min * 100)))}`; })()} / den</strong></span>`].filter(Boolean);
   qs("#heroMeta").innerHTML = meta.join('<span class="meta-divider"></span>');
   const [first, ...rest] = revir.name.split(" ");
   qs("#artLabel").innerHTML = `${esc(first)}<br><span>${esc(rest.join(" "))}</span>`;
@@ -122,6 +143,7 @@ async function renderDates() {
   const grid = qs("#dateGrid");
   try {
     const { days, today } = await api(`/reviry/${encodeURIComponent(revir.id)}/availability`);
+    lastDays = days;
     const outOfSeason = !config.service?.launched || (days.length > 0 && days.every((day) => day.closed && day.closedCode === "out_of_season"));
     renderSeasonClosed(outOfSeason, days.find((day) => day.closed)?.closedReason);
     const firstFree = days.find((day) => day.available > 0);
@@ -139,7 +161,9 @@ async function renderDates() {
       qsa(".date-option").forEach((item) => item.classList.remove("selected"));
       option.classList.add("selected");
       selectedDate = option.dataset.date;
+      renderSubs();
     }));
+    renderSubs();
   } catch (error) {
     grid.innerHTML = `<p class="status-error">${esc(error.message)}</p>`;
   }
@@ -188,12 +212,13 @@ qs("#continueButton").addEventListener("click", () => {
   const memberId = normalizeMemberId(qs("#memberId").value);
   if (!isMemberId(memberId)) return markInvalid(qs("#memberId"), "member-invalid", "Zadejte 8místné číslo členské legitimace (pod čárovým kódem).");
   if (!selectedDate) return showToast("Vyberte den s volnými místy.");
+  if (saleSubs().length && selectedSub === null) { qs("#subPicker").scrollIntoView({ behavior: "smooth", block: "center" }); return showToast("Vyberte podrevír, na který místenku kupujete."); }
   if (!qs("#declaration").checked) {
     qs("#declarationLabel").classList.add("declaration-invalid");
     qs("#declarationLabel").scrollIntoView({ behavior: "smooth", block: "center" });
     return showToast("Potvrďte čestné prohlášení a podmínky rezervace.");
   }
-  purchase = { revirId: revir.id, memberId, date: selectedDate, declaration: true };
+  purchase = { revirId: revir.id, memberId, date: selectedDate, declaration: true, ...(selectedSub !== null ? { subdistrict: selectedSub } : {}) };
   showPanel("person");
 });
 qs("#backToStart").addEventListener("click", () => showPanel("buy"));
@@ -212,9 +237,11 @@ qs("#continuePerson").addEventListener("click", () => {
   qs("#summaryEmail").textContent = email;
   qs("#summaryNumber").textContent = revir.number || "";
   qs("#summaryNumberRow").classList.toggle("hidden", !revir.number);
-  qs("#summarySubdistrictTitle").textContent = subdistrictTitle(revir);
-  qs("#summarySubdistrict").textContent = subdistrictLabel(revir);
-  qs("#summarySubdistrictRow").classList.toggle("hidden", !subdistrictLabel(revir));
+  const chosen = saleSubs().find((s) => String(s.number) === String(selectedSub));
+  const subText = chosen ? (chosen.name ? `${chosen.number} – ${chosen.name}` : String(chosen.number)) : subdistrictLabel(revir);
+  qs("#summarySubdistrictTitle").textContent = chosen ? "Podrevír" : subdistrictTitle(revir);
+  qs("#summarySubdistrict").textContent = subText;
+  qs("#summarySubdistrictRow").classList.toggle("hidden", !subText);
   updateSummaryTotal();
   renderWeatherCard(purchase.date);
   showPanel("payment");
@@ -222,8 +249,9 @@ qs("#continuePerson").addEventListener("click", () => {
 qs("#backButton").addEventListener("click", () => showPanel("person"));
 
 function updateSummaryTotal() {
-  const free = voucherState.valid || revir.priceCzk === 0;
-  qs("#summaryTotal").textContent = free ? "ZDARMA" : czk(Math.round(revir.priceCzk * 100));
+  const price = subPrice();
+  const free = voucherState.valid || price === 0;
+  qs("#summaryTotal").textContent = free ? "ZDARMA" : czk(Math.round(price * 100));
   qs("#paymentHelp").textContent = free
     ? "Místenka bude vystavena ihned, bez platby."
     : `Po odeslání zobrazíme QR platbu. Místo držíme ${config.payment.reservationMinutes} minut; místenku vystavíme po připsání platby.`;

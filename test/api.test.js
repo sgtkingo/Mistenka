@@ -72,7 +72,9 @@ const pay = (body) => call("POST", "/dev/payments", { body });
 let seq = 0;
 function orderBody(overrides = {}) {
   seq += 1;
-  return { revirId: "revir-a", date: "2026-06-10", memberId: String(30000000 + seq), firstName: "Jan", lastName: "Tester", birthDate: "1985-03-02", email: `tester${seq}@example.cz`, declaration: true, ...overrides };
+  // Revír A prodává místenky na podrevíry (1: 200 Kč / 30 míst, 2: 250 Kč / 2 místa) – výchozí podrevír 1.
+  const sub = !overrides.revirId || overrides.revirId === "revir-a" ? { subdistrict: 1 } : {};
+  return { revirId: "revir-a", date: "2026-06-10", memberId: String(30000000 + seq), firstName: "Jan", lastName: "Tester", birthDate: "1985-03-02", email: `tester${seq}@example.cz`, declaration: true, ...sub, ...overrides };
 }
 async function order(overrides) {
   const res = await call("POST", "/orders", { body: orderBody(overrides) });
@@ -224,7 +226,9 @@ test("GET /reviry/{id}/availability vrací dny od dneška", async () => {
   const { status, data } = await call("GET", "/reviry/revir-a/availability");
   assert.equal(status, 200);
   assert.deepEqual(data.days.map((d) => d.date), ["2026-06-10", "2026-06-11", "2026-06-12", "2026-06-13"]);
-  assert.equal(data.days[0].capacity, 30);
+  assert.equal(data.days[0].capacity, 32, "součet míst podrevírů v prodeji");
+  assert.deepEqual(data.days[0].subdistricts.map((s) => [s.number, s.name, s.priceCzk, s.capacity]), [[1, "Horní nádrž", 200, 30], [2, "Dolní nádrž", 250, 2]]);
+  assert.deepEqual((await call("GET", "/reviry/revir-b/availability")).data.days[0].subdistricts, [], "revír bez podrevírů v prodeji");
   assert.equal((await call("GET", "/reviry/neexistuje/availability")).status, 404);
 });
 
@@ -951,7 +955,7 @@ test("správa místenek: seznam s filtry, detail, export CSV jen pro správce", 
   const bytes = Buffer.from(await csv.arrayBuffer());
   assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf], "BOM pro Excel");
   const text = bytes.toString("utf8");
-  assert.ok(text.includes("Kód;Revír;Datum lovu"), "hlavička se středníky");
+  assert.ok(text.includes("Kód;Revír;Podrevír;Datum lovu"), "hlavička se středníky");
   assert.ok(text.includes(`${t.code};`));
   assert.equal((await fetch(url("/manage/tickets.csv"))).status, 401, "bez přihlášení nic");
 });
@@ -1060,6 +1064,21 @@ test("nastavení organizace a pravidel ryb; verze pravidel se uloží k odevzdan
   assert.equal((await call("PUT", "/manage/settings/organization", { body: { data: { ...org, organization: { ...org.organization, contact: { ...org.organization.contact, email: "spatny" } } } }, session })).data.code, "invalid_settings");
   const changed = await call("PUT", "/manage/settings/organization", { body: { data: { ...org, publicCheck: { showFullName: false, memberIdVisibleChars: 2 } } }, session });
   assert.equal(changed.status, 200, JSON.stringify(changed.data));
+  // Lhůta pro opožděné odevzdání je jedna pro celou MO (Limity a blokace) a platí pro všechny revíry.
+  assert.equal(org.returnPolicy.lateReturnDays, 7, "výchozí lhůta");
+  assert.equal((await call("PUT", "/manage/settings/organization", { body: { data: { ...changed.data.settings.organization.data, returnPolicy: { lateReturnDays: 61 } } }, session })).data.code, "invalid_settings");
+  const longer = await call("PUT", "/manage/settings/organization", { body: { data: { ...changed.data.settings.organization.data, returnPolicy: { lateReturnDays: 10 } } }, session });
+  assert.equal(longer.status, 200, JSON.stringify(longer.data));
+  assert.deepEqual((await call("GET", "/config")).data.reviry.map((r) => r.lateReturnDays), [10, 10]);
+  const restored = await call("PUT", "/manage/settings/organization", { body: { data: { ...longer.data.settings.organization.data, returnPolicy: { lateReturnDays: 7 } } }, session });
+  assert.equal(restored.status, 200);
+  // Prodej dopředu – také jeden údaj pro celou MO (Ceny a místa).
+  assert.equal(org.salesPolicy.bookingDaysAhead, 3, "výchozí prodej dopředu");
+  const ahead = await call("PUT", "/manage/settings/organization", { body: { data: { ...restored.data.settings.organization.data, salesPolicy: { bookingDaysAhead: 5 } } }, session });
+  assert.equal(ahead.status, 200, JSON.stringify(ahead.data));
+  assert.deepEqual((await call("GET", "/config")).data.reviry.map((r) => r.bookingDaysAhead), [5, 5]);
+  assert.equal((await call("GET", "/reviry/revir-b/availability")).data.days.length, 6);
+  assert.equal((await call("PUT", "/manage/settings/organization", { body: { data: { ...ahead.data.settings.organization.data, salesPolicy: { bookingDaysAhead: 3 } } }, session })).status, 200);
   const t = await paidTicket({ lastName: "Veřejný" });
   const pub = (await call("GET", `/tickets/${t.code}`)).data;
   assert.equal(pub.holder.name, "Jan V.", "zkrácené jméno ve veřejné kontrole");
@@ -1452,6 +1471,37 @@ test("e-mailoví klienti: účty spravuje admin, heslo se nevrací, odesílatele
   const restored = await call("PUT", "/manage/email/senders", { body: { tickets: LAUNCH.accountId, accounts: LAUNCH.accountId }, session });
   assert.equal(restored.data.ready, true, "úklid: odesílatelé z prvního spuštění");
   await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: [] } });
+});
+
+// ---------- místenka na podrevír ----------
+test("podrevíry: místenka na jeden podrevír s vlastní cenou a kapacitou; jediný podrevír v prodeji se vybere sám", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const date = "2026-06-12";
+  const missing = await call("POST", "/orders", { body: orderBody({ date, subdistrict: undefined }) });
+  assert.equal(missing.data.code, "invalid_subdistrict", "u více podrevírů je výběr povinný");
+  assert.equal((await call("POST", "/orders", { body: orderBody({ date, subdistrict: 9 }) })).data.code, "invalid_subdistrict");
+  const first = await order({ date, subdistrict: 2 });
+  assert.equal(first.ticket.amountDueHalere, 25000, "cena podrevíru");
+  assert.deepEqual(first.ticket.subdistrict, { number: "2", label: "2 – Dolní nádrž" });
+  await order({ date, subdistrict: 2 });
+  const full = await call("POST", "/orders", { body: orderBody({ date, subdistrict: 2 }) });
+  assert.equal(full.data.code, "sold_out", "kapacita podrevíru 2");
+  const day = (await call("GET", "/reviry/revir-a/availability")).data.days.find((d) => d.date === date);
+  assert.deepEqual(day.subdistricts.map((s) => [s.number, s.available]), [[1, 30 - day.subdistricts[0].taken], [2, 0]]);
+  assert.equal((await order({ date, subdistrict: 1 })).ticket.subdistrict.number, "1", "podrevír 1 má místa dál");
+  assert.equal((await call("GET", `/tickets/${first.ticket.code}`)).data.subdistrict.label, "2 – Dolní nádrž", "veřejná kontrola ukazuje podrevír");
+  const mail = await lastEmail(first.ticket.email, "payment_instructions");
+  assert.match(mail.text, /Podrevír: 2 – Dolní nádrž/);
+
+  // Revír s jediným podrevírem v prodeji: podrevír se doplní sám.
+  const manager = await managerAccount();
+  const view = (await call("GET", "/manage/settings", { session: manager.session })).data;
+  const revirB = view.reviry.find((r) => r.id === "revir-b");
+  const single = await call("PUT", "/manage/settings/reviry/revir-b", { body: { data: { ...revirB.data, subdistrictList: [{ number: 1, name: "Jediná nádrž", priceCzk: 120, dailyCapacity: 3 }], ticketSubdistricts: [1] }, note: "Jeden podrevír" }, session: manager.session });
+  assert.equal(single.status, 200, JSON.stringify(single.data));
+  const auto = await order({ revirId: "revir-b", date });
+  assert.deepEqual([auto.ticket.subdistrict, auto.ticket.amountDueHalere], [{ number: "1", label: "1 – Jediná nádrž" }, 12000]);
+  assert.equal((await call("PUT", "/manage/settings/reviry/revir-b", { body: { data: revirB.data, note: "Zpět" }, session: manager.session })).status, 200);
 });
 
 // ---------- pozvání správce ----------

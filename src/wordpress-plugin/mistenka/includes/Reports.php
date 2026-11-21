@@ -178,6 +178,21 @@ final class Reports
     }
 
     // ---------- přehledy ----------
+    // Místenky na podrevír (revíry s podrevíry v prodeji): počet, tržby, úlovky.
+    private function bySubdistrict(array $issued): array
+    {
+        $rows = [];
+        foreach ($issued as $t) {
+            if (empty($t['subdistrict'])) continue;
+            $key = $t['revir_id'] . '|' . $t['subdistrict'];
+            if (!isset($rows[$key])) $rows[$key] = ['revirId' => $t['revir_id'], 'revir' => $this->revirName($t['revir_id']), 'number' => Js::str($t['subdistrict']), 'label' => Config::subdistrictName(Config::getRevir($this->app->config, $t['revir_id']), $t['subdistrict']), 'tickets' => 0, 'revenueHalere' => 0, 'catches' => 0];
+            $rows[$key]['tickets']++;
+            if ($t['paid_at']) $rows[$key]['revenueHalere'] += (int) $t['amount_due_halere'];
+            $rows[$key]['catches'] += (int) Db::val('SELECT COUNT(*) FROM {p}catches WHERE ticket_id = ?', $t['id']);
+        }
+        return array_values($rows);
+    }
+
     public function stats($from, $to, $revirId): array
     {
         $range = self::validRange($from, $to);
@@ -260,6 +275,7 @@ final class Reports
         ksort($months);
         return array_merge($range, [
             'revirId' => $revir, 'revir' => $this->revirName($revir), 'generatedAt' => Time::nowIso(), 'summary' => $summary,
+            'bySubdistrict' => $this->bySubdistrict($issued),
             'catches' => ['total' => count($catches), 'weightKg' => Js::round2(array_sum(array_column($catchRows, 'weightKg'))), 'bySpecies' => $catchRows],
             'stocking' => ['costHalere' => array_sum(array_column($stocked, 'costHalere')), 'bySpecies' => array_values(array_map(fn($s) => array_merge($s, ['kg' => Js::round2($s['kg'])]), $stocked))],
             'balance' => $balance,

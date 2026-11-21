@@ -149,9 +149,24 @@ final class Service
         return in_array($this->stateOf($ticket, $at), ['active', 'expired_unreturned', 'seized'], true);
     }
 
-    private function takenSeats(string $revirId, string $date, int $excludeId = 0): int
+    // Obsazená místa: v revíru, nebo jen v podrevíru (místenky na podrevír).
+    private function takenSeats(string $revirId, string $date, int $excludeId = 0, ?string $subdistrict = null): int
     {
+        if ($subdistrict !== null) return (int) Db::val("SELECT COUNT(*) AS n FROM {p}tickets WHERE revir_id = ? AND fishing_date = ? AND id != ? AND subdistrict = ? AND (status = 'issued' OR (status = 'pending_payment' AND reserved_until > ?))", $revirId, $date, $excludeId, $subdistrict, Time::nowIso());
         return (int) Db::val("SELECT COUNT(*) AS n FROM {p}tickets WHERE revir_id = ? AND fishing_date = ? AND id != ? AND (status = 'issued' OR (status = 'pending_payment' AND reserved_until > ?))", $revirId, $date, $excludeId, Time::nowIso());
+    }
+
+    // Podrevír v prodeji (cena a kapacita), nebo null = místenka na celý revír.
+    private static function saleOf(array $revir, $subdistrict): ?array
+    {
+        if ($subdistrict === null || $subdistrict === '') return null;
+        foreach ($revir['saleSubdistricts'] ?? [] as $s) if (Js::str($s['number']) === Js::str($subdistrict)) return $s;
+        return null;
+    }
+
+    private static function capacityOf(array $revir, ?string $subdistrict): int
+    {
+        return (int) (self::saleOf($revir, $subdistrict)['dailyCapacity'] ?? $revir['dailyCapacity']);
     }
 
     private function findTicket($code): array
@@ -238,6 +253,7 @@ final class Service
         return [
             'code' => $ticket['code'],
             'revir' => ['id' => $revir['id'], 'name' => $revir['name'], 'number' => $revir['number'] ?? ''],
+            'subdistrict' => ($ticket['subdistrict'] ?? null) ? ['number' => Js::str($ticket['subdistrict']), 'label' => Config::subdistrictName($revir, $ticket['subdistrict'])] : null,
             'date' => $ticket['fishing_date'],
             'status' => $status,
             'late' => $status === 'expired_unreturned' || $status === 'closed_unreturned' || ($status === 'expired_returned' && (bool) $ticket['return_late']) || ($status === 'seized' && $now >= $w['end']),
@@ -281,9 +297,17 @@ final class Service
         $days = [];
         for ($offset = 0; $offset <= $revir['bookingDaysAhead']; $offset++) {
             $date = Time::addDays($today, $offset);
-            $taken = $this->takenSeats($revir['id'], $date);
             $day = $this->app->operations->dayStatus($revir['id'], $date);
-            $days[] = ['date' => $date, 'capacity' => $revir['dailyCapacity'], 'taken' => $taken, 'available' => $day['open'] ? max(0, $revir['dailyCapacity'] - $taken) : 0, 'closed' => !$day['open'], 'closedReason' => $day['open'] ? null : $day['reason'], 'closedCode' => $day['open'] ? null : $day['code']];
+            // Revír s podrevíry v prodeji: místa a cena po podrevírech, den = součet.
+            $subs = [];
+            foreach ($revir['saleSubdistricts'] ?? [] as $s) {
+                $t = $this->takenSeats($revir['id'], $date, 0, Js::str($s['number']));
+                $subs[] = ['number' => $s['number'], 'name' => $s['name'], 'priceCzk' => $s['priceCzk'], 'capacity' => $s['dailyCapacity'], 'taken' => $t, 'available' => $day['open'] ? max(0, $s['dailyCapacity'] - $t) : 0];
+            }
+            $capacity = $subs ? array_sum(array_column($subs, 'capacity')) : $revir['dailyCapacity'];
+            $taken = $subs ? array_sum(array_column($subs, 'taken')) : $this->takenSeats($revir['id'], $date);
+            $available = $subs ? array_sum(array_column($subs, 'available')) : ($day['open'] ? max(0, $capacity - $taken) : 0);
+            $days[] = ['date' => $date, 'capacity' => $capacity, 'taken' => $taken, 'available' => $available, 'subdistricts' => $subs, 'closed' => !$day['open'], 'closedReason' => $day['open'] ? null : $day['reason'], 'closedCode' => $day['open'] ? null : $day['code']];
         }
         return ['revirId' => $revir['id'], 'today' => $today, 'days' => $days];
     }
@@ -302,7 +326,16 @@ final class Service
         if (($input['declaration'] ?? null) !== true) throw new ApiError(400, 'declaration_required', 'Potvrďte čestné prohlášení a podmínky rezervace.');
         $voucherCode = self::normalizeCode($input['voucherCode'] ?? null);
         if ($voucherCode !== '' && !preg_match(self::VOUCHER_RE, $voucherCode)) throw new ApiError(400, 'invalid_voucher', 'Kód poukazu musí mít 16 znaků A–Z nebo 0–9.');
-        return compact('revir', 'date', 'memberId', 'firstName', 'lastName', 'birthDate', 'email', 'voucherCode');
+        // Revír s podrevíry v prodeji: místenka platí pro jeden vybraný podrevír; jediný se vybere automaticky.
+        $subdistrict = null;
+        $sales = $revir['saleSubdistricts'] ?? [];
+        if ($sales) {
+            $wanted = $input['subdistrict'] ?? null;
+            $sale = count($sales) === 1 && ($wanted === null || $wanted === '') ? $sales[0] : self::saleOf($revir, $wanted);
+            if (!$sale) throw new ApiError(400, 'invalid_subdistrict', 'Vyberte podrevír, na který místenku kupujete.');
+            $subdistrict = Js::str($sale['number']);
+        }
+        return compact('revir', 'date', 'memberId', 'firstName', 'lastName', 'birthDate', 'email', 'voucherCode', 'subdistrict');
     }
 
     public function createOrder(array $input, ?array $user): array
@@ -317,7 +350,7 @@ final class Service
                 $until = $block['until_date'] ? 'do ' . implode('. ', array_map('intval', array_reverse(explode('-', $block['until_date'])))) : 'do odvolání';
                 throw new ApiError(403, 'member_blocked', "Nákup místenek je pro toto číslo legitimace pozastaven {$until}. Důvod: {$block['reason']}. Kontaktujte správce organizace.");
             }
-            if ($this->takenSeats($revir['id'], $order['date']) >= $revir['dailyCapacity']) throw new ApiError(409, 'sold_out', 'Na vybraný den už nejsou volná místa.');
+            if ($this->takenSeats($revir['id'], $order['date'], 0, $order['subdistrict']) >= self::capacityOf($revir, $order['subdistrict'])) throw new ApiError(409, 'sold_out', $order['subdistrict'] !== null ? 'Na vybraný den už v tomto podrevíru nejsou volná místa.' : 'Na vybraný den už nejsou volná místa.');
             if ($order['voucherCode'] !== '') {
                 $voucher = Db::row('SELECT * FROM {p}vouchers WHERE code = ?', $order['voucherCode']);
                 if (!$voucher || ($voucher['revir_id'] && $voucher['revir_id'] !== $revir['id'])) throw new ApiError(400, 'invalid_voucher', 'Poukaz není platný.');
@@ -326,13 +359,13 @@ final class Service
             }
             $now = Time::now();
             $nowIso = Time::iso($now);
-            $price = (int) Js::round(Js::number($revir['priceCzk']) * 100);
+            $price = (int) Js::round(Js::number(self::saleOf($revir, $order['subdistrict'])['priceCzk'] ?? $revir['priceCzk']) * 100);
             $due = $order['voucherCode'] !== '' ? 0 : $price;
             $free = $due === 0;
             $code = $this->makeCode();
-            $ticketId = Db::insert('INSERT INTO {p}tickets (code, revir_id, fishing_date, member_id, first_name, last_name, birth_date, email, price_halere, amount_due_halere, variable_symbol, voucher_code, status, created_at, reserved_until, paid_at, issued_at, user_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                $code, $revir['id'], $order['date'], $order['memberId'], $order['firstName'], $order['lastName'], $order['birthDate'], $order['email'],
+            $ticketId = Db::insert('INSERT INTO {p}tickets (code, revir_id, subdistrict, fishing_date, member_id, first_name, last_name, birth_date, email, price_halere, amount_due_halere, variable_symbol, voucher_code, status, created_at, reserved_until, paid_at, issued_at, user_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                $code, $revir['id'], $order['subdistrict'], $order['date'], $order['memberId'], $order['firstName'], $order['lastName'], $order['birthDate'], $order['email'],
                 $price, $due, $free ? null : $this->makeVariableSymbol(), $order['voucherCode'] !== '' ? $order['voucherCode'] : null, $free ? 'issued' : 'pending_payment', $nowIso,
                 $free ? null : Time::iso(Time::addMinutes($now, (int) $this->config()['payment']['reservationMinutes'])), null, $free ? $nowIso : null, $user['id'] ?? null);
             if ($order['voucherCode'] !== '') {
@@ -424,9 +457,15 @@ final class Service
         return null;
     }
 
-    // Výměra vody, na kterou místenka platí: největší z jejích podrevírů, jinak výměra revíru.
-    private static function ticketAreaHa(array $revir): ?float
+    // Výměra vody, na kterou místenka platí: její podrevír, jinak největší z podrevírů v prodeji, jinak výměra revíru.
+    private function ticketAreaHa(array $ticket): ?float
     {
+        $revir = $this->revirOf($ticket);
+        if (!empty($ticket['subdistrict'])) {
+            foreach ($revir['subdistrictList'] ?? [] as $s) {
+                if (Js::str($s['number'] ?? '') === Js::str($ticket['subdistrict'])) { $own = self::parseHa($s['area'] ?? null); if ($own !== null) return $own; }
+            }
+        }
         $numbers = isset($revir['ticketSubdistricts']) && is_array($revir['ticketSubdistricts']) ? $revir['ticketSubdistricts'] : [];
         $areas = [];
         foreach ($numbers as $n) {
@@ -438,10 +477,10 @@ final class Service
         return self::parseHa($revir['area'] ?? null);
     }
 
-    private static function limitApplies(array $limit, array $revir): bool
+    private function limitApplies(array $limit, array $ticket): bool
     {
         if (!isset($limit['maxAreaHa'])) return true;
-        $area = self::ticketAreaHa($revir);
+        $area = $this->ticketAreaHa($ticket);
         return ($area ?? INF) <= $limit['maxAreaHa'];
     }
 
@@ -466,10 +505,10 @@ final class Service
             $out[] = ['id' => $limit['id'], 'label' => $limit['label'], 'period' => 'day', 'from' => $ticket['fishing_date'], 'to' => $ticket['fishing_date'], 'maxCount' => $limit['maxCount'], 'count' => $count, 'exceeded' => $count > $limit['maxCount'], 'source' => $limit['source'] ?? ''];
         }
         foreach ($rules['periodLimits'] ?? [] as $limit) {
-            if (!self::limitApplies($limit, $revir)) continue;
+            if (!$this->limitApplies($limit, $ticket)) continue;
             $range = self::periodRange($limit['period'], $ticket['fishing_date']);
-            $tickets = array_filter(Db::all("SELECT id, revir_id FROM {p}tickets WHERE member_id = ? AND status = 'issued' AND fishing_date BETWEEN ? AND ?", $ticket['member_id'], $range['from'], $range['to']),
-                fn($t) => self::limitApplies($limit, $this->revirOf($t)));
+            $tickets = array_filter(Db::all("SELECT id, revir_id, subdistrict FROM {p}tickets WHERE member_id = ? AND status = 'issued' AND fishing_date BETWEEN ? AND ?", $ticket['member_id'], $range['from'], $range['to']),
+                fn($t) => $this->limitApplies($limit, $t));
             $count = 0;
             foreach ($tickets as $t) {
                 foreach (Db::all('SELECT species FROM {p}catches WHERE ticket_id = ?', $t['id']) as $c) if (in_array($speciesIdOf($c['species']), $limit['species'], true)) $count++;
@@ -708,7 +747,7 @@ final class Service
     {
         $status = $this->stateOf($t);
         return [
-            'code' => $t['code'], 'date' => $t['fishing_date'], 'revirId' => $t['revir_id'], 'revir' => $this->revirOf($t)['name'], 'firstName' => $t['first_name'], 'lastName' => $t['last_name'], 'memberId' => $t['member_id'], 'email' => $t['email'],
+            'code' => $t['code'], 'date' => $t['fishing_date'], 'revirId' => $t['revir_id'], 'revir' => $this->revirOf($t)['name'], 'subdistrict' => !empty($t['subdistrict']) ? Config::subdistrictName($this->revirOf($t), $t['subdistrict']) : null, 'firstName' => $t['first_name'], 'lastName' => $t['last_name'], 'memberId' => $t['member_id'], 'email' => $t['email'],
             'status' => $status, 'late' => $this->publicTicket($t)['late'], 'seized' => (bool) $t['seized_at'], 'priceHalere' => $t['price_halere'], 'amountDueHalere' => $t['amount_due_halere'], 'voucherUsed' => (bool) $t['voucher_code'],
             'catchCount' => (int) Db::val('SELECT COUNT(*) AS n FROM {p}catches WHERE ticket_id = ?', $t['id']), 'noCatch' => (bool) $t['no_catch'], 'createdAt' => $t['created_at'], 'paidAt' => $t['paid_at'], 'returnedAt' => $t['returned_at'], 'account' => (bool) $t['user_id'],
         ];
@@ -749,12 +788,12 @@ final class Service
             return preg_match('/[;"\n\r]/', $text) ? '"' . str_replace('"', '""', $text) . '"' : $text;
         };
         $money = fn($halere) => str_replace('.', ',', number_format($halere / 100, 2, '.', ''));
-        $header = ['Kód', 'Revír', 'Datum lovu', 'Jméno', 'Příjmení', 'Č. legitimace', 'E-mail', 'Stav', 'Opožděně', 'Zadržena', 'Cena Kč', 'Zaplaceno Kč', 'Poukaz', 'Úlovky', 'Bez úlovku', 'Vytvořeno', 'Zaplaceno', 'Odevzdáno'];
+        $header = ['Kód', 'Revír', 'Podrevír', 'Datum lovu', 'Jméno', 'Příjmení', 'Č. legitimace', 'E-mail', 'Stav', 'Opožděně', 'Zadržena', 'Cena Kč', 'Zaplaceno Kč', 'Poukaz', 'Úlovky', 'Bez úlovku', 'Vytvořeno', 'Zaplaceno', 'Odevzdáno'];
         $lines = [];
         foreach ($this->searchTickets($filters) as $t) {
             $r = $this->manageRow($t);
             $catches = implode(', ', array_map(fn($c) => "{$c['species']} " . Js::str($c['length_cm']) . ' cm' . ($c['weight_kg'] ? ' ' . Js::str($c['weight_kg']) . ' kg' : ''), Db::all('SELECT species, length_cm, weight_kg FROM {p}catches WHERE ticket_id = ? ORDER BY id', $t['id'])));
-            $lines[] = implode(';', array_map($cell, [$r['code'], $r['revir'], $r['date'], $r['firstName'], $r['lastName'], $r['memberId'], $r['email'], $r['status'], $r['late'] ? 'ano' : '', $r['seized'] ? 'ano' : '',
+            $lines[] = implode(';', array_map($cell, [$r['code'], $r['revir'], $r['subdistrict'] ?? '', $r['date'], $r['firstName'], $r['lastName'], $r['memberId'], $r['email'], $r['status'], $r['late'] ? 'ano' : '', $r['seized'] ? 'ano' : '',
                 $money($r['priceHalere']), $money($t['paid_at'] ? $r['amountDueHalere'] : 0), $r['voucherUsed'] ? 'ano' : '', $catches, $r['noCatch'] ? 'ano' : '', $r['createdAt'], $r['paidAt'] ?? '', $r['returnedAt'] ?? '']));
         }
         return "\u{FEFF}" . implode("\r\n", array_merge([implode(';', $header)], $lines)) . "\r\n"; // BOM + středník: Excel v češtině
@@ -927,7 +966,8 @@ final class Service
                         $pending = $this->stateOf($ticket) === 'pending_payment';
                         $dayNotOver = Time::pragueToday() <= $ticket['fishing_date'];
                         $revir = $this->revirOf($ticket);
-                        $seatFree = $dayNotOver && $this->takenSeats($ticket['revir_id'], $ticket['fishing_date'], $ticket['id']) < ($revir['dailyCapacity'] ?? 0);
+                        $sub = !empty($ticket['subdistrict']) ? Js::str($ticket['subdistrict']) : null;
+                        $seatFree = $dayNotOver && $this->takenSeats($ticket['revir_id'], $ticket['fishing_date'], (int) $ticket['id'], $sub) < self::capacityOf($revir, $sub);
                         if ($pending || $seatFree) {
                             $this->issuePaid($ticket);
                             $result = 'matched';

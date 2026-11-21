@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
-const SCHEMA_VERSION = 16;
+const SCHEMA_VERSION = 17;
 
 // Sloupce tabulky users (sdílí vytvoření i migrace).
 const USERS_COLUMNS = `
@@ -105,6 +105,8 @@ function openDatabase(dataDir, { autoRecover = true } = {}) {
     if (!existing.length) return; // tabulka vznikne níže už s novými sloupci
     for (const [column, definition] of columns) if (!existing.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   };
+  // Migrace 16 -> 17: místenka na jeden podrevír (null = celý revír).
+  addColumns("tickets", [["subdistrict", "TEXT"]]);
   addColumns("tickets", [["cancel_reason", "TEXT"], ["cancelled_by", "INTEGER"], ["rules_version", "TEXT"], ["anonymized_at", "TEXT"]]);
   addColumns("bank_transactions", [["resolution", "TEXT"], ["resolution_note", "TEXT"], ["resolved_at", "TEXT"], ["resolved_by", "INTEGER"]]);
   addColumns("member_blocks", [["cause", "TEXT"]]);
@@ -150,6 +152,7 @@ function openDatabase(dataDir, { autoRecover = true } = {}) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       code TEXT NOT NULL UNIQUE,
       revir_id TEXT NOT NULL,
+      subdistrict TEXT,                        -- podrevír místenky (číslo), null = celý revír
       fishing_date TEXT NOT NULL,              -- YYYY-MM-DD (kalendářní den v Praze)
       member_id TEXT NOT NULL,              -- číslo členské legitimace (8 číslic)
       first_name TEXT NOT NULL,

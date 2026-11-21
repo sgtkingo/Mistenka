@@ -4,7 +4,7 @@ const { transaction } = require("./db");
 const time = require("./time");
 const emails = require("./emails");
 const { noticeRecipients } = require("./mail-accounts");
-const { getRevir } = require("./config");
+const { getRevir, subdistrictName } = require("./config");
 const { ApiError } = require("./validate");
 
 const iso = (date) => date.toISOString();
@@ -189,6 +189,15 @@ function createReports({ db, config, appUrl }) {
     for (const c of catches) month(c.fishing_date).catches += 1;
     for (const s of stocking) month(s.date).stockingHalere += s.cost_halere || 0;
     return {
+      // Místenky na podrevír (revíry s podrevíry v prodeji): počet, tržby, úlovky.
+      bySubdistrict: [...issued.filter((t) => t.subdistrict).reduce((map, t) => {
+        const key = `${t.revir_id}|${t.subdistrict}`;
+        const row = map.get(key) || { revirId: t.revir_id, revir: revirName(t.revir_id), number: t.subdistrict, label: subdistrictName(getRevir(config, t.revir_id), t.subdistrict), tickets: 0, revenueHalere: 0, catches: 0 };
+        row.tickets += 1;
+        if (t.paid_at) row.revenueHalere += t.amount_due_halere;
+        row.catches += db.prepare("SELECT COUNT(*) AS n FROM catches WHERE ticket_id = ?").get(t.id).n;
+        return map.set(key, row);
+      }, new Map()).values()],
       ...range, revirId: revir, revir: revirName(revir), generatedAt: iso(time.now()), summary,
       catches: { total: catches.length, weightKg: Math.round(catchRows.reduce((sum, c) => sum + c.weightKg, 0) * 100) / 100, bySpecies: catchRows },
       stocking: { costHalere: [...stockedBySpecies.values()].reduce((sum, s) => sum + s.costHalere, 0), bySpecies: [...stockedBySpecies.values()].map((s) => ({ ...s, kg: Math.round(s.kg * 100) / 100 })) },

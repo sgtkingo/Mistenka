@@ -63,6 +63,21 @@ final class Config
         if (empty($config['organization']['shortName'])) self::fail('chybí organization.shortName');
         if (!isset($config['reviry']) || !is_array($config['reviry']) || !$config['reviry'] || Js::isAssoc($config['reviry'])) self::fail('chybí seznam reviry');
         if (empty($config['payment']['accountNumber']) || empty($config['payment']['bankCode'])) self::fail('chybí payment.accountNumber nebo payment.bankCode');
+        // Lhůta pro opožděné odevzdání je jedna pro celou MO (portál → Limity a blokace, výchozí 7 dní).
+        // Starší konfigurace ji měly u revíru – převezme se hodnota prvního revíru.
+        $legacyDays = null;
+        foreach ($config['reviry'] as $r) if (is_array($r) && Js::isInteger($r['lateReturnDays'] ?? null)) { $legacyDays = $r['lateReturnDays']; break; }
+        $config['returnPolicy'] = array_merge(['lateReturnDays' => $legacyDays ?? 7], is_array($config['returnPolicy'] ?? null) ? $config['returnPolicy'] : []);
+        $days = $config['returnPolicy']['lateReturnDays'];
+        if (!Js::isInteger($days) || $days < 0 || $days > 60) self::fail('lhůta pro opožděné odevzdání musí být 0–60 dní');
+        foreach ($config['reviry'] as $i => $r) if (is_array($r)) $config['reviry'][$i]['lateReturnDays'] = $days;
+        // Prodej dopředu je také jeden pro celou MO (portál → Ceny a místa, výchozí 3 dny).
+        $legacyAhead = null;
+        foreach ($config['reviry'] as $r) if (is_array($r) && Js::isInteger($r['bookingDaysAhead'] ?? null)) { $legacyAhead = $r['bookingDaysAhead']; break; }
+        $config['salesPolicy'] = array_merge(['bookingDaysAhead' => $legacyAhead ?? 3], is_array($config['salesPolicy'] ?? null) ? $config['salesPolicy'] : []);
+        $ahead = $config['salesPolicy']['bookingDaysAhead'];
+        if (!Js::isInteger($ahead) || $ahead < 0 || $ahead > 60) self::fail('prodej dopředu musí být 0–60 dní');
+        foreach ($config['reviry'] as $i => $r) if (is_array($r)) $config['reviry'][$i]['bookingDaysAhead'] = $ahead;
         $ids = [];
         foreach ($config['reviry'] as $revir) {
             $id = is_array($revir) ? Js::str($revir['id'] ?? '') : '';
@@ -116,6 +131,15 @@ final class Config
         unset($config['organization']['managerEmail'], $config['email']);
         $contactEmail = $config['organization']['contact']['email'] ?? '';
         if ($contactEmail && !self::emailOk($contactEmail)) self::fail('neplatný veřejný e-mail');
+        // Podrevír v prodeji může mít vlastní cenu a počet míst (jinak platí hodnoty revíru).
+        foreach ($config['reviry'] as $i => $r) {
+            foreach (is_array($r['subdistrictList'] ?? null) ? $r['subdistrictList'] : [] as $s) {
+                $n = Js::str($s['number'] ?? '');
+                if (array_key_exists('priceCzk', $s) && $s['priceCzk'] !== null && !(Js::isNumber($s['priceCzk']) && $s['priceCzk'] >= 0)) self::fail("revír {$r['id']}, podrevír {$n}: cena musí být číslo >= 0");
+                if (array_key_exists('dailyCapacity', $s) && $s['dailyCapacity'] !== null && !(Js::isInteger($s['dailyCapacity']) && $s['dailyCapacity'] >= 1)) self::fail("revír {$r['id']}, podrevír {$n}: počet míst musí být kladné celé číslo");
+            }
+            $config['reviry'][$i]['saleSubdistricts'] = self::saleSubdistricts($r);
+        }
         $orgRules = self::speciesRulesFor($speciesDocs, $config['speciesRules'] ?? null, 'organizace');
         foreach ($config['reviry'] as $i => $revir) {
             $rules = !empty($revir['speciesRules']) ? self::speciesRulesFor($speciesDocs, $revir['speciesRules'], 'revír ' . $revir['id']) : $orgRules;
@@ -181,6 +205,31 @@ final class Config
     {
         foreach ($config['reviry'] as $revir) if ($revir['id'] === $id) return $revir;
         return null;
+    }
+
+    // Podrevíry v prodeji (ticketSubdistricts): místenka platí pro jeden z nich, každý má cenu a počet míst
+    // (vlastní, jinak revíru). Prázdné = místenka na celý revír.
+    public static function saleSubdistricts(array $revir): array
+    {
+        $out = [];
+        foreach (is_array($revir['ticketSubdistricts'] ?? null) ? $revir['ticketSubdistricts'] : [] as $number) {
+            $s = [];
+            foreach ($revir['subdistrictList'] ?? [] as $item) if (Js::str($item['number'] ?? '') === Js::str($number)) $s = $item;
+            $out[] = [
+                'number' => $number, 'name' => $s['name'] ?? '', 'area' => $s['area'] ?? '',
+                'priceCzk' => Js::isNumber($s['priceCzk'] ?? null) ? $s['priceCzk'] : $revir['priceCzk'],
+                'dailyCapacity' => Js::isInteger($s['dailyCapacity'] ?? null) ? $s['dailyCapacity'] : $revir['dailyCapacity'],
+            ];
+        }
+        return $out;
+    }
+
+    // Podrevír místenky, např. "1 – Petr 1" (null = celý revír).
+    public static function subdistrictName(?array $revir, $number): ?string
+    {
+        if ($number === null || $number === '') return null;
+        foreach ($revir['subdistrictList'] ?? [] as $s) if (Js::str($s['number'] ?? '') === Js::str($number) && !empty($s['name'])) return Js::str($number) . ' – ' . $s['name'];
+        return Js::str($number);
     }
 
     // Podrevíry, na které se místenka vztahuje, např. "1 – Petr 1, 2 – Petr 2" (null = celý revír).

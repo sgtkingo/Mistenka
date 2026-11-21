@@ -1,5 +1,7 @@
 // PDF místenky bez externích knihoven: místenka se vykreslí na plátno (systémové písmo → plná česká diakritika),
 // vloží se do jednostránkového PDF (A4) jako obrázek JPEG a odkaz na kontrolu zůstane klikací.
+// Nad obrázkem je neviditelná textová vrstva (jako u PDF s OCR): každý text na stejném místě a se stejnými
+// šířkami znaků, takže údaje jdou označit, kopírovat i vyhledat (Unicode přes ToUnicode, vč. diakritiky).
 (function () {
   const W = 1240; // A4 při ~150 DPI
   const H = 1754;
@@ -15,14 +17,23 @@
     if (fill) { ctx.fillStyle = fill; ctx.fill(); }
     if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
   }
+  let textRuns = []; // textová vrstva PDF: { chars: [[znak, šířka px]], x, y, size, m (transformace plátna) }
   function text(ctx, value, x, y, { size = 24, weight = 400, color = COL.ink, align = "left", spacing = 0 } = {}) {
+    const str = String(value ?? "");
     ctx.font = `${weight} ${size}px ${FONT}`;
     ctx.fillStyle = color;
     ctx.textAlign = align;
     ctx.textBaseline = "alphabetic";
     if ("letterSpacing" in ctx) ctx.letterSpacing = `${spacing}px`;
-    ctx.fillText(String(value ?? ""), x, y);
+    ctx.fillText(str, x, y);
     if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
+    if (!str.trim()) return;
+    // Šířky znaků pro textovou vrstvu (stejné písmo a proložení jako na plátně).
+    const chars = Array.from(str).map((ch) => [ch, ctx.measureText(ch).width + spacing]);
+    const width = chars.reduce((sum, [, w]) => sum + w, 0);
+    const startX = align === "center" ? x - width / 2 : align === "right" ? x - width : x;
+    const t = ctx.getTransform();
+    textRuns.push({ chars, x: startX, y, size, m: [t.a, t.b, t.c, t.d, t.e, t.f] });
   }
   // Zalomení textu do šířky; vrátí y pod posledním řádkem.
   function wrap(ctx, value, x, y, maxWidth, { size = 22, lineHeight = 1.45, color = COL.ink, weight = 400 } = {}) {
@@ -47,6 +58,7 @@
 
   function drawTicket({ ticket, revir, organization, checkUrl, hours }) {
     const { czDate, qrMatrix, subdistrictLabel, subdistrictTitle, czk } = window.Mistenka;
+    textRuns = [];
     const canvas = document.createElement("canvas");
     canvas.width = W;
     canvas.height = H;
@@ -66,10 +78,10 @@
     // Revír
     let y = 268;
     text(ctx, [revir.name, revir.number].filter(Boolean).join(" · "), M, y, { size: 40, weight: 700 });
-    const sub = subdistrictLabel(revir);
+    const sub = subdistrictLabel(revir, ticket);
     const kind = [revir.kind, revir.union].filter(Boolean).join(" · ");
     y += 40;
-    if (sub || kind) text(ctx, [sub && `${subdistrictTitle(revir)} ${sub}`, kind].filter(Boolean).join("  ·  "), M, y, { size: 22, color: COL.muted });
+    if (sub || kind) text(ctx, [sub && `${subdistrictTitle(revir, ticket)} ${sub}`, kind].filter(Boolean).join("  ·  "), M, y, { size: 22, color: COL.muted });
 
     // Kód + QR
     y = 350;
@@ -108,7 +120,7 @@
     y += 34;
     text(ctx, "Než vyrazíte", M, y, { size: 26, weight: 700 });
     y += 44;
-    const checks = ["Mějte u sebe platný rybářský lístek a povolenku – místenka je nenahrazuje.", "Místenka platí jen pro uvedený den a revír" + (sub ? ` (${subdistrictTitle(revir).toLowerCase()} ${sub}).` : "."), "Každý úlovek ihned zapište do povolenky."];
+    const checks = ["Mějte u sebe platný rybářský lístek a povolenku – místenka je nenahrazuje.", "Místenka platí jen pro uvedený den a revír" + (sub ? ` (${subdistrictTitle(revir, ticket).toLowerCase()} ${sub}).` : "."), "Každý úlovek ihned zapište do povolenky."];
     for (const item of checks) {
       text(ctx, "✓", M, y, { size: 24, weight: 700, color: COL.ok });
       y = wrap(ctx, item, M + 38, y, W - 2 * M - 38, { size: 22 }) + 6;
@@ -146,36 +158,72 @@
       ctx.restore();
     }
     // Klikací oblasti v PDF (QR a odkaz) v pixelech plátna.
-    return { canvas, links: [{ x: qrX, y, w: qrSize, h: qrSize, url: checkUrl, top: 350 }, { x: M + 30, y: H - 110, w: W - 2 * M - 60, h: 26, url: checkUrl }] };
+    return { canvas, runs: textRuns, links: [{ x: qrX, y, w: qrSize, h: qrSize, url: checkUrl, top: 350 }, { x: M + 30, y: H - 110, w: W - 2 * M - 60, h: 26, url: checkUrl }] };
   }
 
-  // Jednostránkové PDF s obrázkem JPEG (DCTDecode) a odkazy.
-  function buildPdf(jpegBytes, links) {
+  // Neviditelná textová vrstva: písmo s vlastním 8bitovým kódováním (kód → znak přes ToUnicode), text režim 3
+  // (nevykresluje se), polohy a šířky znaků podle plátna (TJ s posunem každého znaku na změřenou šířku).
+  function textLayer(runs) {
+    const codes = new Map();
+    for (const run of runs) for (const [ch] of run.chars) if (!codes.has(ch) && codes.size < 254) codes.set(ch, codes.size + 1);
+    const hex = (n, len = 2) => n.toString(16).toUpperCase().padStart(len, "0");
+    const utf16 = (ch) => Array.from(ch).map((c) => { const cp = c.codePointAt(0); if (cp < 0x10000) return hex(cp, 4); const v = cp - 0x10000; return hex(0xd800 + (v >> 10), 4) + hex(0xdc00 + (v & 0x3ff), 4); }).join("");
+    const entries = [...codes].map(([ch, code]) => `<${hex(code)}> <${utf16(ch)}>`);
+    let cmap = "/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def /CMapName /Mistenka-UCS def /CMapType 2 def\n1 begincodespacerange <01> <FF> endcodespacerange\n";
+    for (let i = 0; i < entries.length; i += 100) cmap += `${Math.min(100, entries.length - i)} beginbfchar\n${entries.slice(i, i + 100).join("\n")}\nendbfchar\n`;
+    cmap += "endcmap CMapName currentdict /CMap defineresource pop end end";
+    const n = Math.max(1, codes.size);
+    const font = `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /FirstChar 1 /LastChar ${n} /Widths [${Array(n).fill(500).join(" ")}] /Encoding << /Type /Encoding /Differences [1 ${Array.from({ length: n }, (_, i) => `/g${i + 1}`).join(" ")}] >> /ToUnicode TOUNICODE >>`;
+    const f = (v) => (Math.round(v * 1000) / 1000).toString();
+    let content = "BT 3 Tr\n";
+    for (const run of runs) {
+      const [a, b, c, d, e, g] = run.m;
+      const px = (a * run.x + c * run.y + e) * PT;
+      const py = 842 - (b * run.x + d * run.y + g) * PT;
+      // Směr textu z plátna (osa y dolů) do PDF (osa y nahoru).
+      content += `/F1 ${f(run.size * PT)} Tf ${f(a)} ${f(-b)} ${f(-c)} ${f(d)} ${f(px)} ${f(py)} Tm [`;
+      for (const [ch, w] of run.chars) {
+        const code = codes.get(ch);
+        if (!code) continue;
+        content += `<${hex(code)}>${f(500 - (w / run.size) * 1000)}`;
+      }
+      content += "] TJ\n";
+    }
+    content += "ET";
+    return { font, cmap, content };
+  }
+
+  // Jednostránkové PDF s obrázkem JPEG (DCTDecode), neviditelnou textovou vrstvou a odkazy.
+  function buildPdf(jpegBytes, links, runs = []) {
     const enc = new TextEncoder();
     const parts = [];
     let length = 0;
     const offsets = [];
     const push = (part) => { const bytes = typeof part === "string" ? enc.encode(part) : part; parts.push(bytes); length += bytes.length; };
     const obj = (n, body) => { offsets[n] = length; push(`${n} 0 obj\n${body}\nendobj\n`); };
-    const annots = links.map((_, i) => `${6 + i} 0 R`).join(" ");
+    const layer = textLayer(runs);
+    const first = 8; // 6 = písmo, 7 = ToUnicode, od 8 odkazy
+    const annots = links.map((_, i) => `${first + i} 0 R`).join(" ");
     push("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
     obj(1, "<< /Type /Catalog /Pages 2 0 R >>");
     obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
-    obj(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im1 4 0 R >> >> /Contents 5 0 R /Annots [${annots}] >>`);
+    obj(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im1 4 0 R >> /Font << /F1 6 0 R >> >> /Contents 5 0 R /Annots [${annots}] >>`);
     offsets[4] = length;
     push(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${W} /Height ${H} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`);
     push(jpegBytes);
     push("\nendstream\nendobj\n");
-    const draw = "q 595 0 0 842 0 0 cm /Im1 Do Q";
-    obj(5, `<< /Length ${draw.length} >>\nstream\n${draw}\nendstream`);
+    const draw = `q 595 0 0 842 0 0 cm /Im1 Do Q\n${layer.content}`;
+    obj(5, `<< /Length ${enc.encode(draw).length} >>\nstream\n${draw}\nendstream`);
+    obj(6, layer.font.replace("TOUNICODE", "7 0 R"));
+    obj(7, `<< /Length ${enc.encode(layer.cmap).length} >>\nstream\n${layer.cmap}\nendstream`);
     links.forEach((link, i) => {
       const x1 = (link.x * PT).toFixed(1);
       const y1 = (842 - (link.top ?? link.y) * PT - link.h * PT).toFixed(1);
       const x2 = ((link.x + link.w) * PT).toFixed(1);
       const y2 = (842 - (link.top ?? link.y) * PT).toFixed(1);
-      obj(6 + i, `<< /Type /Annot /Subtype /Link /Rect [${x1} ${y1} ${x2} ${y2}] /Border [0 0 0] /A << /S /URI /URI (${link.url.replace(/([\\()])/g, "\\$1")}) >> >>`);
+      obj(first + i, `<< /Type /Annot /Subtype /Link /Rect [${x1} ${y1} ${x2} ${y2}] /Border [0 0 0] /A << /S /URI /URI (${link.url.replace(/([\\()])/g, "\\$1")}) >> >>`);
     });
-    const count = 6 + links.length;
+    const count = first + links.length;
     const xref = length;
     let table = `xref\n0 ${count}\n0000000000 65535 f \n`;
     for (let n = 1; n < count; n++) table += `${String(offsets[n]).padStart(10, "0")} 00000 n \n`;
@@ -185,9 +233,9 @@
 
   async function download(options) {
     if (document.fonts?.ready) await document.fonts.ready;
-    const { canvas, links } = drawTicket(options);
+    const { canvas, links, runs } = drawTicket(options);
     const jpeg = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
-    const pdf = buildPdf(new Uint8Array(await jpeg.arrayBuffer()), links);
+    const pdf = buildPdf(new Uint8Array(await jpeg.arrayBuffer()), links, runs);
     const url = URL.createObjectURL(pdf);
     const link = document.createElement("a");
     link.href = url;
@@ -198,5 +246,5 @@
     window.setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
 
-  window.MistenkaPdf = { download, drawTicket };
+  window.MistenkaPdf = { download, drawTicket, buildPdf };
 })();

@@ -30,6 +30,7 @@ qsa(".manage-nav-item").forEach((item) => item.addEventListener("click", () => {
   if (section === "limits") loadLimits();
   if (section === "announcements") loadAnnouncements();
   if (section === "seasons") loadSeasons();
+  if (section === "pricing") loadPricing();
   if (section === "email") loadEmail();
   if (section === "notifications") loadNotifications();
 }));
@@ -115,6 +116,7 @@ async function loadPenaltyRules() {
     const lp = penaltyOrg.limitPolicy || {};
     const pp = penaltyOrg.penaltyPolicy || {};
     const late = pp.lateReturn || {};
+    qs("#lateReturnDays").value = penaltyOrg.returnPolicy?.lateReturnDays ?? 7;
     const seizure = pp.seizure || {};
     // Přepínač zapnuto/vypnuto; vypnuté pravidlo se uloží s počtem 0, pole se zašedí.
     const row = (key, label, help, count, days, extra = "") => {
@@ -163,6 +165,15 @@ qs("#penaltyForm").addEventListener("submit", (event) => submitForm(event, async
   };
   await api("/manage/settings/organization", { method: "PUT", body: { data, note: "Pravidla při porušení" } });
   showToast("Pravidla uložena.");
+  loadPenaltyRules();
+}));
+
+qs("#returnPolicyForm").addEventListener("submit", (event) => submitForm(event, async () => {
+  const days = Number(qs("#lateReturnDays").value);
+  if (!Number.isInteger(days) || days < 0 || days > 60) throw new Error("Lhůta pro odevzdání musí být celé číslo 0–60 dní.");
+  const data = { ...structuredClone(penaltyOrg), returnPolicy: { lateReturnDays: days } };
+  await api("/manage/settings/organization", { method: "PUT", body: { data, note: "Lhůta pro odevzdání" } });
+  showToast(`Lhůta pro odevzdání: ${days} dní.`);
   loadPenaltyRules();
 }));
 
@@ -252,7 +263,7 @@ async function loadTickets(append = false) {
       const state = ticketState(t);
       return `<tr class="clickable" data-code="${esc(t.code)}"><td data-label="Den">${esc(czDate(t.date, { year: false }))}</td><td data-label="Kód"><b>${esc(t.code)}</b></td>
         <td data-label="Rybář">${esc(`${t.firstName} ${t.lastName}`)}<br><small class="muted-inline">${esc(t.memberId)}${t.account ? " · účet" : ""}</small></td>
-        <td data-label="Revír">${esc(t.revir)}</td><td data-label="Stav"><span class="badge badge-${esc(state.tone)}">${esc(state.label)}</span>${t.seized && t.status !== "seized" ? ' <span class="badge badge-bad">zadržena</span>' : ""}</td>
+        <td data-label="Revír">${esc(t.revir)}${t.subdistrict ? `<br><small class="muted-inline">${esc(t.subdistrict)}</small>` : ""}</td><td data-label="Stav"><span class="badge badge-${esc(state.tone)}">${esc(state.label)}</span>${t.seized && t.status !== "seized" ? ' <span class="badge badge-bad">zadržena</span>' : ""}</td>
         <td data-label="Úlovky">${t.status === "expired_returned" ? (t.noCatch ? "bez úlovku" : esc(t.catchCount)) : ""}</td><td data-label="Cena">${t.voucherUsed ? "poukaz" : esc(czk(t.priceHalere))}</td></tr>`;
     }).join("");
     if (append) qs("#ticketTable tbody").insertAdjacentHTML("beforeend", rows);
@@ -284,7 +295,7 @@ async function openTicket(code) {
         <div><dt>Rybář</dt><dd>${esc(`${t.firstName} ${t.lastName}`)}${t.account ? " (účet)" : ""}</dd></div>
         <div><dt>Č. legitimace · narozen</dt><dd>${esc(t.memberId)} · ${esc(czDate(t.birthDate))}</dd></div>
         <div><dt>E-mail</dt><dd>${esc(t.email)}</dd></div>
-        <div><dt>Revír · den lovu</dt><dd>${esc(t.revir.name)} · ${esc(czDate(t.date, { weekday: true }))}</dd></div>
+        <div><dt>Revír · den lovu</dt><dd>${esc(t.revir.name)}${t.subdistrict ? ` (${esc(t.subdistrict.label)})` : ""} · ${esc(czDate(t.date, { weekday: true }))}</dd></div>
         <div><dt>Cena</dt><dd>${esc(czk(t.priceHalere))}${t.voucherUsed ? " · poukaz" : ""}${t.variableSymbol ? ` · VS ${esc(t.variableSymbol)}` : ""}</dd></div>
         <div><dt>Vytvořeno · vystaveno</dt><dd>${esc(czDateTime(t.createdAt))}${t.issuedAt ? ` · ${esc(czDateTime(t.issuedAt))}` : ""}</dd></div>
         ${t.returnedAt ? `<div><dt>Odevzdáno</dt><dd>${esc(czDateTime(t.returnedAt))}${t.late ? " · opožděně" : ""}</dd></div>` : ""}
@@ -419,6 +430,53 @@ qs("#announcementForm").addEventListener("submit", (event) => submitForm(event, 
   loadAnnouncements();
 }));
 
+// ---------- ceny a místa ----------
+// Prodejní údaje v jedné tabulce: revír s podrevíry v prodeji má cenu a místa po podrevírech (místenka platí
+// pro jeden podrevír), jinak za celý revír. Ukládá se jako nová verze nastavení revíru (PUT /manage/settings/reviry/{id}).
+async function loadPricing() {
+  loadSalesPolicy();
+  const panel = qs("#pricingPanel");
+  try {
+    const view = await api("/manage/settings");
+    const input = (cls, value, attrs) => `<input class="${cls}" type="number" value="${esc(value ?? "")}" ${attrs}>`;
+    const activeSubs = (r) => (r.data.ticketSubdistricts || []).map((n) => ({ number: n, ...((r.data.subdistrictList || []).find((s) => String(s.number) === String(n)) || {}) }));
+    const row = (r, s = null) => `
+      <tr data-revir="${esc(r.id)}"${s ? ` data-sub="${esc(s.number)}"` : ""}><td data-label="Revír">${s ? `<span class="pricing-sub">${esc(s.name ? `${s.number} – ${s.name}` : `Podrevír ${s.number}`)}</span>` : `<b>${esc(r.data.name)}</b><br><small class="muted-inline">celý revír</small>`}</td>
+      <td data-label="Cena za den (Kč)">${input("pr-price", s ? s.priceCzk ?? r.data.priceCzk : r.data.priceCzk, 'min="0" step="1"')}</td>
+      <td data-label="Míst na den">${input("pr-capacity", s ? s.dailyCapacity ?? r.data.dailyCapacity : r.data.dailyCapacity, 'min="1" step="1"')}</td>
+      <td class="row-actions"><button class="primary-button pr-save" type="button">Uložit</button></td></tr>`;
+    panel.innerHTML = `<table class="data-table pricing-table"><thead><tr><th>Revír / podrevír</th><th>Cena za den (Kč)</th><th>Míst na den</th><th></th></tr></thead><tbody>${view.reviry.map((r) => {
+      const subs = activeSubs(r);
+      return subs.length ? `<tr class="pricing-revir"><td colspan="4"><b>${esc(r.data.name)}</b> <small class="muted-inline">místenka na jeden podrevír${subs.length === 1 ? " (vybere se automaticky)" : ""}</small></td></tr>${subs.map((s) => row(r, s)).join("")}` : row(r);
+    }).join("")}</tbody></table>
+      <p class="field-help">Které podrevíry se prodávají, určíte v sekci Revíry (sloupec „Platí místenka“). Podrevír v prodeji má vlastní cenu a počet míst; místenka platí pro jeden vybraný podrevír.</p>
+      <p class="field-help">Kolik dní dopředu se místenky prodávají, nastavíte pro celou organizaci v sekci Sezona a uzavření. Nový revír založíte v sekci Revíry.</p>`;
+    qsa("tr[data-revir]", panel).forEach((row) => qs(".pr-save", row).addEventListener("click", async (event) => {
+      const revir = view.reviry.find((r) => r.id === row.dataset.revir);
+      const num = (cls, label, int = true) => {
+        const value = Number(qs(cls, row).value);
+        if (qs(cls, row).value.trim() === "" || !Number.isFinite(value) || (int && !Number.isInteger(value))) throw new Error(`${revir.data.name}: ${label} – zadejte ${int ? "celé " : ""}číslo.`);
+        return value;
+      };
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        const price = num(".pr-price", "cena", false);
+        const capacity = num(".pr-capacity", "míst na den");
+        const data = structuredClone(revir.data);
+        if (row.dataset.sub) {
+          data.subdistrictList = (data.subdistrictList || []).map((s) => (String(s.number) === row.dataset.sub ? { ...s, priceCzk: price, dailyCapacity: capacity } : s));
+        } else Object.assign(data, { priceCzk: price, dailyCapacity: capacity });
+        delete data.lateReturnDays; // lhůta pro odevzdání a prodej dopředu jsou u MO
+        delete data.bookingDaysAhead;
+        await api(`/manage/settings/reviry/${encodeURIComponent(revir.id)}`, { method: "PUT", body: { data, note: "Ceny a místa" } });
+        showToast(`${revir.data.name}${row.dataset.sub ? `, podrevír ${row.dataset.sub}` : ""}: uloženo.`);
+        loadPricing();
+      } catch (error) { showToast(error.message); button.disabled = false; }
+    }));
+  } catch (error) { panel.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
+}
+
 // ---------- sezony a uzavření ----------
 const SEASON_STATES = { upcoming: ["Připravená", "info"], open: ["Otevřená", "ok"], closed: ["Uzavřená", "off"] };
 let seasonToday = "";
@@ -465,6 +523,21 @@ function renderRevirStatus(seasons) {
     }));
   });
 }
+// Prodej dopředu – jeden údaj pro celou organizaci (nastavení organizace: salesPolicy).
+let salesOrg = null;
+async function loadSalesPolicy() {
+  try {
+    salesOrg = (await api("/manage/settings")).organization.data;
+    qs("#bookingDaysAhead").value = salesOrg.salesPolicy?.bookingDaysAhead ?? 3;
+  } catch (error) { showToast(error.message); }
+}
+qs("#salesPolicyForm").addEventListener("submit", (event) => submitForm(event, async () => {
+  const days = Number(qs("#bookingDaysAhead").value);
+  if (!Number.isInteger(days) || days < 0 || days > 60) throw new Error("Prodej dopředu musí být celé číslo 0–60 dní.");
+  await api("/manage/settings/organization", { method: "PUT", body: { data: { ...structuredClone(salesOrg), salesPolicy: { bookingDaysAhead: days } }, note: "Prodej dopředu" } });
+  showToast(days ? `Místenky se prodávají ${days} dní dopředu.` : "Místenky se prodávají jen na dnešek.");
+  loadSalesPolicy();
+}));
 async function loadSeasons() {
   try {
     const [{ seasons }, { closures }, cfg] = await Promise.all([api("/manage/seasons"), api("/manage/closures"), api("/config")]);

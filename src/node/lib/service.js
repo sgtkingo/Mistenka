@@ -3,7 +3,7 @@
 const crypto = require("node:crypto");
 const { transaction } = require("./db");
 const time = require("./time");
-const { getRevir, revirRules } = require("./config");
+const { getRevir, revirRules, subdistrictName } = require("./config");
 const { spayd } = require("./payments");
 const emails = require("./emails");
 const { GROUPS, groupOf, noticeRecipients } = require("./mail-accounts");
@@ -84,10 +84,15 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     const state = stateOf(ticket, at);
     return state === "active" || state === "expired_unreturned" || state === "seized";
   }
-  function takenSeats(revirId, date, excludeId = 0) {
+  // Obsazená místa: v revíru, nebo jen v podrevíru (místenky na podrevír).
+  function takenSeats(revirId, date, excludeId = 0, subdistrict = null) {
     return db.prepare(`SELECT COUNT(*) AS n FROM tickets WHERE revir_id = ? AND fishing_date = ? AND id != ?
-      AND (status = 'issued' OR (status = 'pending_payment' AND reserved_until > ?))`).get(revirId, date, excludeId, iso(time.now())).n;
+      AND (? IS NULL OR subdistrict = ?)
+      AND (status = 'issued' OR (status = 'pending_payment' AND reserved_until > ?))`).get(revirId, date, excludeId, subdistrict, subdistrict, iso(time.now())).n;
   }
+  // Kapacita a cena místenky: podrevíru (je-li v prodeji), jinak revíru.
+  const saleOf = (revir, subdistrict) => (subdistrict === null || subdistrict === undefined ? null : (revir.saleSubdistricts || []).find((s) => String(s.number) === String(subdistrict)) || null);
+  const capacityOf = (revir, subdistrict) => saleOf(revir, subdistrict)?.dailyCapacity ?? revir.dailyCapacity;
   function findTicket(code) {
     const normalized = normalizeCode(code);
     if (!CODE_RE.test(normalized)) throw new ApiError(400, "invalid_code", "Kód místenky má 6 znaků A–Z a 0–9.");
@@ -151,6 +156,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     return {
       code: ticket.code,
       revir: { id: revir.id, name: revir.name, number: revir.number || "" },
+      subdistrict: ticket.subdistrict ? { number: ticket.subdistrict, label: subdistrictName(revir, ticket.subdistrict) } : null,
       date: ticket.fishing_date,
       status,
       late: status === "expired_unreturned" || status === "closed_unreturned" || (status === "expired_returned" && Boolean(ticket.return_late)) || (status === "seized" && time.now() >= w.end),
@@ -200,9 +206,16 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     const days = [];
     for (let offset = 0; offset <= revir.bookingDaysAhead; offset++) {
       const date = time.addDays(today, offset);
-      const taken = takenSeats(revir.id, date);
       const day = operations.dayStatus(revir.id, date);
-      days.push({ date, capacity: revir.dailyCapacity, taken, available: day.open ? Math.max(0, revir.dailyCapacity - taken) : 0, closed: !day.open, closedReason: day.open ? null : day.reason, closedCode: day.open ? null : day.code });
+      // Revír s podrevíry v prodeji: místa a cena po podrevírech, den = součet.
+      const subdistricts = (revir.saleSubdistricts || []).map((s) => {
+        const taken = takenSeats(revir.id, date, 0, String(s.number));
+        return { number: s.number, name: s.name, priceCzk: s.priceCzk, capacity: s.dailyCapacity, taken, available: day.open ? Math.max(0, s.dailyCapacity - taken) : 0 };
+      });
+      const capacity = subdistricts.length ? subdistricts.reduce((sum, s) => sum + s.capacity, 0) : revir.dailyCapacity;
+      const taken = subdistricts.length ? subdistricts.reduce((sum, s) => sum + s.taken, 0) : takenSeats(revir.id, date);
+      const available = subdistricts.length ? subdistricts.reduce((sum, s) => sum + s.available, 0) : day.open ? Math.max(0, capacity - taken) : 0;
+      days.push({ date, capacity, taken, available, subdistricts, closed: !day.open, closedReason: day.open ? null : day.reason, closedCode: day.open ? null : day.code });
     }
     return { revirId: revir.id, today, days };
   }
@@ -220,7 +233,15 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     if (input.declaration !== true) throw new ApiError(400, "declaration_required", "Potvrďte čestné prohlášení a podmínky rezervace.");
     const voucherCode = normalizeCode(input.voucherCode);
     if (voucherCode && !VOUCHER_RE.test(voucherCode)) throw new ApiError(400, "invalid_voucher", "Kód poukazu musí mít 16 znaků A–Z nebo 0–9.");
-    return { revir, date, memberId, firstName, lastName, birthDate, email, voucherCode };
+    // Revír s podrevíry v prodeji: místenka platí pro jeden vybraný podrevír.
+    let subdistrict = null;
+    if ((revir.saleSubdistricts || []).length) {
+      // Jediný podrevír v prodeji se vybere automaticky.
+      const sale = revir.saleSubdistricts.length === 1 && (input.subdistrict === undefined || input.subdistrict === null || input.subdistrict === "") ? revir.saleSubdistricts[0] : saleOf(revir, input.subdistrict);
+      if (!sale) throw new ApiError(400, "invalid_subdistrict", "Vyberte podrevír, na který místenku kupujete.");
+      subdistrict = String(sale.number);
+    }
+    return { revir, date, memberId, firstName, lastName, birthDate, email, voucherCode, subdistrict };
   }
 
   function createOrder(input, user = null) {
@@ -231,7 +252,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       if (!day.open) throw new ApiError(409, day.code, day.code === "revir_closed" ? `Revír je v tento den mimořádně uzavřen: ${day.reason}` : `${day.reason}. Místenku na tento den nelze koupit.`);
       const block = activeBlock(order.memberId);
       if (block) throw new ApiError(403, "member_blocked", `Nákup místenek je pro toto číslo legitimace pozastaven ${block.until ? `do ${block.until.split("-").reverse().map(Number).join(". ")}` : "do odvolání"}. Důvod: ${block.reason}. Kontaktujte správce organizace.`);
-      if (takenSeats(revir.id, order.date) >= revir.dailyCapacity) throw new ApiError(409, "sold_out", "Na vybraný den už nejsou volná místa.");
+      if (takenSeats(revir.id, order.date, 0, order.subdistrict) >= capacityOf(revir, order.subdistrict)) throw new ApiError(409, "sold_out", order.subdistrict ? "Na vybraný den už v tomto podrevíru nejsou volná místa." : "Na vybraný den už nejsou volná místa.");
       if (order.voucherCode) {
         const voucher = db.prepare("SELECT * FROM vouchers WHERE code = ?").get(order.voucherCode);
         if (!voucher || (voucher.revir_id && voucher.revir_id !== revir.id)) throw new ApiError(400, "invalid_voucher", "Poukaz není platný.");
@@ -239,14 +260,14 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
         if (voucher.used_at) throw new ApiError(409, "voucher_used", "Poukaz už byl použit.");
       }
       const now = time.now();
-      const price = Math.round(Number(revir.priceCzk) * 100);
+      const price = Math.round(Number(saleOf(revir, order.subdistrict)?.priceCzk ?? revir.priceCzk) * 100);
       const due = order.voucherCode ? 0 : price;
       const free = due === 0;
       const code = makeCode();
-      const result = db.prepare(`INSERT INTO tickets (code, revir_id, fishing_date, member_id, first_name, last_name, birth_date, email,
+      const result = db.prepare(`INSERT INTO tickets (code, revir_id, subdistrict, fishing_date, member_id, first_name, last_name, birth_date, email,
         price_halere, amount_due_halere, variable_symbol, voucher_code, status, created_at, reserved_until, paid_at, issued_at, user_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-        code, revir.id, order.date, order.memberId, order.firstName, order.lastName, order.birthDate, order.email,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        code, revir.id, order.subdistrict, order.date, order.memberId, order.firstName, order.lastName, order.birthDate, order.email,
         price, due, free ? null : makeVariableSymbol(), order.voucherCode || null, free ? "issued" : "pending_payment", iso(now),
         free ? null : iso(new Date(now.getTime() + config.payment.reservationMinutes * 60_000)), null, free ? iso(now) : null, user?.id ?? null
       );
@@ -328,14 +349,19 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
   // ---------- limity úlovků (B3) ----------
   // Počítají se podle čísla legitimace z odevzdaných místenek v Místence (i bez účtu).
   const parseHa = (text) => { const m = String(text || "").replace(",", ".").match(/(\d+(?:\.\d+)?)\s*ha/); return m ? Number(m[1]) : null; };
-  // Výměra vody, na kterou místenka platí: největší z jejích podrevírů, jinak výměra revíru.
-  function ticketAreaHa(revir) {
+  // Výměra vody, na kterou místenka platí: její podrevír, jinak největší z podrevírů v prodeji, jinak výměra revíru.
+  function ticketAreaHa(ticket) {
+    const revir = revirOf(ticket);
+    if (ticket.subdistrict) {
+      const own = parseHa((revir.subdistrictList || []).find((s) => String(s.number) === String(ticket.subdistrict))?.area);
+      if (own !== null) return own;
+    }
     const numbers = Array.isArray(revir.ticketSubdistricts) ? revir.ticketSubdistricts : [];
     const areas = numbers.map((n) => parseHa((revir.subdistrictList || []).find((s) => String(s.number) === String(n))?.area));
     if (areas.length && areas.every((a) => a !== null)) return Math.max(...areas);
     return parseHa(revir.area);
   }
-  const limitApplies = (limit, revir) => limit.maxAreaHa === undefined || limit.maxAreaHa === null || (ticketAreaHa(revir) ?? Infinity) <= limit.maxAreaHa;
+  const limitApplies = (limit, ticket) => limit.maxAreaHa === undefined || limit.maxAreaHa === null || (ticketAreaHa(ticket) ?? Infinity) <= limit.maxAreaHa;
   function periodRange(period, date) {
     if (period === "week") { const from = time.weekStart(date); return { from, to: time.addDays(from, 6) }; }
     if (period === "month") return { from: `${date.slice(0, 8)}01`, to: time.monthEnd(date) };
@@ -354,10 +380,10 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       out.push({ id: limit.id, label: limit.label, period: "day", from: ticket.fishing_date, to: ticket.fishing_date, maxCount: limit.maxCount, count, exceeded: count > limit.maxCount, source: limit.source || "" });
     }
     for (const limit of rules.periodLimits || []) {
-      if (!limitApplies(limit, revir)) continue;
+      if (!limitApplies(limit, ticket)) continue;
       const range = periodRange(limit.period, ticket.fishing_date);
-      const tickets = db.prepare("SELECT id, revir_id FROM tickets WHERE member_id = ? AND status = 'issued' AND fishing_date BETWEEN ? AND ?").all(ticket.member_id, range.from, range.to)
-        .filter((t) => limitApplies(limit, revirOf(t)));
+      const tickets = db.prepare("SELECT id, revir_id, subdistrict FROM tickets WHERE member_id = ? AND status = 'issued' AND fishing_date BETWEEN ? AND ?").all(ticket.member_id, range.from, range.to)
+        .filter((t) => limitApplies(limit, t));
       let count = 0;
       for (const t of tickets) {
         count += db.prepare("SELECT species FROM catches WHERE ticket_id = ?").all(t.id).filter((c) => limit.species.includes(speciesIdOf(c.species))).length;
@@ -561,7 +587,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     const status = stateOf(t);
     const catchCount = db.prepare("SELECT COUNT(*) AS n FROM catches WHERE ticket_id = ?").get(t.id).n;
     return {
-      code: t.code, date: t.fishing_date, revirId: t.revir_id, revir: revirOf(t).name, firstName: t.first_name, lastName: t.last_name, memberId: t.member_id, email: t.email,
+      code: t.code, date: t.fishing_date, revirId: t.revir_id, revir: revirOf(t).name, subdistrict: t.subdistrict ? subdistrictName(revirOf(t), t.subdistrict) : null, firstName: t.first_name, lastName: t.last_name, memberId: t.member_id, email: t.email,
       status, late: publicTicket(t).late, seized: Boolean(t.seized_at), priceHalere: t.price_halere, amountDueHalere: t.amount_due_halere, voucherUsed: Boolean(t.voucher_code),
       catchCount, noCatch: Boolean(t.no_catch), createdAt: t.created_at, paidAt: t.paid_at, returnedAt: t.returned_at, account: Boolean(t.user_id)
     };
@@ -591,11 +617,11 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
   }
   function ticketsCsv(filters = {}) {
     const cell = (value) => { const text = String(value ?? ""); return /[;"\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; };
-    const header = ["Kód", "Revír", "Datum lovu", "Jméno", "Příjmení", "Č. legitimace", "E-mail", "Stav", "Opožděně", "Zadržena", "Cena Kč", "Zaplaceno Kč", "Poukaz", "Úlovky", "Bez úlovku", "Vytvořeno", "Zaplaceno", "Odevzdáno"];
+    const header = ["Kód", "Revír", "Podrevír", "Datum lovu", "Jméno", "Příjmení", "Č. legitimace", "E-mail", "Stav", "Opožděně", "Zadržena", "Cena Kč", "Zaplaceno Kč", "Poukaz", "Úlovky", "Bez úlovku", "Vytvořeno", "Zaplaceno", "Odevzdáno"];
     const lines = searchTickets(filters).map((t) => {
       const r = manageRow(t);
       const catches = db.prepare("SELECT species, length_cm, weight_kg FROM catches WHERE ticket_id = ? ORDER BY id").all(t.id).map((c) => `${c.species} ${c.length_cm} cm${c.weight_kg ? ` ${c.weight_kg} kg` : ""}`).join(", ");
-      return [r.code, r.revir, r.date, r.firstName, r.lastName, r.memberId, r.email, r.status, r.late ? "ano" : "", r.seized ? "ano" : "", (r.priceHalere / 100).toFixed(2).replace(".", ","), (t.paid_at ? r.amountDueHalere / 100 : 0).toFixed(2).replace(".", ","), r.voucherUsed ? "ano" : "", catches, r.noCatch ? "ano" : "", r.createdAt, r.paidAt || "", r.returnedAt || ""].map(cell).join(";");
+      return [r.code, r.revir, r.subdistrict || "", r.date, r.firstName, r.lastName, r.memberId, r.email, r.status, r.late ? "ano" : "", r.seized ? "ano" : "", (r.priceHalere / 100).toFixed(2).replace(".", ","), (t.paid_at ? r.amountDueHalere / 100 : 0).toFixed(2).replace(".", ","), r.voucherUsed ? "ano" : "", catches, r.noCatch ? "ano" : "", r.createdAt, r.paidAt || "", r.returnedAt || ""].map(cell).join(";");
     });
     return "\uFEFF" + [header.join(";"), ...lines].join("\r\n") + "\r\n"; // BOM + středník: Excel v češtině
   }
@@ -740,7 +766,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
             const pending = stateOf(ticket) === "pending_payment";
             const dayNotOver = time.pragueToday() <= ticket.fishing_date;
             const revir = revirOf(ticket);
-            const seatFree = dayNotOver && takenSeats(ticket.revir_id, ticket.fishing_date, ticket.id) < (revir.dailyCapacity || 0);
+            const seatFree = dayNotOver && takenSeats(ticket.revir_id, ticket.fishing_date, ticket.id, ticket.subdistrict || null) < (capacityOf(revir, ticket.subdistrict || null) || 0);
             if (pending || seatFree) {
               issuePaid(ticket);
               result = "matched";

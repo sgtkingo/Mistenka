@@ -29,6 +29,7 @@
         <button class="manage-nav-item" type="button" data-section="limits">Limity a blokace</button>
         <span class="manage-nav-group">Revíry</span>
         <button class="manage-nav-item" type="button" data-section="reviry">Revíry</button>
+        <button class="manage-nav-item" type="button" data-section="pricing">Ceny a místa</button>
         <button class="manage-nav-item" type="button" data-section="seasons">Sezona a uzavření</button>
         <button class="manage-nav-item" type="button" data-section="announcements">Vývěska</button>
         <span class="manage-nav-group">Hospodaření</span>
@@ -115,6 +116,12 @@
       <section class="panel-card manage-section hidden" id="section-limits">
         <div class="panel-heading"><div><span class="section-kicker">Limity úlovků</span><h1>Limity a blokace</h1></div></div>
         <p class="panel-intro">Porušení pravidel nikdy neblokuje odevzdání. Nákup místenek lze pozastavit ručně, nebo automaticky podle pravidel níže.</p>
+        <h2 class="manage-h2">Lhůta pro odevzdání</h2>
+        <form id="returnPolicyForm" class="return-policy" novalidate>
+          <label class="field-label" for="lateReturnDays">Opožděné odevzdání místenky</label>
+          <div class="return-policy-row"><div class="input-suffix"><input id="lateReturnDays" type="number" min="0" max="60" value="7"><span>dní po dni lovu</span></div><button class="primary-button" type="submit">Uložit lhůtu</button></div>
+          <p class="field-help">Platí pro všechny revíry (výchozí 7 dní). Po uplynutí lhůty se místenka automaticky uzavře jako neodevzdaná, bez úlovku; automatická uzávěrka sezony vzniká až po této lhůtě. Změna platí i pro už vystavené místenky.</p>
+        </form>
         <h2 class="manage-h2">Pravidla při porušení</h2>
         <form id="penaltyForm" novalidate><div id="penaltyRules"><p class="muted">Načítám…</p></div></form>
         <h2 class="manage-h2">Blokace nákupu</h2>
@@ -178,9 +185,20 @@
         <div id="closureList"></div>
       </section>
 
+      <section class="panel-card manage-section hidden" id="section-pricing">
+        <div class="panel-heading"><div><span class="section-kicker">Revíry</span><h1>Ceny a místa</h1></div></div>
+        <p class="panel-intro">Cena místenky, počet míst na den a kolik dní dopředu se prodává – pro každý revír. Změna ceny platí pro nové objednávky (vystavené místenky si cenu pamatují), změna kapacity hned. Každé uložení vytvoří novou verzi nastavení revíru; historii a obnovení najdete v sekci Revíry.</p>
+        <div id="pricingPanel"><p class="muted">Načítám…</p></div>
+        <form id="salesPolicyForm" class="return-policy sales-policy" novalidate>
+          <label class="field-label" for="bookingDaysAhead">Prodej dopředu</label>
+          <div class="return-policy-row"><div class="input-suffix"><input id="bookingDaysAhead" type="number" min="0" max="60" value="3"><span>dní (0 = jen dnes)</span></div><button class="secondary-button" type="submit">Uložit</button></div>
+          <p class="field-help">Platí pro všechny revíry: kolik dní dopředu si rybář může koupit místenku (dnešek + tento počet dní).</p>
+        </form>
+      </section>
+
       <section class="panel-card manage-section hidden" id="section-reviry">
         <div class="panel-heading"><div><span class="section-kicker">Organizace</span><h1>Revíry</h1></div></div>
-        <p class="panel-intro">Údaje revírů: cena, kapacita, prodej dopředu, podrevíry, doba lovu, texty a pravidla. Každé uložení vytvoří novou verzi s vaším jménem; starší verzi lze obnovit.</p>
+        <p class="panel-intro">Údaje revírů: název, podrevíry, doba lovu, texty a pravidla (ceny a místa mají vlastní sekci). Každé uložení vytvoří novou verzi s vaším jménem; starší verzi lze obnovit.</p>
         <div class="settings-host" data-host="reviry"></div>
       </section>
 

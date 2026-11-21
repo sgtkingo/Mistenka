@@ -51,9 +51,9 @@ Všechno, co se liší mezi organizacemi a revíry, je v konfiguraci (Node: `con
 | `id` | stálý identifikátor (`a-z0-9-`), ukládá se k místence |
 | `priceCzk` | cena za den v Kč |
 | `dailyCapacity` | max. počet místenek na den (vydané + nezaplacené s platnou rezervací) |
-| `bookingDaysAhead` | kolik dní dopředu lze kupovat (0 = jen dnes) |
-| `lateReturnDays` | kolik dní po konci dne lovu lze místenku odevzdat opožděně (7); pak se automaticky uzavře jako neodevzdaná |
-| `subdistrictList`, `ticketSubdistricts` | podrevíry revíru `[{ number, name, area }]` a čísla podrevírů, pro které místenka platí (např. `[1]` nebo `[1, 2]`); bez `ticketSubdistricts` platí pro celý revír. Zobrazují se v rekapitulaci, na místence, v PDF a v e-mailu |
+| `bookingDaysAhead` | jen pro čtení: kolik dní dopředu lze kupovat (dnešek + N). Jedna hodnota pro celou MO – `salesPolicy.bookingDaysAhead` v nastavení organizace (portál → Ceny a místa, výchozí 3); starší konfigurace převezmou hodnotu prvního revíru |
+| `lateReturnDays` | jen pro čtení: kolik dní po konci dne lovu lze místenku odevzdat opožděně; pak se automaticky uzavře jako neodevzdaná. Hodnota je jedna pro celou MO – `returnPolicy.lateReturnDays` v nastavení organizace (portál → Limity a blokace, výchozí 7); starší konfigurace s lhůtou u revíru převezmou hodnotu prvního revíru |
+| `subdistrictList`, `ticketSubdistricts` | podrevíry revíru `[{ number, name, area, priceCzk?, dailyCapacity? }]` a čísla podrevírů **v prodeji** (např. `[1]` nebo `[1, 2]`). Místenka platí pro **jeden** podrevír, který rybář vybere při nákupu; každý má vlastní cenu a počet míst na den (bez nich platí `priceCzk` / `dailyCapacity` revíru). Jediný podrevír v prodeji se vybere automaticky. Bez `ticketSubdistricts` je místenka na celý revír (cena a místa revíru). `GET /config` má u revíru navíc `saleSubdistricts: [{ number, name, area, priceCzk, dailyCapacity }]` (efektivní hodnoty). Podrevír se zobrazuje v rekapitulaci, na místence, v PDF, v e-mailech a při kontrole. Portál: ceny a místa v sekci Ceny a místa |
 | `speciesRules` | volitelně jiný soubor pravidel druhů ryb než organizační |
 | `speciesOverrides` | úpravy jednotlivých druhů pro revír, např. `[{ "id": "lin-obecny", "minLength": 30 }]` |
 | `fishingHours`, `rules`, `notice`, `permitNote`, … | texty a pravidla pro UI |
@@ -126,21 +126,21 @@ Není součástí API. Frontend ji načítá přímo z [Open-Meteo](https://open
 Veřejná konfigurace: `organization` (`name`, `shortName`, `web`, `privacyUrl`, `contact`), `payment` (`mode`: `fake` | `fio`, `reservationMinutes`), `reviry[]` (včetně `species`), `today` (Praha), `now`, `devMode`, `service: { launched }` (viz Spuštění služby). Nikdy neobsahuje číslo účtu, IBAN ani tokeny.
 
 ### `GET /reviry/{id}/availability`
-`{ revirId, today, days: [{ date, capacity, taken, available, closed, closedReason, closedCode }] }` pro dnešek až `bookingDaysAhead`. Uzavřený den (mimo sezonu nebo mimořádně uzavřený, viz Provoz) má `closed: true`, `available: 0`, důvod a kód (`out_of_season` | `revir_closed`); otevřený den má `closedReason` i `closedCode` `null`. Když jsou všechny dny `out_of_season`, úvodní stránka ukáže „sezona je uzavřená“. Neznámý revír → `404 unknown_revir`.
+`{ revirId, today, days: [{ date, capacity, taken, available, subdistricts: [{ number, name, priceCzk, capacity, taken, available }], closed, closedReason, closedCode }] }` pro dnešek až `bookingDaysAhead`. U revíru s podrevíry v prodeji jsou místa po podrevírech a `capacity` / `taken` / `available` dne jsou jejich součty; jinak je `subdistricts` prázdné. Uzavřený den (mimo sezonu nebo mimořádně uzavřený, viz Provoz) má `closed: true`, `available: 0`, důvod a kód (`out_of_season` | `revir_closed`); otevřený den má `closedReason` i `closedCode` `null`. Když jsou všechny dny `out_of_season`, úvodní stránka ukáže „sezona je uzavřená“. Neznámý revír → `404 unknown_revir`.
 
 ### `GET /announcements?revirId=`
 Důležité zprávy pro úvodní stránku: `{ announcements: [{ id, revirId, title, text, validFrom, validTo, pinned }] }` – nejvýš 3 aktivní (platné dnes) pro revír nebo celou MO (`revirId: null`), připnuté první, pak nejnovější.
 
 ### `POST /orders`
-Tělo: `{ revirId, date, memberId, firstName, lastName, birthDate, email, declaration: true, voucherCode? }`. Objednávka přihlášeného uživatele se uloží k jeho účtu (bez ohledu na zadané údaje; frontend je předvyplní z účtu).
+Tělo: `{ revirId, date, subdistrict?, memberId, firstName, lastName, birthDate, email, declaration: true, voucherCode? }`. `subdistrict` = číslo podrevíru – povinné u revíru s více podrevíry v prodeji (cena a kapacita podle podrevíru), u jediného se doplní samo, u revíru bez podrevírů se ignoruje. Místenka (`<PublicTicket>` a odvozené tvary) má `subdistrict: { number, label } | null` (`label` např. „2 – Dolní nádrž“). Objednávka přihlášeného uživatele se uloží k jeho účtu (bez ohledu na zadané údaje; frontend je předvyplní z účtu).
 
 Odpověď `201`: `{ token, ticket: <OwnerTicket> }`. U nezaplacené objednávky obsahuje `ticket.payment` (viz níže). Server odešle e-mail s pokyny k platbě, nebo rovnou s místenkou.
 
 | Chyba | `code` |
 | --- | --- |
-| 400 | `unknown_revir`, `invalid_date` (mimo dnešek…`bookingDaysAhead`), `invalid_member_id` (8 číslic), `invalid_name`, `invalid_birth_date`, `invalid_email`, `declaration_required`, `invalid_voucher` |
+| 400 | `unknown_revir`, `invalid_subdistrict` (chybí nebo neprodávaný podrevír), `invalid_date` (mimo dnešek…`bookingDaysAhead`), `invalid_member_id` (8 číslic), `invalid_name`, `invalid_birth_date`, `invalid_email`, `declaration_required`, `invalid_voucher` |
 | 403 | `member_blocked` |
-| 409 | `sold_out`, `voucher_used`, `out_of_season`, `revir_closed` |
+| 409 | `sold_out` (v revíru, příp. ve vybraném podrevíru), `voucher_used`, `out_of_season`, `revir_closed` |
 
 Kapacita, poukaz i vytvoření se provádějí v jedné transakci; poukaz se odepíše jen při úspěšném vytvoření.
 
@@ -381,7 +381,7 @@ Konfigurace = soubor (`config/organization.json` + pravidla druhů, ve WordPress
 
 | Část (`scope`) | Obsah | Kdo |
 | --- | --- | --- |
-| `organization` | `{ organization (vč. contact), publicCheck, limitPolicy, penaltyPolicy, privacy }` (e-maily ne – viz E-mailoví klienti) | správce, admin |
+| `organization` | `{ organization (vč. contact), returnPolicy: { lateReturnDays }, salesPolicy: { bookingDaysAhead }, publicCheck, limitPolicy, penaltyPolicy, privacy }` (e-maily ne – viz E-mailoví klienti) | správce, admin |
 | `payment` | `{ accountNumber, bankCode, recipientName, reservationMinutes, messagePrefix }` – po změně dostanou všichni admini e-mail `payment_settings_changed`; v portálu **Admin → Bankovní spojení** (podsekce Platební brána je zatím jen připravená, nepodporováno) | **jen admin** |
 | `revir:<id>` | revír bez `id` a odvozených `fishRules` (cena, kapacita, podrevíry, doba lovu, texty, pravidla, `speciesOverrides`, …) | správce, admin |
 | `species:<odkaz>` | dokument pravidel druhů (druhy, míry, hájení, `dailyLimits`, `periodLimits`) | správce, admin |
@@ -425,12 +425,13 @@ Pro `manager`/`admin` (🛠).
   "catches": { "total": 95, "weightKg": 180.4, "bySpecies": [{ "species": "kapr obecný", "count": 50, "weightKg": 140.2, "weighed": 44, "estimated": 30, "avgLength": 52.1, "maxLength": 69 }] },
   "stocking": { "costHalere": 2120000, "bySpecies": [{ "species": "kapr obecný", "pieces": 300, "kg": 150, "costHalere": 1800000 }] },
   "balance": [{ "species": "kapr obecný", "caughtCount": 50, "caughtKg": 140.2, "stockedPieces": 300, "stockedKg": 150, "balanceKg": 9.8 }],   // uloveno vs. nasazeno
-  "byMonth": [{ "month": "2026-11", "tickets": 4, "catches": 5, "revenueHalere": 80000, "stockingHalere": 2120000 }] }
+  "byMonth": [{ "month": "2026-11", "tickets": 4, "catches": 5, "revenueHalere": 80000, "stockingHalere": 2120000 }],
+  "bySubdistrict": [{ "revirId": "petruvka-1a", "revir": "Petrůvka 1 A", "number": "1", "label": "1 – Petr 1", "tickets": 4, "revenueHalere": 80000, "catches": 5 }] }   // jen místenky na podrevír
 ```
 
 Hmotnost úlovků se sčítá jen z vyplněných nebo dopočtených hodnot (`weighed` z `count`). Neodevzdané místenky po dni lovu se dělí: `awaitingReturn` = lhůta pro odevzdání ještě běží (lze je odevzdat nejpozději `returnDeadline`, poslední den nejzazší lhůty; jinak `null`), `unreturned` = uzavřené po lhůtě jako neodevzdané. `upcoming` = den lovu dnes nebo později. Platí `sold = returned + awaitingReturn + unreturned + upcoming`. Dokud je `awaitingReturn > 0`, statistika není konečná (portál to u přehledu i uložené uzávěrky upozorní).
 
-**Uzávěrky** – uložená statistika za období. Automatická (`kind: "season"`) vznikne plánovanou úlohou (jednou) až po lhůtě pro odevzdání posledního dne sezony – den po `closesOn + lateReturnDays` revíru (u sezony celé MO nejdelší lhůta), takže je konečná se všemi odevzdanými úlovky; příjemci upozornění dostanou e-mail `season_report` a vznikne trvalá záloha; ruční (`kind: "manual"`) za libovolné období.
+**Uzávěrky** – uložená statistika za období. Automatická (`kind: "season"`) vznikne plánovanou úlohou (jednou) až po lhůtě pro odevzdání posledního dne sezony – den po `closesOn + lateReturnDays`, takže je konečná se všemi odevzdanými úlovky; příjemci upozornění dostanou e-mail `season_report` a vznikne trvalá záloha; ruční (`kind: "manual"`) za libovolné období.
 
 | Endpoint | Tělo | Odpověď |
 | --- | --- | --- |

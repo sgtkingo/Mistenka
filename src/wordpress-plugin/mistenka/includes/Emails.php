@@ -142,12 +142,22 @@ final class Emails
         return implode(', ', array_filter([$contact['email'] ?? '', $contact['phone'] ?? '']));
     }
 
+    // Podrevír místenky (vybraný při nákupu), u starších místenek podrevíry revíru.
+    private static function ticketSub(array $t, array $revir): ?array
+    {
+        if (!empty($t['subdistrict'])) return ['Podrevír', Config::subdistrictName($revir, $t['subdistrict'])];
+        $label = Config::ticketSubdistrictLabel($revir);
+        return $label ? [count($revir['ticketSubdistricts']) > 1 ? 'Podrevíry' : 'Podrevír', $label] : null;
+    }
+
     // ---------- místenky ----------
     public static function paymentInstructions(array $config, array $x): array
     {
         $t = $x['ticket'];
         $revir = $x['revir'];
-        $rows = [['Revír', $revir['name']], ['Datum lovu', self::weekday($t['fishing_date']) . ' ' . self::czDate($t['fishing_date'])], ['Číslo účtu', $config['payment']['accountNumber'] . '/' . $config['payment']['bankCode']], ['Variabilní symbol', $t['variable_symbol']], ['Zaplaťte do', self::czDateTime($t['reserved_until'])]];
+        $sub = self::ticketSub($t, $revir);
+        $rows = array_merge([['Revír', $revir['name']]], $sub ? [$sub] : [], [['Datum lovu', self::weekday($t['fishing_date']) . ' ' . self::czDate($t['fishing_date'])]]);
+        $rows = array_merge($rows, [['Číslo účtu', $config['payment']['accountNumber'] . '/' . $config['payment']['bankCode']], ['Variabilní symbol', $t['variable_symbol']], ['Zaplaťte do', self::czDateTime($t['reserved_until'])]]);
         $amount = self::czk($t['amount_due_halere']);
         return self::mail(
             "Místenka {$t['code']} – pokyny k platbě",
@@ -162,11 +172,11 @@ final class Emails
     {
         $t = $x['ticket'];
         $revir = $x['revir'];
-        $sub = Config::ticketSubdistrictLabel($revir);
+        $sub = self::ticketSub($t, $revir);
         $hours = self::huntingHours($revir, $t['fishing_date']);
         $day = self::weekday($t['fishing_date']) . ' ' . self::czDate($t['fishing_date']);
         $rows = [['Revír', implode(' · ', array_filter([$revir['name'], $revir['number'] ?? '']))]];
-        if ($sub) $rows[] = [count($revir['ticketSubdistricts']) > 1 ? 'Podrevíry' : 'Podrevír', $sub];
+        if ($sub) $rows[] = $sub;
         $rows[] = ['Datum lovu', $day];
         if ($hours) $rows[] = ['Doba lovu', $hours];
         $rows[] = ['Rybář', "{$t['first_name']} {$t['last_name']}"];

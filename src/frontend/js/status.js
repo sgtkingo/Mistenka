@@ -30,6 +30,7 @@ async function loadStatus() {
     qs("#statusBanner").className = `status-banner ${css}`;
     qs("#statusBanner").innerHTML = `<span>${esc(icon)}</span><div><strong>${esc(label)}</strong><small>${esc(message)}</small></div>`;
     const rows = [["Datum lovu", czDate(ticket.date, { weekday: true })]];
+    if (ticket.subdistrict) rows.unshift(["Podrevír", ticket.subdistrict.label]);
     if (ticket.holder) rows.unshift(["Rybář", ticket.holder.name], ["Č. legitimace", ticket.holder.memberId]);
     if (ticket.status === "active") rows.push(["Platí do", czDateTime(ticket.validTo)]);
     rows.push(["Stav", label]);
@@ -68,6 +69,7 @@ function renderWarden(view) {
     <div class="warden-head"><span class="section-kicker">Kontrola porybného</span></div>
     <dl class="summary-list">
       <div><dt>Rybář</dt><dd>${esc(`${view.firstName} ${view.lastName}`)}</dd></div>
+      ${view.subdistrict ? `<div><dt>Podrevír</dt><dd>${esc(view.subdistrict.label)}</dd></div>` : ""}
       <div><dt>Funkce</dt><dd class="member-roles">${memberRolesHtml(view.memberRoles)}</dd></div>
       <div><dt>Datum narození</dt><dd>${esc(czDate(view.birthDate))}</dd></div>
       <div><dt>Č. legitimace</dt><dd>${esc(view.memberId)}</dd></div>

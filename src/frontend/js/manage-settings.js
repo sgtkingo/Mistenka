@@ -14,7 +14,7 @@
     if (raw === "" || !Number.isFinite(n) || (int && !Number.isInteger(n))) throw new Error(`${label}: zadejte ${int ? "celé " : ""}číslo.`);
     return n;
   };
-  const REQUIRED_FIELDS = new Set(["oShort", "pcChars", "prTickets", "prAccounting", "prEmails", "prAudit", "prBackups", "lpCount", "pAccount", "pBank", "pReservation", "rName", "rPrice", "rCapacity", "rAhead", "rLate", "nId", "nName", "nPrice", "nCapacity", "nAhead", "nLate"]);
+  const REQUIRED_FIELDS = new Set(["oShort", "pcChars", "prTickets", "prAccounting", "prEmails", "prAudit", "prBackups", "lpCount", "pAccount", "pBank", "pReservation", "rName", "nId", "nName", "nPrice", "nCapacity"]);
   const field = (id, label, value, attrs = "") => `<div><label class="field-label${REQUIRED_FIELDS.has(id) ? " req" : ""}" for="${id}">${label}</label><input id="${id}" value="${esc(value ?? "")}" ${attrs}></div>`;
   const area = (id, label, value, rows = 3) => `<label class="field-label" for="${id}">${label}</label><textarea id="${id}" rows="${rows}">${esc(value ?? "")}</textarea>`;
   // Doba hájení: uloženo MM-DD, zobrazeno d.m.–d.m.; více období oddělených středníkem.
@@ -147,9 +147,7 @@
       <h3>Revír <small class="muted-inline">${esc(r.id)}</small></h3>
       <div class="form-two-col">${field("rName", "Název", d.name)}${field("rNumber", "Číslo revíru", d.number)}</div>
       <div class="form-two-col">${field("rUnion", "Územní svaz", d.union)}${field("rKind", "Druh revíru", d.kind)}</div>
-      <h3>Prodej</h3>
-      <div class="form-four-col">${field("rPrice", "Cena za den (Kč)", d.priceCzk, 'type="number" min="0" step="1"')}${field("rCapacity", "Míst na den", d.dailyCapacity, 'type="number" min="1"')}${field("rAhead", "Prodej dní dopředu", d.bookingDaysAhead, 'type="number" min="0" max="60"')}${field("rLate", "Opožděné odevzdání (dní)", d.lateReturnDays, 'type="number" min="0" max="60"')}</div>
-      <p class="field-help">Změna ceny platí pro nové objednávky; vystavené místenky si cenu pamatují.</p>
+      <p class="field-help">Cenu a počet míst nastavíte v sekci <a class="text-link" href="#pricing" onclick="document.querySelector('[data-section=pricing]').click();return false">Ceny a místa</a>.</p>
       <h3>Voda a podrevíry</h3>
       <div class="form-two-col">${field("rArea", "Výměra (např. 4,8 ha)", d.area)}${field("rSubText", "Popis podrevírů", d.subdistricts)}</div>
       <table class="data-table edit-table" id="subTable"><thead><tr><th>Č.</th><th>Název</th><th>Výměra</th><th>Platí místenka</th><th></th></tr></thead><tbody>${subs.map((s, i) => subRow(s, ticketSubs.includes(String(s.number)), i)).join("")}</tbody></table>
@@ -172,7 +170,9 @@
   const ruleSection = (s = {}) => `<div class="rule-section"><input class="rule-title" value="${esc(s.title ?? "")}" placeholder="Nadpis oddílu"><textarea class="rule-items" rows="4">${esc((s.items || []).join("\n"))}</textarea><button class="text-button remove-section" type="button">Odebrat oddíl</button></div>`;
   function revirData(r) {
     const d = structuredClone(r.data);
-    Object.assign(d, { name: val("rName"), number: val("rNumber"), union: val("rUnion"), kind: val("rKind"), priceCzk: num("rPrice", "Cena", { int: false }), dailyCapacity: num("rCapacity", "Míst na den"), bookingDaysAhead: num("rAhead", "Prodej dopředu"), lateReturnDays: num("rLate", "Opožděné odevzdání"),
+    delete d.lateReturnDays; // lhůta pro odevzdání a prodej dopředu jsou jedny pro celou MO
+    delete d.bookingDaysAhead;
+    Object.assign(d, { name: val("rName"), number: val("rNumber"), union: val("rUnion"), kind: val("rKind"),
       area: val("rArea"), subdistricts: val("rSubText"), cardUrl: val("rCard"), permitNote: val("rPermit"), restrictions: val("rRestrictions") });
     const subs = qsa("#subTable tbody tr").map((tr) => ({ number: Number(qs(".sub-number", tr).value) || qs(".sub-number", tr).value.trim(), name: qs(".sub-name", tr).value.trim(), area: qs(".sub-area", tr).value.trim(), ticket: qs(".sub-ticket", tr).checked }));
     const previous = new Map((r.data.subdistrictList || []).map((s) => [String(s.number), s]));
@@ -191,7 +191,7 @@
     return `<form class="settings-form" data-scope="new-revir" novalidate>
       <h3>Nový revír</h3><p class="field-help">Identifikátor se ukládá k místenkám a později ho nelze změnit (a–z, 0–9, pomlčka). Ostatní údaje doplníte po vytvoření.</p>
       <div class="form-two-col">${field("nId", "Identifikátor", "", 'placeholder="napr-olse-2"')}${field("nName", "Název", "")}</div>
-      <div class="form-four-col">${field("nPrice", "Cena za den (Kč)", "200", 'type="number"')}${field("nCapacity", "Míst na den", "30", 'type="number"')}${field("nAhead", "Prodej dní dopředu", "3", 'type="number"')}${field("nLate", "Opožděné odevzdání (dní)", "7", 'type="number"')}</div>
+      <div class="form-four-col">${field("nPrice", "Cena za den (Kč)", "200", 'type="number"')}${field("nCapacity", "Míst na den", "30", 'type="number"')}<div></div></div>
       <button class="primary-button" type="submit">Vytvořit revír</button></form>`;
   }
 
@@ -252,7 +252,7 @@
       try {
         let request;
         if (scope === "new-revir") {
-          request = ["/manage/settings/reviry", "POST", { id: val("nId"), data: { name: val("nName"), priceCzk: num("nPrice", "Cena", { int: false }), dailyCapacity: num("nCapacity", "Míst na den"), bookingDaysAhead: num("nAhead", "Prodej dopředu"), lateReturnDays: num("nLate", "Opožděné odevzdání"), rules: [], fishingHours: [] } }];
+          request = ["/manage/settings/reviry", "POST", { id: val("nId"), data: { name: val("nName"), priceCzk: num("nPrice", "Cena", { int: false }), dailyCapacity: num("nCapacity", "Míst na den"), rules: [], fishingHours: [] } }];
         } else {
           const note = val("settingsNote");
           if (scope === "organization") request = ["/manage/settings/organization", "PUT", { data: organizationData(), note }];

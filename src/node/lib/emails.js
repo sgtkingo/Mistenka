@@ -1,7 +1,9 @@
 "use strict";
 // Šablony e-mailů. Ve WordPressu budou stejné texty odesílány přes wp_mail().
 const fs = require("node:fs");
-const { ticketSubdistrictLabel } = require("./config");
+const { ticketSubdistrictLabel, subdistrictName } = require("./config");
+// Podrevír místenky (vybraný při nákupu), u starších místenek podrevíry revíru.
+const ticketSub = (ticket, revir) => (ticket.subdistrict ? { title: "Podrevír", label: subdistrictName(revir, ticket.subdistrict) } : ticketSubdistrictLabel(revir) ? { title: revir.ticketSubdistricts.length > 1 ? "Podrevíry" : "Podrevír", label: ticketSubdistrictLabel(revir) } : null);
 const path = require("node:path");
 
 const MONTHS = ["ledna", "února", "března", "dubna", "května", "června", "července", "srpna", "září", "října", "listopadu", "prosince"];
@@ -58,7 +60,8 @@ function huntingHours(revir, isoDate) {
 const weekday = (iso) => ["neděle", "pondělí", "úterý", "středa", "čtvrtek", "pátek", "sobota"][new Date(`${iso}T12:00:00Z`).getUTCDay()];
 
 function paymentInstructions(config, { ticket, revir, links }) {
-  const rows = [["Revír", revir.name], ["Datum lovu", `${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)}`], ["Číslo účtu", `${config.payment.accountNumber}/${config.payment.bankCode}`], ["Variabilní symbol", ticket.variable_symbol], ["Zaplaťte do", czDateTime(ticket.reserved_until)]];
+  const sub = ticketSub(ticket, revir);
+  const rows = [["Revír", revir.name], ...(sub ? [[sub.title, sub.label]] : []), ["Datum lovu", `${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)}`], ["Číslo účtu", `${config.payment.accountNumber}/${config.payment.bankCode}`], ["Variabilní symbol", ticket.variable_symbol], ["Zaplaťte do", czDateTime(ticket.reserved_until)]];
   return {
     subject: `Místenka ${ticket.code} – pokyny k platbě`,
     html: layout(config, "Dokončete platbu místenky", `<p style="margin:0 0 16px">Místo na revíru <b>${esc(revir.name)}</b> je pro vás rezervované. Místenku vystavíme hned po připsání platby a pošleme vám ji e-mailem.</p>
@@ -69,9 +72,9 @@ function paymentInstructions(config, { ticket, revir, links }) {
 }
 
 function ticketIssued(config, { ticket, revir, links }) {
-  const sub = ticketSubdistrictLabel(revir);
+  const sub = ticketSub(ticket, revir);
   const hours = huntingHours(revir, ticket.fishing_date);
-  const rows = [["Revír", [revir.name, revir.number].filter(Boolean).join(" · ")], ...(sub ? [[revir.ticketSubdistricts.length > 1 ? "Podrevíry" : "Podrevír", sub]] : []), ["Datum lovu", `${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)}`], ...(hours ? [["Doba lovu", hours]] : []), ["Rybář", `${ticket.first_name} ${ticket.last_name}`], ["Číslo členské legitimace", ticket.member_id]];
+  const rows = [["Revír", [revir.name, revir.number].filter(Boolean).join(" · ")], ...(sub ? [[sub.title, sub.label]] : []), ["Datum lovu", `${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)}`], ...(hours ? [["Doba lovu", hours]] : []), ["Rybář", `${ticket.first_name} ${ticket.last_name}`], ["Číslo členské legitimace", ticket.member_id]];
   return {
     subject: `Místenka ${ticket.code} – ${revir.name}, ${czDate(ticket.fishing_date)}`,
     html: layout(config, "Vaše místenka je vystavena", `${highlight("Kód místenky", ticket.code, `${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)} · ${revir.name}`, "ok")}${table(rows)}

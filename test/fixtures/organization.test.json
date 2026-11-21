@@ -20,6 +20,8 @@
     "reservationMinutes": 60,
     "messagePrefix": "Mistenka"
   },
+  "returnPolicy": { "lateReturnDays": 7 },
+  "salesPolicy": { "bookingDaysAhead": 3 },
   "limitPolicy": { "violationsBeforeBlock": 2, "blockDays": 30 },
   "penaltyPolicy": { "lateReturn": { "count": 0, "blockDays": null, "includeUnreturned": true }, "seizure": { "count": 0, "blockDays": null } },
   "privacy": { "contactEmail": "", "ticketYears": 3, "accountingYears": 10, "emailDays": 90, "auditYears": 5, "backupYears": 3 },
@@ -37,8 +39,6 @@
       "kind": "mimopstruhový",
       "priceCzk": 200,
       "dailyCapacity": 30,
-      "bookingDaysAhead": 3,
-      "lateReturnDays": 7,
       "area": "4 ha",
       "subdistrictCount": 4,
       "subdistricts": "Petr 1–4 v k. ú. Petrovice-Prstná · celkem 4 ha",
@@ -111,11 +111,15 @@
       "subdistrictList": [
         {
           "number": 1,
-          "name": "Horní nádrž"
+          "name": "Horní nádrž",
+          "priceCzk": 200,
+          "dailyCapacity": 30
         },
         {
           "number": 2,
-          "name": "Dolní nádrž"
+          "name": "Dolní nádrž",
+          "priceCzk": 250,
+          "dailyCapacity": 2
         }
       ],
       "ticketSubdistricts": [1, 2]
@@ -128,8 +132,6 @@
       "kind": "mimopstruhový",
       "priceCzk": 150,
       "dailyCapacity": 2,
-      "bookingDaysAhead": 7,
-      "lateReturnDays": 7,
       "area": "4 ha",
       "subdistrictCount": 4,
       "subdistricts": "Petr 1–4 v k. ú. Petrovice-Prstná · celkem 4 ha",

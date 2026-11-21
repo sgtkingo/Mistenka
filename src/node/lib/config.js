@@ -36,6 +36,17 @@ function buildConfig(rawInput, speciesDocs) {
   if (!config.organization?.shortName) fail("chybí organization.shortName");
   if (!Array.isArray(config.reviry) || config.reviry.length === 0) fail("chybí seznam reviry");
   if (!config.payment?.accountNumber || !config.payment?.bankCode) fail("chybí payment.accountNumber nebo payment.bankCode");
+  // Lhůta pro opožděné odevzdání je jedna pro celou MO (portál → Limity a blokace, výchozí 7 dní).
+  // Starší konfigurace ji měly u revíru – převezme se hodnota prvního revíru.
+  const legacyDays = config.reviry.find((r) => Number.isInteger(r?.lateReturnDays))?.lateReturnDays;
+  config.returnPolicy = { lateReturnDays: legacyDays ?? 7, ...(config.returnPolicy || {}) };
+  if (!Number.isInteger(config.returnPolicy.lateReturnDays) || config.returnPolicy.lateReturnDays < 0 || config.returnPolicy.lateReturnDays > 60) fail("lhůta pro opožděné odevzdání musí být 0–60 dní");
+  for (const revir of config.reviry) if (revir && typeof revir === "object") revir.lateReturnDays = config.returnPolicy.lateReturnDays;
+  // Prodej dopředu je také jeden pro celou MO (portál → Ceny a místa, výchozí 3 dny).
+  const legacyAhead = config.reviry.find((r) => Number.isInteger(r?.bookingDaysAhead))?.bookingDaysAhead;
+  config.salesPolicy = { bookingDaysAhead: legacyAhead ?? 3, ...(config.salesPolicy || {}) };
+  if (!Number.isInteger(config.salesPolicy.bookingDaysAhead) || config.salesPolicy.bookingDaysAhead < 0 || config.salesPolicy.bookingDaysAhead > 60) fail("prodej dopředu musí být 0–60 dní");
+  for (const revir of config.reviry) if (revir && typeof revir === "object") revir.bookingDaysAhead = config.salesPolicy.bookingDaysAhead;
   const ids = new Set();
   for (const revir of config.reviry) {
     if (!/^[a-z0-9-]+$/.test(revir.id || "")) fail(`revír má neplatné id: ${revir.id}`);
@@ -54,6 +65,12 @@ function buildConfig(rawInput, speciesDocs) {
         if (Array.isArray(revir.subdistrictList) && !revir.subdistrictList.some((s) => String(s.number) === String(number))) fail(`revír ${revir.id}: podrevír ${number} z ticketSubdistricts není v subdistrictList`);
       }
     }
+    // Podrevír v prodeji může mít vlastní cenu a počet míst (jinak platí hodnoty revíru).
+    for (const s of Array.isArray(revir.subdistrictList) ? revir.subdistrictList : []) {
+      if (s.priceCzk !== undefined && s.priceCzk !== null && !(typeof s.priceCzk === "number" && s.priceCzk >= 0)) fail(`revír ${revir.id}, podrevír ${s.number}: cena musí být číslo >= 0`);
+      if (s.dailyCapacity !== undefined && s.dailyCapacity !== null && !(Number.isInteger(s.dailyCapacity) && s.dailyCapacity >= 1)) fail(`revír ${revir.id}, podrevír ${s.number}: počet míst musí být kladné celé číslo`);
+    }
+    revir.saleSubdistricts = saleSubdistricts(revir);
   }
   config.payment.reservationMinutes ||= 60;
   if (!Number.isInteger(config.payment.reservationMinutes) || config.payment.reservationMinutes < 10 || config.payment.reservationMinutes > 24 * 60) fail("rezervace před platbou musí být 10–1440 minut");
@@ -142,6 +159,26 @@ function getRevir(config, id) {
   return config.reviry.find((revir) => revir.id === id) || null;
 }
 
+// Podrevíry v prodeji (ticketSubdistricts): místenka platí pro jeden z nich, každý má cenu a počet míst
+// (vlastní, jinak revíru). Prázdné = místenka na celý revír (cena a místa revíru).
+function saleSubdistricts(revir) {
+  const numbers = Array.isArray(revir.ticketSubdistricts) ? revir.ticketSubdistricts : [];
+  return numbers.map((number) => {
+    const s = (revir.subdistrictList || []).find((item) => String(item.number) === String(number)) || {};
+    return {
+      number, name: s.name || "", area: s.area || "",
+      priceCzk: typeof s.priceCzk === "number" ? s.priceCzk : revir.priceCzk,
+      dailyCapacity: Number.isInteger(s.dailyCapacity) ? s.dailyCapacity : revir.dailyCapacity
+    };
+  });
+}
+// Podrevír místenky, např. "1 – Petr 1" (null = celý revír).
+function subdistrictName(revir, number) {
+  if (number === null || number === undefined || number === "") return null;
+  const item = (revir?.subdistrictList || []).find((s) => String(s.number) === String(number));
+  return item?.name ? `${number} – ${item.name}` : String(number);
+}
+
 // Podrevíry, na které se místenka vztahuje, např. "1 – Petr 1, 2 – Petr 2" (null = celý revír).
 function ticketSubdistrictLabel(revir) {
   const numbers = Array.isArray(revir.ticketSubdistricts) ? revir.ticketSubdistricts : [];
@@ -182,4 +219,4 @@ function czIban(accountNumber, bankCode) {
   return `CZ${String(98 - remainder).padStart(2, "0")}${bban}`;
 }
 
-module.exports = { loadConfig, readSource, buildConfig, getRevir, revirRules, ticketSubdistrictLabel, publicConfig, czIban };
+module.exports = { loadConfig, readSource, buildConfig, getRevir, revirRules, ticketSubdistrictLabel, saleSubdistricts, subdistrictName, publicConfig, czIban };

@@ -192,15 +192,16 @@
     if (species.releaseFromLength && length >= species.releaseFromLength) return `Od ${species.releaseFromLength} cm se musí vrátit`;
     return "";
   }
-  // Podrevíry, na které se místenka vztahuje (nastavení revíru ticketSubdistricts), např. "1 – Petr 1, 2 – Petr 2".
-  function subdistrictLabel(revir) {
+  // Podrevír místenky (vybraný při nákupu), u starších místenek podrevíry revíru (ticketSubdistricts), např. "1 – Petr 1".
+  function subdistrictLabel(revir, ticket = null) {
+    if (ticket?.subdistrict) return ticket.subdistrict.label;
     const numbers = Array.isArray(revir?.ticketSubdistricts) ? revir.ticketSubdistricts : [];
     return numbers.map((number) => {
       const item = (revir.subdistrictList || []).find((s) => String(s.number) === String(number));
       return item?.name ? `${number} – ${item.name}` : String(number);
     }).join(", ");
   }
-  const subdistrictTitle = (revir) => ((revir?.ticketSubdistricts || []).length > 1 ? "Podrevíry" : "Podrevír");
+  const subdistrictTitle = (revir, ticket = null) => (!ticket?.subdistrict && (revir?.ticketSubdistricts || []).length > 1 ? "Podrevíry" : "Podrevír");
   const plural = (n, one, few, many) => (n === 1 ? one : n >= 2 && n <= 4 ? few : many);
 
   // ---------- přístup držitele ----------

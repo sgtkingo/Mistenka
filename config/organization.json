@@ -20,6 +20,8 @@
     "reservationMinutes": 60,
     "messagePrefix": "Mistenka"
   },
+  "returnPolicy": { "lateReturnDays": 7 },
+  "salesPolicy": { "bookingDaysAhead": 3 },
   "limitPolicy": {
     "violationsBeforeBlock": 0,
     "blockDays": null
@@ -40,8 +42,6 @@
       "kind": "mimopstruhový",
       "priceCzk": 200,
       "dailyCapacity": 30,
-      "bookingDaysAhead": 3,
-      "lateReturnDays": 7,
       "area": "4,8 ha",
       "subdistrictCount": 4,
       "subdistricts": "Petr 1–4 v k. ú. Petrovice-Prstná · celkem 4,8 ha",

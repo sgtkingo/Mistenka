@@ -7,7 +7,7 @@ defined('ABSPATH') || exit;
 
 final class Db
 {
-    public const SCHEMA_VERSION = 16;
+    public const SCHEMA_VERSION = 17;
 
     // Sloupce, které se z $wpdb (vrací řetězce) převádějí na čísla – výstup API musí mít čísla jako Node.
     private const INT = ['id', 'ticket_id', 'user_id', 'price_halere', 'amount_due_halere', 'return_late', 'no_catch', 'seized_by', 'cancelled_by',
@@ -282,6 +282,7 @@ final class Db
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   code VARCHAR(6) NOT NULL,
   revir_id VARCHAR(40) NOT NULL,
+  subdistrict VARCHAR(20) NULL,
   fishing_date $d NOT NULL,
   member_id VARCHAR(20) NOT NULL,
   first_name VARCHAR(100) NOT NULL,
