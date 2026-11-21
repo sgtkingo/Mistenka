@@ -112,6 +112,8 @@ def write_wp(z, src, fake_bank):
                 z.write(path, f"{name}/frontend/{rel}")
         z.writestr(f"{name}/frontend/.htaccess", FRONTEND_HTACCESS)
         for path, rel in walk(os.path.join(ROOT, "config")):
+            if rel.endswith(".example"):
+                continue  # vzor konfigurace patří do repa, ne do instalace
             if rel == "organization.json":
                 with open(path, encoding="utf8") as fh:
                     org = json.load(fh)

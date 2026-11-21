@@ -1,0 +1,111 @@
+{
+  "organization": {
+    "id": "mo-crs-priklad",
+    "name": "Český rybářský svaz, z. s., místní organizace Příklad",
+    "shortName": "MO ČRS Příklad",
+    "web": "https://www.example.cz",
+    "appUrl": "https://mistenka.example.cz",
+    "privacyUrl": "",
+    "address": "Rybářská 1, 700 00 Příkladov",
+    "ico": "12345678",
+    "contact": {
+      "label": "MO ČRS Příklad",
+      "email": "info@example.cz",
+      "phone": "+420 600 000 000"
+    }
+  },
+  "payment": {
+    "provider": "fake",
+    "accountNumber": "1234567890",
+    "bankCode": "2010",
+    "recipientName": "MO CRS Priklad",
+    "reservationMinutes": 60,
+    "messagePrefix": "Mistenka"
+  },
+  "returnPolicy": { "lateReturnDays": 7 },
+  "salesPolicy": { "bookingDaysAhead": 3 },
+  "limitPolicy": {
+    "violationsBeforeBlock": 0,
+    "blockDays": null
+  },
+  "penaltyPolicy": {
+    "lateReturn": { "count": 0, "blockDays": null, "includeUnreturned": true },
+    "seizure": { "count": 0, "blockDays": null }
+  },
+  "privacy": {
+    "contactEmail": "gdpr@example.cz",
+    "ticketYears": 3,
+    "accountingYears": 10,
+    "emailDays": 90,
+    "auditYears": 5,
+    "backupYears": 3
+  },
+  "publicCheck": {
+    "showFullName": true,
+    "memberIdVisibleChars": 4
+  },
+  "speciesRules": "species/crs-smas-mp-2026-2027.json",
+  "reviry": [
+    {
+      "id": "priklad-1",
+      "name": "Příkladová nádrž 1",
+      "number": "471 000",
+      "union": "Moravskoslezský ÚS",
+      "kind": "mimopstruhový",
+      "priceCzk": 200,
+      "dailyCapacity": 30,
+      "area": "3,0 ha",
+      "subdistrictCount": 2,
+      "subdistricts": "Horní a Dolní nádrž v k. ú. Příkladov · celkem 3,0 ha",
+      "subdistrictList": [
+        {
+          "number": 1,
+          "name": "Horní nádrž",
+          "area": "1,8 ha",
+          "priceCzk": 200,
+          "dailyCapacity": 20,
+          "gps": { "lat": 49.9, "lon": 18.5, "label": "49°54'00.000\"N, 18°30'00.000\"E" }
+        },
+        {
+          "number": 2,
+          "name": "Dolní nádrž",
+          "area": "1,2 ha",
+          "priceCzk": 150,
+          "dailyCapacity": 10,
+          "gps": { "lat": 49.899, "lon": 18.502, "label": "49°53'56.400\"N, 18°30'07.200\"E" }
+        }
+      ],
+      "ticketSubdistricts": [1, 2],
+      "gps": { "lat": 49.9, "lon": 18.5, "label": "49°54'00.000\"N, 18°30'00.000\"E" },
+      "cardUrl": "https://www.rybsvaz.cz/karta-reviru/",
+      "restrictions": "Lov pod ledem jen se zvláštní povolenkou a dle podmínek ČRS",
+      "permitNote": "Pro lov musíte mít platný rybářský lístek a platnou povolenku. Místenka povolenku nenahrazuje.",
+      "notice": {
+        "title": "Upozornění",
+        "text": "Vozidla nechávejte jen na vyhrazených místech."
+      },
+      "fishingHours": [
+        { "months": [4, 5, 6, 7, 8, 9], "from": "04:00", "to": "24:00", "label": "duben až září" },
+        { "months": [10, 11, 12, 1, 2, 3], "from": "05:00", "to": "22:00", "label": "říjen až březen" }
+      ],
+      "rules": [
+        {
+          "title": "Základní podmínky",
+          "items": [
+            "Pro lov musíte mít platný rybářský lístek a platnou povolenku.",
+            "Místenka platí pouze pro uvedené datum lovu, revír a podrevír.",
+            "Místenku odevzdejte ihned po ukončení lovu, nejpozději do 7 dnů."
+          ]
+        },
+        {
+          "title": "Povinná výbava a úlovky",
+          "items": [
+            "podběrák, míra, peán nebo vyprošťovač,",
+            "každý úlovek je nutné ihned zapsat do povolenky."
+          ]
+        }
+      ],
+      "speciesOverrides": []
+    }
+  ]
+}

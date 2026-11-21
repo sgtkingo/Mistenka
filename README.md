@@ -10,6 +10,7 @@ Webová aplikace pro online prodej, kontrolu a odevzdání rybářských místen
 | `src/node/` | Node.js server se SQLite pro lokální vývoj |
 | `src/wordpress-plugin/` | PHP plugin pro WordPress – produkční nasazení ([návod](src/wordpress-plugin/README.md)) |
 | `config/organization.json` | konfigurace MO: kontakty, účet, revíry (cena, kapacita, pravidla) |
+| `config/organization.json.example` | vzor konfigurace pro novou MO (všechny klíče, revír se dvěma podrevíry s vlastní cenou a kapacitou) |
 | `config/species/` | pravidla druhů ryb organizace: seznam druhů, lovné míry, hájení, denní limity |
 | `test/` | sdílené testy API pro Node i PHP |
 | `dev/wordpress/` | Docker: WordPress 7.1.4 + PHP 8.3 pro vývoj a testy pluginu |
@@ -64,7 +65,7 @@ Scénář pro vyzkoušení celé aplikace: [docs/TEST_NODE.md](docs/TEST_NODE.md
 
 ## Jiná MO nebo jiný revír
 
-1. Zkopírujte `config/organization.json` a upravte `organization`, `payment`, `email` a seznam `reviry`.
+1. Zkopírujte `config/organization.json.example` jako `config/organization.json` a upravte `organization`, `payment` a seznam `reviry`. E-maily se nenastavují v souboru, ale v portálu (Emailoví klienti).
    Pravidla druhů ryb: odkaz `speciesRules` na soubor v `config/species/` (míry a hájení podle BPVRP svazu); zpřísnění pro jednotlivý revír přes `speciesOverrides`.
 2. Spusťte s vlastním souborem: `MISTENKA_CONFIG=cesta/k/konfiguraci.json npm start`.
 3. Jeden revír → aplikace ho rovnou zobrazí; více revírů → úvodní stránka nabídne výběr (`?revir=<id>`).
