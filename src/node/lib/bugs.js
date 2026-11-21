@@ -17,7 +17,14 @@ const MAX_SCREENSHOT = 2_000_000; // znaků data URL (~1,5 MB obrázku)
 const SCREENSHOT_RE = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
 const GITHUB_URL_RE = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+$/;
 
-function createBugs({ db, config, appUrl, github = {} }) {
+// Přijme „vlastník/repozitář“ i celou adresu (https://github.com/vlastník/repozitář[.git]).
+function normalizeRepo(value) {
+  const v = String(value || "").trim().replace(/^(https?:\/\/)?(www\.)?github\.com\//i, "").replace(/(\.git)?\/*$/i, "");
+  return /^[\w.-]+\/[\w.-]+$/.test(v) ? v : "";
+}
+
+function createBugs({ db, config, appUrl, github: githubIn = {} }) {
+  const github = { token: githubIn.token || "", repo: normalizeRepo(githubIn.repo) };
   const audit = (actor, action, id, detail = null) => db.prepare("INSERT INTO audit_events (at, actor_user_id, action, target_type, target_id, detail) VALUES (?, ?, ?, 'bug_report', ?, ?)")
     .run(iso(time.now()), actor?.id ?? null, action, String(id), detail ? JSON.stringify(detail) : null);
   const text = (value, max) => String(value ?? "").replace(/\r\n?/g, "\n").trim().slice(0, max);
@@ -116,4 +123,4 @@ function createBugs({ db, config, appUrl, github = {} }) {
   return { create, list, get, update, toGithub, issueBody: (id) => issueBody(find(id)) };
 }
 
-module.exports = { createBugs };
+module.exports = { createBugs, normalizeRepo };

@@ -35,7 +35,15 @@ final class Bugs
 
     private static function githubRepo(): string
     {
-        return defined('MISTENKA_GITHUB_REPO') ? (string) MISTENKA_GITHUB_REPO : '';
+        return defined('MISTENKA_GITHUB_REPO') ? self::normalizeRepo((string) MISTENKA_GITHUB_REPO) : '';
+    }
+
+    // Přijme „vlastník/repozitář“ i celou adresu (https://github.com/vlastník/repozitář[.git]).
+    public static function normalizeRepo(string $value): string
+    {
+        $v = preg_replace('#^(https?://)?(www\.)?github\.com/#i', '', trim($value));
+        $v = preg_replace('#(\.git)?/*$#i', '', $v);
+        return preg_match('#^[\w.-]+/[\w.-]+$#', $v) ? $v : '';
     }
 
     private static function githubToken(): string
