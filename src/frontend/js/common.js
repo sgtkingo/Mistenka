@@ -227,7 +227,9 @@
     if (subs.length) return subs.map((s) => ({ label: s.name ? `${s.number} – ${s.name}` : String(s.number), gps: s.gps, closed: sale.length > 0 && !sale.includes(String(s.number)) }));
     return hasGps(revir?.gps) ? [{ label: "", gps: revir.gps, closed: false }] : [];
   }
-  const gpsListHtml = (revir) => gpsPlaces(revir).map((p) => `<span class="gps-line">${p.label ? `<b>${esc(p.label)}</b> ` : ""}${gpsLink(p.gps)}${p.closed ? ' <small class="gps-closed">místenka není</small>' : ""}</span>`).join("");
+  // Ikona prutu s plovákem: zelená = na podrevír lze koupit místenku, červená přeškrtnutá = místenka není.
+  const rodIcon = (closed, size = 22) => `<svg class="sub-rod${closed ? " closed" : ""}" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="${closed ? "Na tomto podrevíru místenka není" : "Na tento podrevír lze zakoupit místenku"}"><title>${closed ? "Na tomto podrevíru místenka není!" : "Na tento podrevír lze zakoupit místenku"}</title><path d="M3 21 16 3"/><path d="M16 3c2 3 3 6 3 9"/><ellipse cx="19" cy="15" rx="2" ry="3"/><path d="M11 21c1.3-1 2.7-1 4 0s2.7 1 4 0"/>${closed ? '<path d="M3 3l18 18" stroke-width="2.4"/>' : ""}</svg>`;
+  const gpsListHtml = (revir) => gpsPlaces(revir).map((p) => `<span class="gps-line">${p.label ? `<b>${esc(p.label)}</b> ` : ""}${gpsLink(p.gps)}${p.label ? ` ${rodIcon(p.closed, 16)}` : ""}</span>`).join("");
   const subdistrictTitle = (revir, ticket = null) => (!ticket?.subdistrict && (revir?.ticketSubdistricts || []).length > 1 ? "Podrevíry" : "Podrevír");
   const plural = (n, one, few, many) => (n === 1 ? one : n >= 2 && n <= 4 ? few : many);
 
@@ -749,7 +751,7 @@
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", addBugButton); else addBugButton();
 
-  window.Mistenka = { infoTip, icon, hasGps, gpsText, mapyUrl, gpsLink, fishingPlace, gpsPlaces, gpsListHtml, openBugReport, logEvent, qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest, attachQrScanner, attachMemberIdScanner, codeFromQr, memberIdFromBarcode, roleBadge, roleBadges };
+  window.Mistenka = { infoTip, icon, rodIcon, hasGps, gpsText, mapyUrl, gpsLink, fishingPlace, gpsPlaces, gpsListHtml, openBugReport, logEvent, qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest, attachQrScanner, attachMemberIdScanner, codeFromQr, memberIdFromBarcode, roleBadge, roleBadges };
 })();
 
 // Pole s číslem členské legitimace (max. 8 znaků): ponechá jen číslice, aby vložené „1234 5678“ nepřišlo o číslici.

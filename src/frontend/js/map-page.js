@@ -4,8 +4,7 @@
 (async function () {
   const { qs, esc, api, loadConfig, selectedRevir, revirUrl, applyBranding, icon } = window.Mistenka;
   const { createMap, featureGroup, legendHtml, mapyLink, subdistrictInfo, popupHtml, latlngs } = window.MistenkaMap;
-  // Ikona prutu s plovákem: zelená = místenka na podrevír platí, červená přeškrtnutá = neplatí (neloví se).
-  const rodIcon = (closed) => `<svg class="sub-rod${closed ? " closed" : ""}" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21 16 3"/><path d="M16 3c2 3 3 6 3 9"/><ellipse cx="19" cy="15" rx="2" ry="3"/><path d="M11 21c1.3-1 2.7-1 4 0s2.7 1 4 0"/>${closed ? '<path d="M3 3l18 18" stroke-width="2.4"/>' : ""}</svg>`;
+  const { rodIcon } = window.Mistenka;
   // Střed plochy (těžiště vnějšího obrysu) – GPS podrevíru, když ho nemá v nastavení revíru.
   function centroid(ring) {
     let a = 0, x = 0, y = 0;
