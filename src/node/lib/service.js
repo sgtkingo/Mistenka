@@ -90,6 +90,14 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       AND (? IS NULL OR subdistrict = ?)
       AND (status = 'issued' OR (status = 'pending_payment' AND reserved_until > ?))`).get(revirId, date, excludeId, subdistrict, subdistrict, iso(time.now())).n;
   }
+  // Platná místenka (vystavená, nebo rezervovaná a čekající na platbu) téhož rybáře na stejný den a podrevír.
+  // Místenka na celý revír (bez podrevíru) se kryje s každým podrevírem.
+  function duplicateTicket(memberId, revirId, date, subdistrict) {
+    return db.prepare(`SELECT status FROM tickets WHERE member_id = ? AND revir_id = ? AND fishing_date = ?
+      AND (subdistrict IS NULL OR ? IS NULL OR subdistrict = ?)
+      AND (status = 'issued' OR (status = 'pending_payment' AND reserved_until > ?)) LIMIT 1`).get(memberId, revirId, date, subdistrict, subdistrict, iso(time.now())) || null;
+  }
+  const DUPLICATE_TEXT = (subdistrict, pending) => `Na tento den už máte místenku na ${subdistrict ? "tento podrevír" : "tento revír"}. Jeden rybář může mít na den jen jednu místenku na podrevír.${pending ? " Rozpracovanou objednávku dokončete platbou (odkaz v e-mailu s pokyny k platbě), nebo ji zrušte." : ""}`;
   // Kapacita a cena místenky: podrevíru (je-li v prodeji), jinak revíru.
   const saleOf = (revir, subdistrict) => (subdistrict === null || subdistrict === undefined ? null : (revir.saleSubdistricts || []).find((s) => String(s.number) === String(subdistrict)) || null);
   const capacityOf = (revir, subdistrict) => saleOf(revir, subdistrict)?.dailyCapacity ?? revir.dailyCapacity;
@@ -258,6 +266,8 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       if (!day.open) throw new ApiError(409, day.code, day.code === "revir_closed" ? `Revír je v tento den mimořádně uzavřen: ${day.reason}` : `${day.reason}. Místenku na tento den nelze koupit.`);
       const block = activeBlock(order.memberId);
       if (block) throw new ApiError(403, "member_blocked", `Nákup místenek je pro toto číslo legitimace pozastaven ${block.until ? `do ${block.until.split("-").reverse().map(Number).join(". ")}` : "do odvolání"}. Důvod: ${block.reason}. Kontaktujte správce organizace.`);
+      const duplicate = duplicateTicket(order.memberId, revir.id, order.date, order.subdistrict);
+      if (duplicate) throw new ApiError(409, "duplicate_ticket", DUPLICATE_TEXT(order.subdistrict, duplicate.status === "pending_payment"));
       if (takenSeats(revir.id, order.date, 0, order.subdistrict) >= capacityOf(revir, order.subdistrict)) throw new ApiError(409, "sold_out", order.subdistrict ? "Na vybraný den už v tomto podrevíru nejsou volná místa." : "Na vybraný den už nejsou volná místa.");
       if (order.voucherCode) {
         const voucher = db.prepare("SELECT * FROM vouchers WHERE code = ?").get(order.voucherCode);

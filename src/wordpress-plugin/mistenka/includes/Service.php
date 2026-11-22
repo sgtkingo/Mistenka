@@ -156,6 +156,23 @@ final class Service
         return (int) Db::val("SELECT COUNT(*) AS n FROM {p}tickets WHERE revir_id = ? AND fishing_date = ? AND id != ? AND (status = 'issued' OR (status = 'pending_payment' AND reserved_until > ?))", $revirId, $date, $excludeId, Time::nowIso());
     }
 
+    // Platná místenka (vystavená, nebo rezervovaná a čekající na platbu) téhož rybáře na stejný den a podrevír.
+    // Místenka na celý revír (bez podrevíru) se kryje s každým podrevírem.
+    private function duplicateTicket(string $memberId, string $revirId, string $date, ?string $subdistrict): ?string
+    {
+        $sql = "SELECT status FROM {p}tickets WHERE member_id = ? AND revir_id = ? AND fishing_date = ? AND (status = 'issued' OR (status = 'pending_payment' AND reserved_until > ?))";
+        $status = $subdistrict === null
+            ? Db::val($sql . ' LIMIT 1', $memberId, $revirId, $date, Time::nowIso())
+            : Db::val($sql . ' AND (subdistrict IS NULL OR subdistrict = ?) LIMIT 1', $memberId, $revirId, $date, Time::nowIso(), $subdistrict);
+        return $status === null || $status === false ? null : (string) $status;
+    }
+
+    private static function duplicateText(?string $subdistrict, bool $pending): string
+    {
+        return 'Na tento den už máte místenku na ' . ($subdistrict !== null ? 'tento podrevír' : 'tento revír') . '. Jeden rybář může mít na den jen jednu místenku na podrevír.'
+            . ($pending ? ' Rozpracovanou objednávku dokončete platbou (odkaz v e-mailu s pokyny k platbě), nebo ji zrušte.' : '');
+    }
+
     // Podrevír v prodeji (cena a kapacita), nebo null = místenka na celý revír.
     private static function saleOf(array $revir, $subdistrict): ?array
     {
@@ -369,6 +386,8 @@ final class Service
                 $until = $block['until_date'] ? 'do ' . implode('. ', array_map('intval', array_reverse(explode('-', $block['until_date'])))) : 'do odvolání';
                 throw new ApiError(403, 'member_blocked', "Nákup místenek je pro toto číslo legitimace pozastaven {$until}. Důvod: {$block['reason']}. Kontaktujte správce organizace.");
             }
+            $duplicate = $this->duplicateTicket($order['memberId'], $revir['id'], $order['date'], $order['subdistrict']);
+            if ($duplicate !== null) throw new ApiError(409, 'duplicate_ticket', self::duplicateText($order['subdistrict'], $duplicate === 'pending_payment'));
             if ($this->takenSeats($revir['id'], $order['date'], 0, $order['subdistrict']) >= self::capacityOf($revir, $order['subdistrict'])) throw new ApiError(409, 'sold_out', $order['subdistrict'] !== null ? 'Na vybraný den už v tomto podrevíru nejsou volná místa.' : 'Na vybraný den už nejsou volná místa.');
             if ($order['voucherCode'] !== '') {
                 $voucher = Db::row('SELECT * FROM {p}vouchers WHERE code = ?', $order['voucherCode']);

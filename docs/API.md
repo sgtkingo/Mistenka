@@ -157,7 +157,7 @@ Odpověď `201`: `{ token, ticket: <OwnerTicket> }`. U nezaplacené objednávky 
 | --- | --- |
 | 400 | `unknown_revir`, `invalid_subdistrict` (chybí nebo neprodávaný podrevír), `invalid_date` (mimo dnešek…`bookingDaysAhead`), `invalid_member_id` (8 číslic), `invalid_name`, `invalid_birth_date`, `invalid_email`, `declaration_required`, `invalid_voucher` |
 | 403 | `member_blocked` |
-| 409 | `sold_out` (v revíru, příp. ve vybraném podrevíru), `voucher_used`, `out_of_season`, `revir_closed` |
+| 409 | `sold_out` (v revíru, příp. ve vybraném podrevíru), `duplicate_ticket` (rybář – číslo legitimace – už má na tento den platnou nebo rezervovanou místenku na stejný podrevír; místenka na celý revír se kryje s každým podrevírem), `voucher_used`, `out_of_season`, `revir_closed` |
 
 Kapacita, poukaz i vytvoření se provádějí v jedné transakci; poukaz se odepíše jen při úspěšném vytvoření.
 

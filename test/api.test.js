@@ -538,12 +538,12 @@ test("místenky účtu: předchozí nákupy se připojí po ověření, nové se
   await setClock("2026-06-10T08:00:00Z");
   const body = accountBody();
   const guest = await paidTicket({ memberId: body.memberId, email: body.email.toUpperCase() });
-  const stranger = await paidTicket({ memberId: body.memberId }); // jiný e-mail → nepřipojí se
+  const stranger = await paidTicket({ memberId: body.memberId, date: "2026-06-11" }); // jiný e-mail → nepřipojí se
   await call("POST", "/auth/register", { body });
   const session = {};
   await call("POST", "/auth/verify", { body: { token: await linkToken(body.email, "account_verify", "verify") }, session });
-  const own = await order({ memberId: body.memberId, email: body.email });
-  const bought = await call("POST", "/orders", { body: orderBody({ memberId: body.memberId, email: body.email }), session });
+  const own = await order({ memberId: body.memberId, email: body.email, date: "2026-06-12" });
+  const bought = await call("POST", "/orders", { body: orderBody({ memberId: body.memberId, email: body.email, date: "2026-06-13" }), session });
   assert.equal(bought.status, 201, JSON.stringify(bought.data));
   assert.equal((await call("POST", "/orders", { body: orderBody(), session, csrf: "" })).data.code, "csrf_failed", "nákup s relací vyžaduje CSRF");
   const list = (await call("GET", "/me/tickets", { session })).data.tickets.map((t) => t.code);
@@ -772,17 +772,19 @@ test("limity: týdenní limit se počítá ze všech místenek člena (i bez ú�
   await enableLimits();
   await setClock("2026-06-10T08:00:00Z");
   const memberId = "72000002";
-  const ret = async (catches, overrides = {}) => {
-    const t = await paidTicket({ memberId, ...overrides });
+  // Jedna místenka na den: každá v jiný den téhož týdne (odevzdává se v den lovu).
+  const ret = async (catches, day) => {
+    await setClock(`${day}T08:00:00Z`);
+    const t = await paidTicket({ memberId, date: day });
     const res = await call("POST", `/tickets/${t.code}/return`, { body: { catches }, token: t.token });
     assert.equal(res.status, 200, JSON.stringify(res.data));
     return res.data;
   };
-  await ret([{ species: "lín", length: 35 }, { species: "lín", length: 36 }]);
-  const second = await ret([{ species: "amur", length: 65 }, { species: "amur", length: 66 }]);
+  await ret([{ species: "lín", length: 35 }, { species: "lín", length: 36 }], "2026-06-10");
+  const second = await ret([{ species: "amur", length: 65 }, { species: "amur", length: 66 }], "2026-06-11");
   assert.equal(limitOf(second, "vyznamne-tyden").count, 4, "součet ze dvou místenek");
   assert.equal(limitOf(second, "vyznamne-tyden").exceeded, false, "4 ks je ještě v limitu");
-  const third = await ret([{ species: "kapr", length: 50 }]);
+  const third = await ret([{ species: "kapr", length: 50 }], "2026-06-12");
   const week = limitOf(third, "vyznamne-tyden");
   assert.equal(week.count, 5);
   assert.equal(week.exceeded, true);
@@ -791,7 +793,7 @@ test("limity: týdenní limit se počítá ze všech místenek člena (i bez ú�
   assert.ok(limitOf(third, "kapr-maly-revir"), "revír do 5 ha → limit kapra platí");
 
   // Nová místenka ukáže stav limitů už při objednávce.
-  const next = await order({ memberId, date: "2026-06-11" });
+  const next = await order({ memberId, date: "2026-06-13" });
   assert.equal(limitOf(next.ticket, "vyznamne-tyden").count, 5, "upozornění už při nákupu");
 });
 
@@ -800,10 +802,12 @@ test("limity: po 2 porušeních automatická blokace nákupu; správce ji vidí 
   await setClock("2026-06-10T08:00:00Z");
   const memberId = "72000003";
   const over = [{ species: "lín", length: 35 }, { species: "lín", length: 36 }, { species: "lín", length: 37 }];
-  for (let i = 0; i < 2; i++) {
-    const t = await paidTicket({ memberId, email: "blokovany@example.cz" });
+  for (const day of ["2026-06-10", "2026-06-11"]) { // jedna místenka na den a podrevír → druhá v další den
+    await setClock(`${day}T08:00:00Z`);
+    const t = await paidTicket({ memberId, email: "blokovany@example.cz", date: day });
     assert.equal((await call("POST", `/tickets/${t.code}/return`, { body: { catches: over }, token: t.token })).status, 200);
   }
+  await setClock("2026-06-10T08:00:00Z");
   const blocked = await call("POST", "/orders", { body: orderBody({ memberId }) });
   assert.equal(blocked.status, 403);
   assert.equal(blocked.data.code, "member_blocked");
@@ -817,10 +821,10 @@ test("limity: po 2 porušeních automatická blokace nákupu; správce ji vidí 
   assert.ok(violations.length >= 2 && violations.every((v) => v.blocked));
   const block = (await call("GET", "/manage/blocks", { session: manager.session })).data.blocks.find((b) => b.memberId === memberId);
   assert.equal(block.source, "auto");
-  assert.equal(block.until, "2026-07-09", "30 dní včetně dneška");
+  assert.equal(block.until, "2026-07-10", "30 dní včetně dne blokace (11. 6.)");
   const lifted = await call("POST", `/manage/blocks/${block.id}/lift`, { session: manager.session });
   assert.equal(lifted.data.block.active, false);
-  assert.equal((await call("POST", "/orders", { body: orderBody({ memberId }) })).status, 201, "po zrušení blokace lze nakoupit");
+  assert.equal((await call("POST", "/orders", { body: orderBody({ memberId, date: "2026-06-12" }) })).status, 201, "po zrušení blokace lze nakoupit");
 
   // Ruční blokace.
   assert.equal((await call("POST", "/manage/blocks", { body: { memberId: "123", reason: "Test" }, session: manager.session })).data.code, "invalid_member_id");
@@ -1548,17 +1552,18 @@ test("pravidla porušení: po pozdních odevzdáních a po zadržení automatick
 
   const late = "76000001";
   const a = await paidTicket({ memberId: late, email: "pozdni@example.cz" });
-  const b = await paidTicket({ memberId: late, email: "pozdni@example.cz" });
+  const b = await paidTicket({ memberId: late, email: "pozdni@example.cz", date: "2026-06-11" }); // jedna místenka na den
   await setClock("2026-06-11T08:00:00Z"); // den po lovu → opožděné odevzdání
   await call("POST", `/tickets/${a.code}/return`, { body: { noCatch: true }, token: a.token });
   assert.equal((await call("POST", "/orders", { body: orderBody({ memberId: late, date: "2026-06-12" }) })).status, 201, "první pozdní odevzdání ještě neblokuje");
+  await setClock("2026-06-12T08:00:00Z"); // den po lovu druhé místenky → opožděné odevzdání
   await call("POST", `/tickets/${b.code}/return`, { body: { noCatch: true }, token: b.token });
-  const blocked = await call("POST", "/orders", { body: orderBody({ memberId: late, date: "2026-06-12" }) });
+  const blocked = await call("POST", "/orders", { body: orderBody({ memberId: late, date: "2026-06-13" }) });
   assert.equal(blocked.data.code, "member_blocked", "po 2 pozdních odevzdáních blokace");
   assert.ok(await lastEmail("pozdni@example.cz", "member_blocked"));
   const lateBlock = (await call("GET", "/manage/blocks", { session })).data.blocks.find((x) => x.memberId === late);
   assert.equal(lateBlock.cause, "late_return");
-  assert.equal(lateBlock.until, "2026-06-20", "10 dní včetně dneška");
+  assert.equal(lateBlock.until, "2026-06-21", "10 dní včetně dneška");
 
   await setClock("2026-06-10T08:00:00Z");
   const warden = await wardenAccount();
@@ -1722,6 +1727,27 @@ test("podrevíry: místenka na jeden podrevír s vlastní cenou a kapacitou; jed
   assert.match(gpsMail.html, /mapy\.cz\/zakladni\?source=coor&(amp;)?id=18\.25%2C49\.5/);
   assert.match(gpsMail.text, /GPS: 49\.50000, 18\.25000/);
   assert.equal((await call("PUT", "/manage/settings/reviry/revir-b", { body: { data: revirB.data, note: "Zpět" }, session: manager.session })).status, 200);
+});
+
+test("jedna místenka na rybáře, den a podrevír (podle čísla legitimace)", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const memberId = "77000001";
+  const first = await order({ memberId, date: "2026-06-13" }); // podrevír 1, rezervace čeká na platbu
+  const again = await call("POST", "/orders", { body: orderBody({ memberId, date: "2026-06-13" }) });
+  assert.equal(again.status, 409);
+  assert.equal(again.data.code, "duplicate_ticket");
+  assert.match(again.data.error, /Rozpracovanou objednávku/, "u nezaplacené objednávky poradí dokončit nebo zrušit");
+  assert.equal((await call("POST", "/orders", { body: orderBody({ memberId, date: "2026-06-13", subdistrict: 2 }) })).status, 201, "jiný podrevír týž den lze");
+  assert.equal((await call("POST", "/orders", { body: orderBody({ memberId, date: "2026-06-12" }) })).status, 201, "stejný podrevír jiný den lze");
+  // Zrušená objednávka místo neblokuje; vystavená (zaplacená) místenka ano.
+  assert.equal((await call("POST", `/orders/${first.ticket.code}/cancel`, { token: first.token })).status, 200);
+  const paid = await paidTicket({ memberId, date: "2026-06-13" });
+  assert.ok(paid.code);
+  const duplicate = await call("POST", "/orders", { body: orderBody({ memberId, date: "2026-06-13" }) });
+  assert.equal(duplicate.data.code, "duplicate_ticket");
+  assert.doesNotMatch(duplicate.data.error, /Rozpracovanou/);
+  // Jiný rybář na stejný den a podrevír koupit může.
+  assert.equal((await call("POST", "/orders", { body: orderBody({ memberId: "77000002", date: "2026-06-13" }) })).status, 201);
 });
 
 // ---------- hlášení chyb ----------
