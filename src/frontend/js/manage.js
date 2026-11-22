@@ -129,12 +129,12 @@ async function loadPenaltyRules() {
       <td data-label="Blokovat po"><div class="input-suffix"><input class="penalty-input" id="${key}Count" type="number" min="1" max="50" value="${esc(on ? count : 2)}"${on ? "" : " disabled"}><span>případech</span></div></td>
       <td data-label="Blokace"><div class="input-suffix"><input class="penalty-input" id="${key}Days" type="number" min="1" max="3650" value="${esc(days ?? "")}" placeholder="do konce roku"${on ? "" : " disabled"}><span>dní</span></div></td></tr>`;
     };
-    box.innerHTML = `<table class="data-table penalty-table"><thead><tr><th>Porušení</th><th>Pravidlo</th><th>Blokovat po (za rok)</th><th>Délka blokace</th></tr></thead><tbody>
+    box.innerHTML = `<table class="data-table penalty-table"><thead><tr><th>Porušení</th><th>Pravidlo</th><th>Blokovat po (za rok)${window.Mistenka.infoTip("Počítá se kalendářní rok podle dne lovu.")}</th><th>Délka blokace</th></tr></thead><tbody>
       ${row("limits", `Překročení limitů úlovků <span class="info-tip" tabindex="0" role="img" aria-label="${LIMITS_TIP}" data-tip="${LIMITS_TIP}">i</span>`, "místenky s překročeným denním, týdenním nebo měsíčním limitem", lp.violationsBeforeBlock, lp.blockDays)}
       ${row("late", "Pozdní odevzdání", "odevzdání po skončení dne lovu", late.count, late.blockDays, `<label class="checkbox-label penalty-check"><input type="checkbox" id="lateUnreturned"${late.includeUnreturned !== false ? " checked" : ""}> <span>počítat i neodevzdané (uzavřené po lhůtě)</span></label>`)}
       ${row("seizure", "Zadržení porybným", "místenka zadržená rybářskou stráží", seizure.count, seizure.blockDays)}
       </tbody></table>
-      <p class="field-help">Počítá se kalendářní rok podle dne lovu. Po dosažení počtu se nákup místenek automaticky pozastaví; bez délky blokace platí do konce roku. Držitel dostane e-mail, blokaci vidíte níže a můžete ji zrušit. Odevzdání místenek blokace nikdy nebrání.</p>
+      <p class="field-help">Po dosažení počtu se nákup místenek automaticky pozastaví; bez délky blokace platí do konce roku. Držitel dostane e-mail, blokaci vidíte níže a můžete ji zrušit. Odevzdání místenek blokace nikdy nebrání.</p>
       <button class="primary-button" type="submit">Uložit pravidla</button>`;
     qsa(".penalty-on", box).forEach((toggle) => toggle.addEventListener("change", () => {
       const tr = toggle.closest("tr");
@@ -365,7 +365,7 @@ function updatePaymentCount(n) {
 qs("#showAllPayments").addEventListener("change", loadPayments);
 
 // ---------- poukazy ----------
-const VOUCHER_STATES = { valid: ["Platný", "ok"], used: ["Použitý", "off"], voided: ["Zneplatněný", "bad"] };
+const VOUCHER_STATES = { valid: ["Platný", "ok"], used: ["Použitý", "off"], voided: ["Zneplatněný", "off"] };
 async function loadVouchers() {
   const list = qs("#voucherList");
   try {
@@ -571,7 +571,7 @@ function seasonPeriod(s) {
 function renderRevirStatus(seasons) {
   qs("#revirStatus").innerHTML = config.reviry.map((r) => {
     const s = revirSeason(seasons, r.id);
-    const [label, tone] = s ? SEASON_STATES[s.state] : ["Zavřeno", "off"];
+    const [label, tone] = s ? SEASON_STATES[s.state] : ["Zavřeno", "warn"];
     const period = s
       ? `${esc(s.name)}${s.revirId ? "" : ' <small class="muted-inline">(všechny revíry)</small>'}<br><small class="muted-inline">${esc(seasonPeriod(s))}</small>`
       : '<small class="muted-inline">Bez sezony – místenky se neprodávají.</small>';
@@ -673,7 +673,7 @@ qs("#closureForm").addEventListener("submit", (event) => submitForm(event, async
 }));
 
 // ---------- zálohy a audit (jen admin) ----------
-const KIND_LABELS = { daily: ["denní", "info"], season: ["po uzávěrce", "ok"], manual: ["ruční", "off"], "pre-restore": ["před obnovou", "warn"] };
+const KIND_LABELS = { daily: ["denní", "info"], season: ["po uzávěrce", "ok"], manual: ["ruční", "off"], "pre-restore": ["před obnovou", "info"] };
 const size = (bytes) => (bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} kB`);
 async function loadBackups() {
   const list = qs("#backupList");
@@ -748,7 +748,7 @@ async function loadEmail() {
       return `<div class="email-group"><label class="field-label" for="sender-${g.id}">${esc(g.label)}</label><select id="sender-${g.id}" data-group="${g.id}">${options.join("")}</select><small class="muted-inline">${esc(g.help)}</small>${warn}</div>`;
     };
     const status = (a) => (a.verified ? `<span class="badge badge-ok">ověřeno</span><br><small class="muted-inline">${esc(czDateTime(a.verifiedAt))} → ${esc(a.verifiedTo || "")}</small>`
-      : a.lastError ? `<span class="badge badge-warn">chyba</span><br><small class="muted-inline">${esc(a.lastError.slice(0, 160))}</small>` : '<span class="badge badge-off">neověřeno</span>');
+      : a.lastError ? `<span class="badge badge-bad">chyba</span><br><small class="muted-inline">${esc(a.lastError.slice(0, 160))}</small>` : '<span class="badge badge-off">neověřeno</span>');
     const used = (a) => a.usedFor.map((id) => groups.find((g) => g.id === id)?.label || id).join(", ");
     panel.innerHTML = `
       ${delivery === "file" ? '<p class="field-help">Vývojový server: e-maily se neodesílají, ukládají se do složky <code>data/outbox</code> (i test účtu).</p>' : ""}

@@ -94,7 +94,7 @@ function renderTicket() {
   } else if (ticket.status === "expired_unreturned") {
     const hoursLeft = Math.max(0, Math.ceil((new Date(ticket.returnDeadline) - Date.now()) / 3600000));
     const left = hoursLeft >= 48 ? `${Math.floor(hoursLeft / 24)} ${plural(Math.floor(hoursLeft / 24), "den", "dny", "dní")}` : `${hoursLeft} ${plural(hoursLeft, "hodina", "hodiny", "hodin")}`;
-    status = `<span class="ticket-status late-return"><span>! Opožděné odevzdání</span><small>do ${esc(czDateTime(ticket.returnDeadline))} (zbývá ${left}), pak se místenka uzavře jako neodevzdaná</small></span>`;
+    status = `<span class="ticket-status late-return late-warn"><span>! Opožděné odevzdání</span><small>do ${esc(czDateTime(ticket.returnDeadline))} (zbývá ${left}), pak se místenka uzavře jako neodevzdaná</small></span>`;
   } else {
     status = '<span class="ticket-status timely-return">● Včasné odevzdání</span>';
   }
@@ -157,7 +157,7 @@ qs("#submitReturn").addEventListener("click", async () => {
       : "Děkujeme za vyplnění sumáře úlovků. Místenka je nyní označena jako odevzdaná.";
     // Překročený limit odevzdání neblokuje – rybář dostane upozornění (správce e-mail).
     const warned = (ticket.catches || []).filter((c) => c.warning);
-    qs("#returnedLimits").innerHTML = (warned.length ? `<div class="status-error catch-warning-box"><b>Možné porušení pravidel u ${warned.length === 1 ? "úlovku" : "úlovků"}</b><ul>${warned.map((c) => `<li>${esc(c.species)} ${esc(c.length)} cm: ${esc(c.warning)}</li>`).join("")}</ul><small>Místenka je odevzdaná. Rozhodují pravidla v RIS – údaje v Místence nemusí být aktuální. Porybný i správce upozornění uvidí.</small></div>` : "")
+    qs("#returnedLimits").innerHTML = (warned.length ? `<div class="warn-box catch-warning-box"><b>Možné porušení pravidel u ${warned.length === 1 ? "úlovku" : "úlovků"}</b><ul>${warned.map((c) => `<li>${esc(c.species)} ${esc(c.length)} cm: ${esc(c.warning)}</li>`).join("")}</ul><small>Místenka je odevzdaná. Rozhodují pravidla v RIS – údaje v Místence nemusí být aktuální. Porybný i správce upozornění uvidí.</small></div>` : "")
       + limitsHtml(ticket.limits, { title: "Upozornění na limity úlovků" });
     qs("#ticketSummary").classList.add("hidden");
     show("returnedState");

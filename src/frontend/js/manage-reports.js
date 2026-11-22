@@ -152,9 +152,9 @@
 
   // ---------- přehledy a uzávěrky ----------
   const sign = (n) => (n > 0 ? "pos" : n < 0 ? "neg" : "");
-  const balanceTable = (rows) => rows.length ? `<table class="data-table"><thead><tr><th>Druh</th><th>Uloveno</th><th>Nasazeno</th><th>Rozdíl (kg)</th></tr></thead><tbody>${rows.map((b) => `
+  const balanceTable = (rows) => rows.length ? `<table class="data-table"><thead><tr><th>Druh</th><th>Uloveno${window.Mistenka.infoTip("Hmotnost úlovků jen z vyplněných nebo dopočtených hodnot – skutečně odebrané množství může být vyšší.")}</th><th>Nasazeno</th><th>Rozdíl (kg)</th></tr></thead><tbody>${rows.map((b) => `
     <tr><td data-label="Druh"><b>${esc(b.species)}</b></td><td data-label="Uloveno">${esc(b.caughtCount)} ks · ${esc(kg(b.caughtKg))}</td><td data-label="Nasazeno">${b.stockedPieces ? `${esc(b.stockedPieces)} ks · ` : ""}${esc(kg(b.stockedKg))}</td>
-    <td data-label="Rozdíl"><b class="bal-${sign(b.balanceKg) || "zero"}">${b.balanceKg > 0 ? "+" : ""}${esc(kg(b.balanceKg))}</b></td></tr>`).join("")}</tbody></table><p class="field-help">Hmotnost úlovků jen z vyplněných nebo dopočtených hodnot – skutečně odebrané množství může být vyšší.</p>` : '<p class="muted">Žádné úlovky ani zarybnění.</p>';
+    <td data-label="Rozdíl"><b class="bal-${sign(b.balanceKg) || "zero"}">${b.balanceKg > 0 ? "+" : ""}${esc(kg(b.balanceKg))}</b></td></tr>`).join("")}</tbody></table>` : '<p class="muted">Žádné úlovky ani zarybnění.</p>';
   const catchTable = (rows) => (rows.length ? `<table class="data-table"><thead><tr><th>Druh</th><th>Kusů</th><th>Hmotnost</th><th>Prům. délka</th><th>Max. délka</th></tr></thead><tbody>${rows.map((c) => `<tr><td data-label="Druh"><b>${esc(c.species)}</b></td><td data-label="Kusů">${esc(c.count)}</td><td data-label="Hmotnost">${esc(kg(c.weightKg))}${c.weighed < c.count ? ` <small class="muted-inline">(${esc(c.weighed)}/${esc(c.count)} vážených)</small>` : ""}</td><td data-label="Prům. délka">${esc(c.avgLength)} cm</td><td data-label="Max. délka">${esc(c.maxLength)} cm</td></tr>`).join("")}</tbody></table>` : '<p class="muted">Žádné úlovky.</p>');
   // Úlovky a bilance po podrevírech (když data podrevíry mají), jinak jedna tabulka.
   const grouped = (s, render, whole) => (s.groups?.length ? s.groups.map((g) => `<h4 class="report-group">${esc(g.label)}</h4>${render(g)}`).join("") : whole);

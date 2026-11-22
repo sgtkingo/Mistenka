@@ -1,6 +1,6 @@
 // Manažerský portál – Nastavení (B5): organizace, revíry, ryby a limity, platby. Každé uložení = nová verze.
 (function () {
-  const { qs, qsa, esc, api, showToast, czDateTime, loadSession, hasRole } = window.Mistenka;
+  const { qs, qsa, esc, api, showToast, czDateTime, loadSession, hasRole, infoTip } = window.Mistenka;
   let view = null;
   let tab = "organization";
   let mode = "settings"; // settings = organizace; species = míry, váhy a hájení; bank = platby; reviry = jednotlivé revíry
@@ -123,9 +123,8 @@
     const p = view.payment.data;
     const ro = view.canEditPayment ? "" : "disabled";
     return `<form class="settings-form" data-scope="payment" novalidate>
-      <h3>Podklady pro bankovní převody a QR platby</h3>
-      <p class="field-help">Z těchto údajů se skládá QR platba (SPAYD) a pokyny k platbě v e-mailu; platby se párují podle variabilního symbolu.</p>
-      <div class="${view.canEditPayment ? "info-box" : "status-error"}">${view.canEditPayment ? "Změnu účtu dostanou e-mailem všichni admini. Nové objednávky se budou platit na nový účet, rozpracované zůstávají na původním." : "Platební údaje smí měnit jen admin."}</div>
+      <h3>Podklady pro bankovní převody a QR platby${infoTip("Z těchto údajů se skládá QR platba (SPAYD) a pokyny k platbě v e-mailu; platby se párují podle variabilního symbolu.")}</h3>
+      <div class="info-box">${view.canEditPayment ? "Změnu účtu dostanou e-mailem všichni admini. Nové objednávky se budou platit na nový účet, rozpracované zůstávají na původním." : "Platební údaje smí měnit jen admin."}</div>
       <div class="form-two-col">${field("pAccount", "Číslo účtu (s předčíslím: 19-123456789)", p.accountNumber, ro)}${field("pBank", "Kód banky", p.bankCode, `${ro} maxlength="4"`)}</div>
       <p class="field-help">IBAN: <b>${esc(view.payment.iban)}</b> · zdroj plateb: <b>${esc(view.payment.provider)}</b> (mění se jen v konfiguraci serveru)</p>
       <div class="form-two-col">${field("pRecipient", "Příjemce (do QR platby, bez diakritiky)", p.recipientName, ro)}${field("pMessage", "Zpráva pro příjemce – předpona", p.messagePrefix, ro)}</div>
@@ -155,15 +154,13 @@
       <button class="text-button" type="button" id="addSub">+ Podrevír</button>
       <div class="form-three-col">${field("rLat", "GPS šířka", d.gps?.lat)}${field("rLon", "GPS délka", d.gps?.lon)}${field("rGpsLabel", "GPS popisek", d.gps?.label)}</div>
       ${field("rCard", "Karta revíru (odkaz)", d.cardUrl)}
-      <h3>Doba lovu</h3>
-      <p class="field-help">Nepovinné. Když žádné období nezadáte, rybáři na stránce Pravidla revíru uvidí „Doba lovu není v Místence nastavena – platí údaje v RIS“ s odkazem na kartu revíru. Pravidla revíru navíc vždy začínají upozorněním, že revír se přednostně řídí informacemi v RIS (s odkazem z pole Karta revíru).</p>
+      <h3>Doba lovu${infoTip("Nepovinné. Když žádné období nezadáte, rybáři na stránce Pravidla revíru uvidí „Doba lovu není v Místence nastavena – platí údaje v RIS“ s odkazem na kartu revíru. Pravidla revíru navíc vždy začínají upozorněním, že revír se přednostně řídí informacemi v RIS (s odkazem z pole Karta revíru).")}</h3>
       <table class="data-table edit-table" id="hoursTable"><thead><tr><th>Měsíce (čísla)</th><th>Od</th><th>Do</th><th>Popisek</th><th></th></tr></thead><tbody>${(d.fishingHours || []).map(hoursRow).join("")}</tbody></table>
       <button class="text-button" type="button" id="addHours">+ Období</button>
       <h3>Texty pro rybáře</h3>
       ${area("rPermit", "Upozornění před nákupem", d.permitNote, 2)}
       ${area("rRestrictions", "Omezení (v detailu revíru)", d.restrictions, 2)}
-      <h3>Pravidla revíru <small class="muted-inline">(každý řádek = jedna odrážka)</small></h3>
-      <p class="field-help">Na stránce Pravidla revíru se před vaše oddíly automaticky přidá oddíl „Informace v RIS“: revír se vždy řídí přednostně informacemi v RIS, s odkazem z pole Karta revíru. Za první oddíl se automaticky vloží Doba lovu a na konec tabulka lovných měr a hájení (jen když jsou lovné míry nebo limity zapnuté v sekci Míry, váhy a hájení) – tyto oddíly sem nepište.</p>
+      <h3>Pravidla revíru <small class="muted-inline">(každý řádek = jedna odrážka)</small>${infoTip("Na stránce Pravidla revíru se před vaše oddíly automaticky přidá oddíl „Informace v RIS“: revír se vždy řídí přednostně informacemi v RIS, s odkazem z pole Karta revíru. Za první oddíl se automaticky vloží Doba lovu a na konec tabulka lovných měr a hájení (jen když jsou lovné míry nebo limity zapnuté v sekci Míry, váhy a hájení) – tyto oddíly sem nepište.")}</h3>
       <div id="rulesSections">${(d.rules || []).map(ruleSection).join("")}</div>
       <button class="text-button" type="button" id="addRule">+ Oddíl pravidel</button>
       ${footer(`revir:${r.id}`, r)}</form>`;
@@ -208,17 +205,16 @@
     const limitRows = (list, kind) => (list || []).map((l, i) => `<tr><td>${esc(l.label)}${l.maxAreaHa ? ` <small class="muted-inline">(do ${esc(l.maxAreaHa)} ha)</small>` : ""}</td><td>${kind === "day" ? "den" : l.period === "week" ? "týden" : "měsíc"}</td><td><input class="limit-max" data-kind="${kind}" data-index="${i}" type="number" min="1" value="${esc(l.maxCount)}" size="3"></td><td><small class="muted-inline">${esc(l.source || "")}</small></td></tr>`).join("");
     return `<form class="settings-form" data-scope="species:${esc(part.ref)}" novalidate>
       ${docs.length > 1 ? `<label class="field-label" for="speciesSelect">Pravidla</label><select id="speciesSelect">${docs.map((s) => `<option value="${esc(s.ref)}"${s.ref === speciesRef ? " selected" : ""}>${esc(s.data.name || s.ref)}</option>`).join("")}</select>` : ""}
-      <h3>${esc(d.name || part.ref)}</h3><p class="field-help">Platí ${esc(d.validFrom || "?")} – ${esc(d.validTo || "?")}. Změny se uplatní hned při dalších odevzdáních; místenka si pamatuje verzi pravidel, podle které byla zkontrolována.</p>
+      <h3>${esc(d.name || part.ref)}${infoTip("Změny se uplatní hned při dalších odevzdáních; místenka si pamatuje verzi pravidel, podle které byla zkontrolována.")}</h3><p class="field-help">Platí ${esc(d.validFrom || "?")} – ${esc(d.validTo || "?")}.</p>
       ${toggleSection("spLimitsOn", "Limity úlovků", d.limitsEnabled === true, "Limity se nepočítají: odevzdání, kontrola porybným, místenka ani profil rybáře je neukazují a za překročení se neblokuje.", `
       <table class="data-table edit-table"><thead><tr><th>Druhy</th><th>Období</th><th>Max. ks</th><th>Zdroj</th></tr></thead><tbody>${limitRows(d.dailyLimits, "day")}${limitRows(d.periodLimits, "period")}</tbody></table>`)}
       ${toggleSection("spSizesOn", "Lovné míry a váhy", d.sizeRulesEnabled !== false, "Při odevzdání se nekontroluje lovná míra, doba hájení ani povinné vrácení a pravidla revíru tabulku měr neukazují. Seznam druhů zůstává a odhad hmotnosti podle koeficientu se předvyplňuje dál – vypnutí se vah netýká.", `
-      <p class="field-help">Prázdné pole = bez omezení. Koeficient hmotnosti se používá i při vypnutých lovných mírách – odhad hmotnosti úlovku se předvyplňuje vždy.</p>
-      <div class="table-scroll"><table class="data-table edit-table species-table"><thead><tr><th>Druh</th><th>Lovná míra (cm)</th><th>Vrátit od (cm)</th><th>Doba hájení</th><th>Koef. hmotnosti${infoTip("Odhad hmotnosti z délky: hmotnost (kg) ≈ koeficient × délka³ / 100 000 (délka v cm), např. kapr s koeficientem 2 a délkou 50 cm ≈ 2,5 kg. Rybáři se při odevzdání předvyplní orientační hmotnost, kterou může přepsat. Prázdné = bez odhadu.")}</th></tr></thead><tbody>${d.species.map((s, i) => `
+      <p class="field-help">Prázdné pole = bez omezení.</p>
+      <div class="table-scroll"><table class="data-table edit-table species-table"><thead><tr><th>Druh</th><th>Lovná míra (cm)</th><th>Vrátit od (cm)</th><th>Doba hájení</th><th>Koef. hmotnosti${infoTip("Odhad hmotnosti z délky: hmotnost (kg) ≈ koeficient × délka³ / 100 000 (délka v cm), např. kapr s koeficientem 2 a délkou 50 cm ≈ 2,5 kg. Rybáři se při odevzdání předvyplní orientační hmotnost, kterou může přepsat – i při vypnutých lovných mírách. Prázdné = bez odhadu.")}</th></tr></thead><tbody>${d.species.map((s, i) => `
         <tr data-index="${i}"><td><b>${esc(s.name)}</b>${s.invasive ? ' <small class="muted-inline">invazní</small>' : ""}</td><td><input class="sp-min" type="number" min="0" value="${esc(s.minLength ?? "")}" size="3"></td><td><input class="sp-release" type="number" min="0" value="${esc(s.releaseFromLength ?? "")}" size="3"></td>
         <td><input class="sp-seasons" value="${esc(seasonsToText(s.closedSeasons))}" placeholder="1.1.–15.6."></td><td><input class="sp-factor" type="number" min="0" step="0.05" value="${esc(s.weightFactor ?? "")}" size="4"></td></tr>`).join("")}</tbody></table></div>`)}
       ${footer(`species:${part.ref}`, part)}</form>`;
   }
-  const infoTip = (text) => `<span class="info-tip" tabindex="0" role="img" aria-label="${esc(text)}" data-tip="${esc(text)}">i</span>`;
   // Oddíl se zaškrtávátkem před názvem: zaškrtnuto = hlídá se (oddíl rozbalený), nezaškrtnuto = vypnuto a sbaleno.
   function toggleSection(id, title, enabled, offText, body) {
     return `<section class="toggle-section${enabled ? "" : " collapsed"}">

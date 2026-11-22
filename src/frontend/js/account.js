@@ -359,7 +359,7 @@ function renderTwoFactor(setup = null) {
     }));
     return;
   }
-  box.innerHTML = `<div class="two-factor-state"><span class="badge badge-off">Vypnuto</span><span>${user.roles.includes("admin") ? "Pro admina je dvoufázové ověření povinné." : isStaff(user) ? "Doporučujeme zapnout – spravujete údaje ostatních." : "Volitelné zabezpečení přihlášení kódem z mobilní aplikace."}</span></div><button class="secondary-button" type="button" id="setup2fa">Nastavit dvoufázové ověření</button>`;
+  box.innerHTML = `<div class="two-factor-state"><span class="badge badge-${user.roles.includes("admin") ? "bad" : "off"}">Vypnuto</span><span>${user.roles.includes("admin") ? "Pro admina je dvoufázové ověření povinné." : isStaff(user) ? "Doporučujeme zapnout – spravujete údaje ostatních." : "Volitelné zabezpečení přihlášení kódem z mobilní aplikace."}</span></div><button class="secondary-button" type="button" id="setup2fa">Nastavit dvoufázové ověření</button>`;
   qs("#setup2fa").addEventListener("click", (event) => busy(event.currentTarget, async () => {
     try { renderTwoFactor(await api("/me/2fa/setup", { method: "POST" })); }
     catch (error) { showToast(error.message, "error"); }

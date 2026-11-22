@@ -356,3 +356,18 @@ th .info-tip::after{bottom:auto;top:calc(100% + 8px);left:auto;right:-6px;transf
 .catch-warn-inline{color:#c8302a;font-size:12px}
 .catch-warning-box{text-align:left;margin-bottom:16px}
 .toggle-section h3 .toggle-off{color:#c8302a;font-weight:600}
+.table-head .info-tip::after{left:auto;right:-6px;transform:none;width:min(240px,70vw)}
+/* Jednotné barvy stavů: zelená = OK, oranžová = varování, červená = vážné, modrá / šedá = informace (role mají vlastní barvy). */
+.badge-warn{background:#fde9d4;color:#a8520a}
+.status-returned{background:#f0faf3;border-color:#c4e6cc;color:var(--green)}
+.status-returned>span{background:#d9f3df}
+.status-warning{background:#fff4e8;border-color:#f5c99a;color:#a8520a}
+.status-warning>span{background:#fde3c8}
+.status-neutral{background:#f6f5f4;border-color:#e0ddd9;color:var(--muted)}
+.status-neutral>span{background:#ebe9e7}
+.warn-box{background:#fff4e8;color:#a8520a;border:1px solid #f5c99a;border-radius:6px;padding:14px;font-size:13px}
+.ticket-status.late-warn,.ticket-status.late-warn>span,.ticket-status.late-warn>small{color:#a8520a!important}
+.limits-box li.full b{color:#a8520a}
+.pending-returns{background:#fff4e8;border-color:#f5c99a;color:#7a3d08}
+.info-box.info-warning{background:#fff4e8;border-color:#f5c99a;color:#a8520a}
+.catch-warn-inline{color:#a8520a}

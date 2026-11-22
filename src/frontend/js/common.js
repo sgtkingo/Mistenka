@@ -297,6 +297,20 @@
     } catch { /* není odkaz */ }
     return /^[A-Z0-9]{6}$/i.test(value) ? value.toUpperCase() : "";
   }
+  // Nápověda ⓘ po najetí / fokusu (doplňující vysvětlení k poli, sloupci nebo nadpisu).
+  const infoTip = (text) => `<span class="info-tip" tabindex="0" role="img" aria-label="${esc(text)}" data-tip="${esc(text)}">i</span>`;
+  // Vložení do pole kódu místenky / jednorázového kódu: z PDF se kód kopíruje s mezerami („C C R 3 D 8“),
+  // které by se započítaly do maxlength a kód uřízly. Vezmou se jen písmena a číslice (u odkazu kód z ?code=).
+  document.addEventListener("paste", (event) => {
+    const input = event.target.closest?.(".code-input, .otp-input");
+    if (!input) return;
+    const text = event.clipboardData?.getData("text") || "";
+    const cleaned = input.classList.contains("otp-input") ? text.replace(/\D/g, "").slice(0, 6) : (codeFromQr(text) || text.replace(/[^A-Za-z0-9]/g, "").slice(0, 6).toUpperCase());
+    if (!cleaned) return;
+    event.preventDefault();
+    input.value = cleaned;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
   const CAMERA_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 4 7.2 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.2L15 4H9Zm3 4.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9Zm0 2a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z"/></svg>';
   // Společný dialog s kamerou: decoderFactory(video) vrací funkci → [{ text, format }], parse(text) → hodnota nebo "".
   // onMiss(text, format) může vrátit nápovědu, když se načte kód, který nevyhovuje.
@@ -485,7 +499,9 @@
   };
   function ticketState(ticket) {
     const [label, tone] = TICKET_STATES[ticket.status] || [ticket.status, "off"];
-    return { label: ticket.status === "expired_returned" && ticket.late ? "Odevzdaná opožděně" : label, tone };
+    // Barvy: zelená = v pořádku, oranžová = varování, červená = vážné, modrá / šedá = informace.
+    if (ticket.status === "expired_returned" && ticket.late) return { label: "Odevzdaná opožděně", tone: "warn" };
+    return { label, tone };
   }
   // Limity úlovků (B3): přehled pro rybáře, porybného i správce.
   // mode "notable" = jen dosažené nebo překročené limity (upozornění), "all" = všechny s počtem.
@@ -701,7 +717,7 @@
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", addBugButton); else addBugButton();
 
-  window.Mistenka = { icon, openBugReport, logEvent, qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest, attachQrScanner, attachMemberIdScanner, codeFromQr, memberIdFromBarcode, roleBadge, roleBadges };
+  window.Mistenka = { infoTip, icon, openBugReport, logEvent, qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest, attachQrScanner, attachMemberIdScanner, codeFromQr, memberIdFromBarcode, roleBadge, roleBadges };
 })();
 
 // Pole s číslem členské legitimace (max. 8 znaků): ponechá jen číslice, aby vložené „1234 5678“ nepřišlo o číslici.

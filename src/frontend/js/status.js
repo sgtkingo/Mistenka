@@ -6,12 +6,12 @@ const STATES = {
   future: ["Budoucí", "Místenka začne platit v den lovu.", "status-future", "→"],
   active: ["Aktivní", "Místenka platí pro dnešní den lovu.", "status-active", "✓"],
   expired_returned: ["Odevzdaná", "Místenka byla odevzdána.", "status-returned", "↩"],
-  expired_returned_late: ["Opožděné odevzdání", "Místenka byla odevzdána po skončení dne lovu.", "status-expired", "↩"],
-  expired_unreturned: ["Propadlá, neodevzdaná", "Místenka už neplatí pro lov a nebyla odevzdána.", "status-expired", "!"],
+  expired_returned_late: ["Opožděné odevzdání", "Místenka byla odevzdána po skončení dne lovu.", "status-warning", "↩"],
+  expired_unreturned: ["Propadlá, neodevzdaná", "Místenka už neplatí pro lov a nebyla odevzdána.", "status-warning", "!"],
   closed_unreturned: ["Uzavřená, neodevzdaná", "Místenka nebyla odevzdána ani v prodloužené lhůtě a byla automaticky uzavřena.", "status-expired", "×"],
-  pending_payment: ["Čeká na platbu", "Místenka zatím nebyla zaplacena a neopravňuje k lovu.", "status-expired", "…"],
-  payment_expired: ["Nezaplacená", "Objednávka nebyla včas zaplacena. Místenka neplatí.", "status-expired", "×"],
-  cancelled: ["Zrušená", "Objednávka byla zrušena. Místenka neplatí.", "status-expired", "×"],
+  pending_payment: ["Čeká na platbu", "Místenka zatím nebyla zaplacena a neopravňuje k lovu.", "status-warning", "…"],
+  payment_expired: ["Nezaplacená", "Objednávka nebyla včas zaplacena. Místenka neplatí.", "status-neutral", "×"],
+  cancelled: ["Zrušená", "Objednávka byla zrušena. Místenka neplatí.", "status-neutral", "×"],
   seized: ["Zadržená", "Místenku zadržela rybářská stráž. Neopravňuje k lovu; držitel ji musí odevzdat s úlovky.", "status-expired", "!"]
 };
 
@@ -54,7 +54,7 @@ const catchText = (t) => (t.catches.length ? t.catches.map((c) => `${c.species} 
 // Úlovky s možným porušením pravidel (míra, hájení, povinné vrácení) – porybný je má zkontrolovat podle RIS.
 const catchWarningsHtml = (catches) => {
   const warned = (catches || []).filter((c) => c.warning);
-  return warned.length ? `<div class="status-error catch-warning-box"><b>⚠ Možné porušení pravidel – zkontrolujte</b><ul>${warned.map((c) => `<li>${esc(c.species)} ${esc(c.length)} cm: ${esc(c.warning)}</li>`).join("")}</ul><small>Podle údajů v Místence; rozhodují pravidla v RIS.</small></div>` : "";
+  return warned.length ? `<div class="warn-box catch-warning-box"><b>⚠ Možné porušení pravidel – zkontrolujte</b><ul>${warned.map((c) => `<li>${esc(c.species)} ${esc(c.length)} cm: ${esc(c.warning)}</li>`).join("")}</ul><small>Podle údajů v Místence; rozhodují pravidla v RIS.</small></div>` : "";
 };
 async function loadWarden() {
   const panel = qs("#wardenPanel");
@@ -85,12 +85,11 @@ function renderWarden(view) {
     </dl>
     ${seizure}
     ${catchWarningsHtml(view.catches)}
-    ${history.some((t) => !t.current && t.catches.some((c) => c.warning)) ? `<p class="field-help">⚠ = možné porušení pravidel u úlovku na jiné místence člena.</p>` : ""}
     ${view.blocked ? `<div class="status-error">Člen má pozastavený nákup místenek ${view.blocked.until ? `do ${esc(czDate(view.blocked.until))}` : "do odvolání"}: ${esc(view.blocked.reason)}</div>` : ""}
     ${limitsHtml(view.limits, { mode: "all", title: "Limity úlovků člena" })}
     <h3>Místenky člena</h3>
     <p class="field-help">Týden ${esc(czDate(view.memberHistory.week.from, { year: false }))}–${esc(czDate(view.memberHistory.week.to))}: ${weekCount} · měsíc: ${monthCount}. Jen místenky v Místence – limity platí na všech revírech svazu dohromady.</p>
-    <table class="data-table"><thead><tr><th>Den</th><th>Revír</th><th>Stav</th><th>Úlovky</th></tr></thead><tbody>${history.map((t) => {
+    <table class="data-table"><thead><tr><th>Den</th><th>Revír</th><th>Stav</th><th>Úlovky${window.Mistenka.infoTip("⚠ = možné porušení pravidel u úlovku (míra, hájení, povinné vrácení) podle údajů v Místence – rozhodují pravidla v RIS.")}</th></tr></thead><tbody>${history.map((t) => {
       const state = ticketState(t);
       return `<tr${t.current ? ' class="current-row"' : ""}><td data-label="Den">${esc(czDate(t.date, { year: false }))}${t.inWeek ? "" : ' <small class="muted-inline">(mimo týden)</small>'}</td><td data-label="Revír">${esc(t.revir)}</td><td data-label="Stav"><span class="badge badge-${esc(state.tone)}">${esc(state.label)}</span></td><td data-label="Úlovky">${esc(catchText(t))}</td></tr>`;
     }).join("")}</tbody></table>
