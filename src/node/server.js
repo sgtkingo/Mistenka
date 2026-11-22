@@ -221,6 +221,7 @@ async function handleApi(req, res, url, ip) {
   if (pathname === "/api/me/password" && method === "PUT") return send(res, 200, accounts.changePassword(ctx, await readBody(req)));
   if (pathname === "/api/me/delete" && method === "POST") return send(res, 200, accounts.deleteAccount(ctx, await readBody(req)), clearCookie);
   if (pathname === "/api/me/tickets" && method === "GET") return send(res, 200, { tickets: service.ticketsForUser(accounts.requireUser(ctx)) });
+  if (pathname === "/api/me/community" && method === "GET") { accounts.requireUser(ctx); return send(res, 200, service.communityStats()); }
   if (pathname === "/api/me/stats" && method === "GET") return send(res, 200, service.statsForUser(accounts.requireUser(ctx)));
   if (pathname === "/api/me/limits" && method === "GET") return send(res, 200, service.limitsForMember(accounts.requireUser(ctx), url.searchParams.get("revirId") || ""));
   if (pathname === "/api/me/warden-request" && method === "POST") return send(res, 200, accounts.requestWarden(ctx, await readBody(req)));

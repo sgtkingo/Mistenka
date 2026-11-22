@@ -296,6 +296,7 @@ final class App
         if ($path === '/me/password' && $method === 'PUT') return self::json(200, $acc->changePassword($ctx, self::body($request)));
         if ($path === '/me/delete' && $method === 'POST') { $result = $acc->deleteAccount($ctx, self::body($request)); $this->clearCookie(); return self::json(200, $result); }
         if ($path === '/me/tickets' && $method === 'GET') return self::json(200, ['tickets' => $svc->ticketsForUser($acc->requireUser($ctx))]);
+        if ($path === '/me/community' && $method === 'GET') { $acc->requireUser($ctx); return self::json(200, $svc->communityStats()); }
         if ($path === '/me/stats' && $method === 'GET') return self::json(200, $svc->statsForUser($acc->requireUser($ctx)));
         if ($path === '/me/limits' && $method === 'GET') return self::json(200, $svc->limitsForMember($acc->requireUser($ctx), $q('revirId')));
         if ($path === '/me/warden-request' && $method === 'POST') return self::json(200, $acc->requestWarden($ctx, self::body($request)));

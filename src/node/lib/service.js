@@ -491,11 +491,13 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
   function statsForUser(user) {
     const tickets = db.prepare("SELECT id, fishing_date, revir_id, subdistrict, returned_at FROM tickets WHERE user_id = ? AND status = 'issued' AND fishing_date <= ? ORDER BY fishing_date, id").all(user.id, time.pragueToday());
     const round = (n) => Math.round(n * 100) / 100;
+    const round1 = (n) => Math.round(n * 10) / 10;
     const where = (t) => { const revir = revirOf(t); return { date: t.fishing_date, revir: revir.name, subdistrict: subdistrictName(revir, t.subdistrict) }; };
-    const out = { visits: tickets.length, returned: 0, catches: 0, totalWeight: 0, successRate: null, biggest: null, heaviest: null, bestTrip: null, species: [], years: [] };
+    const out = { visits: tickets.length, returned: 0, catches: 0, totalWeight: 0, avgLength: null, successRate: null, biggest: null, heaviest: null, bestTrip: null, species: [], years: [] };
     const species = new Map();
     const years = new Map();
     let successful = 0;
+    let lengthSum = 0;
     for (const t of tickets) {
       const catches = db.prepare("SELECT species, length_cm, weight_kg FROM catches WHERE ticket_id = ? ORDER BY id").all(t.id);
       const year = t.fishing_date.slice(0, 4);
@@ -505,9 +507,11 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       years.set(year, y);
       if (t.returned_at) { out.returned += 1; if (catches.length) successful += 1; }
       let weight = 0;
+      let tripLength = 0;
       for (const c of catches) {
         out.catches += 1;
         weight += c.weight_kg || 0;
+        tripLength += c.length_cm;
         const item = { species: c.species, length: c.length_cm, weight: c.weight_kg, ...where(t) };
         if (!out.biggest || c.length_cm > out.biggest.length || (c.length_cm === out.biggest.length && (c.weight_kg || 0) > (out.biggest.weight || 0))) out.biggest = item;
         if (c.weight_kg && (!out.heaviest || c.weight_kg > out.heaviest.weight)) out.heaviest = item;
@@ -517,15 +521,60 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
         species.set(c.species, s);
       }
       out.totalWeight += weight;
+      lengthSum += tripLength;
       if (catches.length && (!out.bestTrip || catches.length > out.bestTrip.catches || (catches.length === out.bestTrip.catches && weight > out.bestTrip.weight))) {
-        out.bestTrip = { ...where(t), catches: catches.length, weight: round(weight) };
+        out.bestTrip = { ...where(t), catches: catches.length, weight: round(weight), avgLength: round1(tripLength / catches.length) };
       }
     }
     out.totalWeight = round(out.totalWeight);
+    out.avgLength = out.catches ? round1(lengthSum / out.catches) : null;
     out.successRate = out.returned ? Math.round((successful / out.returned) * 100) : null;
     out.species = [...species.values()].sort((a, b) => b.count - a.count || b.maxLength - a.maxLength).slice(0, 5);
     out.years = [...years.values()].sort((a, b) => b.year.localeCompare(a.year));
     return out;
+  }
+
+  // „Jak se posledně dařilo ostatním?“ – souhrn bez osobních údajů za všechny revíry MO:
+  // poslední den lovu před dneškem s odevzdanými místenkami + celkové rekordy (největší ryba, nejúspěšnější lov).
+  function communityStats() {
+    if (config.statsPolicy?.community === false) return { enabled: false };
+    const round = (n) => Math.round(n * 100) / 100;
+    const round1 = (n) => Math.round(n * 10) / 10;
+    const where = (t) => { const revir = revirOf(t); return { date: t.fishing_date, revir: revir.name, subdistrict: subdistrictName(revir, t.subdistrict) }; };
+    const date = db.prepare("SELECT MAX(fishing_date) AS d FROM tickets WHERE status = 'issued' AND returned_at IS NOT NULL AND fishing_date < ?").get(time.pragueToday()).d || null;
+    let lastDay = null;
+    if (date) {
+      const tickets = db.prepare("SELECT id FROM tickets WHERE status = 'issued' AND returned_at IS NOT NULL AND fishing_date = ? ORDER BY id").all(date);
+      let catches = 0, weight = 0, lengthSum = 0, maxLength = 0, maxPerTicket = 0, successful = 0;
+      for (const t of tickets) {
+        const rows = db.prepare("SELECT length_cm, weight_kg FROM catches WHERE ticket_id = ?").all(t.id);
+        if (rows.length) successful += 1;
+        maxPerTicket = Math.max(maxPerTicket, rows.length);
+        for (const c of rows) { catches += 1; weight += c.weight_kg || 0; lengthSum += c.length_cm; maxLength = Math.max(maxLength, c.length_cm); }
+      }
+      const recordDay = db.prepare("SELECT COUNT(c.id) AS n FROM tickets t JOIN catches c ON c.ticket_id = t.id WHERE t.status = 'issued' GROUP BY t.fishing_date ORDER BY n DESC LIMIT 1").get()?.n || 0;
+      // Rybářský tlak: vystavené místenky toho dne vůči místům na revírech otevřených ten den (podrevíry v prodeji, jinak revír).
+      const issued = db.prepare("SELECT COUNT(*) AS n FROM tickets WHERE status = 'issued' AND fishing_date = ?").get(date).n;
+      const capacityOf = (r) => ((r.saleSubdistricts || []).length ? r.saleSubdistricts.reduce((sum, s) => sum + s.dailyCapacity, 0) : r.dailyCapacity);
+      const open = config.reviry.filter((r) => operations.dayStatus(r.id, date).open);
+      const capacity = (open.length ? open : config.reviry).reduce((sum, r) => sum + capacityOf(r), 0);
+      lastDay = {
+        date, anglers: tickets.length, issued, capacity, pressure: capacity ? Math.round((issued / capacity) * 100) : null,
+        catches, totalWeight: round(weight),
+        avgPerAngler: tickets.length ? round1(catches / tickets.length) : 0, avgLength: catches ? round1(lengthSum / catches) : null,
+        successRate: tickets.length ? Math.round((successful / tickets.length) * 100) : null,
+        maxLength, maxPerTicket, recordDayCatches: recordDay
+      };
+    }
+    const big = db.prepare("SELECT c.species, c.length_cm, c.weight_kg, t.fishing_date, t.revir_id, t.subdistrict FROM catches c JOIN tickets t ON t.id = c.ticket_id WHERE t.status = 'issued' ORDER BY c.length_cm DESC, COALESCE(c.weight_kg, 0) DESC, t.fishing_date, c.id LIMIT 1").get();
+    const trip = db.prepare(`SELECT t.id, t.fishing_date, t.revir_id, t.subdistrict, COUNT(c.id) AS n, SUM(COALESCE(c.weight_kg, 0)) AS w, SUM(c.length_cm) AS l
+      FROM tickets t JOIN catches c ON c.ticket_id = t.id WHERE t.status = 'issued' GROUP BY t.id, t.fishing_date, t.revir_id, t.subdistrict ORDER BY n DESC, w DESC, t.fishing_date, t.id LIMIT 1`).get();
+    return {
+      enabled: true,
+      lastDay,
+      biggest: big ? { species: big.species, length: big.length_cm, weight: big.weight_kg, ...where(big) } : null,
+      bestTrip: trip ? { ...where(trip), catches: trip.n, weight: round(trip.w), avgLength: round1(trip.l / trip.n) } : null
+    };
   }
 
   // ---------- porybný (B2) ----------
@@ -940,7 +989,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     return { result: report.payments?.results?.[0] || null };
   }
 
-  return { availability, createOrder, getPublicTicket, getOwnerTicket, ticketsForUser, wardenCheck, seizeTicket, listTickets, ticketsCsv, ticketDetail, cancelByManager, listPayments, resolvePayment, listVouchers, generateVouchers, voidVoucher, listViolations, listBlocks, createBlock, liftBlock, limitsForMember, statsForUser, cancelOrder, submitReturn, checkVoucher, createVoucher, runJobs, addJob, simulatePayment, processTransaction, stateOf };
+  return { availability, createOrder, getPublicTicket, getOwnerTicket, ticketsForUser, wardenCheck, seizeTicket, listTickets, ticketsCsv, ticketDetail, cancelByManager, listPayments, resolvePayment, listVouchers, generateVouchers, voidVoucher, listViolations, listBlocks, createBlock, liftBlock, limitsForMember, statsForUser, communityStats, cancelOrder, submitReturn, checkVoucher, createVoucher, runJobs, addJob, simulatePayment, processTransaction, stateOf };
 }
 
 module.exports = { createService, ApiError };

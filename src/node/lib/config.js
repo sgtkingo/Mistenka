@@ -76,6 +76,9 @@ function buildConfig(rawInput, speciesDocs) {
   if (!Number.isInteger(config.payment.reservationMinutes) || config.payment.reservationMinutes < 10 || config.payment.reservationMinutes > 24 * 60) fail("rezervace před platbou musí být 10–1440 minut");
   config.payment.provider ||= "fake";
   config.publicCheck ||= { showFullName: true, memberIdVisibleChars: 4 };
+  // Veřejná část statistiky v účtu („Jak se posledně dařilo ostatním?“) – výchozí zapnuto.
+  config.statsPolicy = { community: true, ...(config.statsPolicy || {}) };
+  if (typeof config.statsPolicy.community !== "boolean") fail("statsPolicy.community musí být true/false");
   // Automatická blokace po opakovaném porušení limitů (0 = vypnuto).
   config.limitPolicy = { violationsBeforeBlock: 0, blockDays: null, ...(config.limitPolicy || {}) };
   if (!Number.isInteger(config.limitPolicy.violationsBeforeBlock) || config.limitPolicy.violationsBeforeBlock < 0) fail("počet porušení před blokací musí být celé číslo >= 0");

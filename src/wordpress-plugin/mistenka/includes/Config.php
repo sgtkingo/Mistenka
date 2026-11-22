@@ -107,6 +107,9 @@ final class Config
         if (!Js::isInteger($rm) || $rm < 10 || $rm > 24 * 60) self::fail('rezervace před platbou musí být 10–1440 minut');
         if (empty($config['payment']['provider'])) $config['payment']['provider'] = 'fake';
         if (empty($config['publicCheck'])) $config['publicCheck'] = ['showFullName' => true, 'memberIdVisibleChars' => 4];
+        // Veřejná část statistiky v účtu („Jak se posledně dařilo ostatním?“) – výchozí zapnuto.
+        $config['statsPolicy'] = array_merge(['community' => true], is_array($config['statsPolicy'] ?? null) ? $config['statsPolicy'] : []);
+        if (!is_bool($config['statsPolicy']['community'])) self::fail('statsPolicy.community musí být true/false');
         $config['limitPolicy'] = array_merge(['violationsBeforeBlock' => 0, 'blockDays' => null], is_array($config['limitPolicy'] ?? null) ? $config['limitPolicy'] : []);
         $lp = $config['limitPolicy'];
         if (!Js::isInteger($lp['violationsBeforeBlock']) || $lp['violationsBeforeBlock'] < 0) self::fail('počet porušení před blokací musí být celé číslo >= 0');

@@ -877,7 +877,29 @@ test("osobní statistika rybáře v účtu", async () => {
   assert.equal(stats.bestTrip.catches, 2);
   assert.deepEqual(stats.species.map((x) => x.count), [1, 1]);
   assert.deepEqual(stats.years, [{ year: "2026", visits: 2, catches: 2 }]);
+  assert.equal(stats.avgLength, 45, "průměrná délka (55 + 35) / 2");
+  assert.equal(stats.bestTrip.avgLength, 45);
   assert.equal((await call("GET", "/me/stats")).status, 401);
+
+  // „Jak se posledně dařilo ostatním?“ – bez osobních údajů, poslední den lovu před dneškem.
+  const community = (await call("GET", "/me/community", { session: account.session })).data;
+  assert.ok(community.lastDay && community.lastDay.date < "2026-06-12", JSON.stringify(community.lastDay));
+  assert.ok(community.lastDay.catches >= 0 && community.lastDay.anglers >= 1);
+  assert.ok(community.biggest.length >= 55 && community.biggest.species && community.biggest.date);
+  assert.ok(community.bestTrip.catches >= 2 && community.bestTrip.avgLength > 0);
+  assert.ok(!JSON.stringify(community).includes(account.memberId), "žádné osobní údaje");
+  assert.equal((await call("GET", "/me/community")).status, 401);
+  assert.equal(community.enabled, true);
+  assert.ok(community.lastDay.capacity > 0 && community.lastDay.issued >= community.lastDay.anglers, JSON.stringify(community.lastDay));
+  assert.equal(community.lastDay.pressure, Math.round((community.lastDay.issued / community.lastDay.capacity) * 100));
+  // Správa může veřejnou statistiku vypnout (nastavení organizace, výchozí zapnuto).
+  const { session: mgr } = await managerAccount();
+  const orgDoc = (await call("GET", "/manage/settings", { session: mgr })).data.organization.data;
+  assert.equal((await call("PUT", "/manage/settings/organization", { body: { data: { ...orgDoc, statsPolicy: { community: false } } }, session: mgr })).status, 200);
+  assert.deepEqual((await call("GET", "/me/community", { session: account.session })).data, { enabled: false });
+  assert.equal((await call("PUT", "/manage/settings/organization", { body: { data: { ...orgDoc, statsPolicy: { community: "ne" } } }, session: mgr })).data.code, "invalid_settings");
+  await call("POST", "/manage/settings/reset", { body: { scope: "organization" }, session: mgr });
+  assert.equal((await call("GET", "/me/community", { session: account.session })).data.enabled, true);
 });
 
 // ---------- provoz: důležité zprávy, sezony, uzavření (B4) ----------

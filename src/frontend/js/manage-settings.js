@@ -101,6 +101,8 @@
       <p class="field-help">Odesílatele automatických e-mailů a příjemce upozornění správcům nastavuje admin v <b>Admin → Emailoví klienti</b>.</p>
       <h3>Veřejná kontrola místenky</h3>
       <div class="form-two-col"><div><label class="checkbox-label settings-check"><input type="checkbox" id="pcFull"${pc.showFullName !== false ? " checked" : ""}> <span>Zobrazit celé příjmení</span></label></div>${field("pcChars", "Viditelné číslice legitimace", pc.memberIdVisibleChars ?? 4, 'type="number" min="0" max="8"')}</div>
+      <h3>Statistika v účtu rybáře</h3>
+      <label class="checkbox-label settings-check"><input type="checkbox" id="spCommunity"${d.statsPolicy?.community !== false ? " checked" : ""}> <span>Zobrazovat „Jak se posledně dařilo ostatním?“ – souhrn posledního dne lovu a rekordy revírů, bez jmen</span></label>
       <h3>Ochrana osobních údajů – lhůty uchování <a class="text-link" href="privacy.html" target="_blank">zobrazit zásady ↗</a></h3>
       <div class="form-three-col">${field("prEmail", "E-mail pro žádosti subjektů údajů", d.privacy?.contactEmail, 'type="email"')}${field("prTickets", "Místenky (roky po roce lovu)", d.privacy?.ticketYears ?? 3, 'type="number" min="1" max="20"')}${field("prAccounting", "Platby – účetní lhůta (roky)", d.privacy?.accountingYears ?? 10, 'type="number" min="5" max="20"')}</div>
       <div class="form-three-col">${field("prEmails", "Odeslané e-maily (dny)", d.privacy?.emailDays ?? 90, 'type="number" min="7"')}${field("prAudit", "Audit (roky)", d.privacy?.auditYears ?? 5, 'type="number" min="1" max="20"')}${field("prBackups", "Zálohy (roky)", d.privacy?.backupYears ?? 3, 'type="number" min="1" max="20"')}</div>
@@ -115,6 +117,7 @@
     d.privacy = { contactEmail: val("prEmail"), ticketYears: num("prTickets", "Místenky"), accountingYears: num("prAccounting", "Účetní lhůta"), emailDays: num("prEmails", "E-maily"), auditYears: num("prAudit", "Audit"), backupYears: num("prBackups", "Zálohy") };
     d.organization = { ...d.organization, name: val("oName"), shortName: val("oShort"), web: val("oWeb"), privacyUrl: val("oPrivacy"), address: val("oAddress"), ico: val("oIco"), contact: { ...(d.organization?.contact || {}), label: val("cLabel"), email: val("cEmail"), phone: val("cPhone") } };
     d.publicCheck = { showFullName: qs("#pcFull").checked, memberIdVisibleChars: num("pcChars", "Viditelné číslice") };
+    d.statsPolicy = { ...(d.statsPolicy || {}), community: qs("#spCommunity").checked };
     return d;
   }
 

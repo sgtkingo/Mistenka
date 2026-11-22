@@ -374,3 +374,21 @@ th .info-tip::after{bottom:auto;top:calc(100% + 8px);left:auto;right:-6px;transf
 .stats-kpi small,.stats-records small,.stats-subtitle{display:flex;align-items:center;gap:6px}
 .stats-kpi .ico,.stats-subtitle .ico{color:var(--blue);flex:none}
 .stats-records .ico{color:var(--green);flex:none}
+/* Bloky statistik plněné vodou (účet → Statistika). */
+.water-tile{position:relative;overflow:hidden;isolation:isolate;background:#f7fbff;border-color:#cfe5f8}
+.water-tile .water{position:absolute;left:0;right:0;bottom:0;height:0;z-index:-1;background:linear-gradient(180deg,#c4e3f8,#9fd0f1);transition:height 1.8s cubic-bezier(.22,.8,.3,1)}
+.water-tile.filled .water{height:calc(var(--fill) * 100%)}
+.water-tile .water::before{content:"";position:absolute;left:0;top:-7px;width:calc(100% + 40px);height:8px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='8' viewBox='0 0 40 8'%3E%3Cpath d='M0 5 Q10 1 20 5 T40 5 V8 H0z' fill='%23c4e3f8'/%3E%3C/svg%3E") repeat-x;background-size:40px 8px;animation:water-wave 2.8s linear infinite}
+.water-tile .swim{position:absolute;left:100%;color:#2f7fc0;opacity:0;line-height:0;transition:opacity .6s 1.4s}
+.water-tile.filled .swim{opacity:.45;animation:water-swim 11s linear infinite}
+.water-tile .s1{bottom:4px}
+.water-tile .s2{bottom:30%;animation-duration:15s!important;animation-delay:-6s!important}
+@keyframes water-wave{to{transform:translateX(-40px)}}
+@keyframes water-swim{0%{left:100%}100%{left:-24px}}
+@media (prefers-reduced-motion:reduce){.water-tile .water{transition:none}.water-tile .water::before,.water-tile.filled .swim{animation:none}.water-tile .swim{display:none}}
+.community-title{margin-top:30px;padding-top:22px;border-top:1px solid var(--line)}
+.community-day{margin:0 0 12px}
+@media (max-width:640px){#communityStats .kpi-grid{grid-template-columns:1fr 1fr}}
+.kpi-wide{grid-column:span 2}
+.kpi-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:2px}
+.kpi-pair b{display:block;font-size:20px}

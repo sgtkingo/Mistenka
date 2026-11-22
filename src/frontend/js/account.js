@@ -212,6 +212,7 @@ function renderAccount() {
   loadTickets();
   loadLimits();
   loadStats();
+  loadCommunity();
   if (location.hash === "#2fa") openTwoFactorSetup();
 }
 
@@ -246,6 +247,50 @@ async function loadLimits() {
 
 // Osobní statistika: docházky, úlovky, největší úlovek, nejúspěšnější lov (jen rybářské účty).
 const decimal = (n) => String(Math.round(n * 100) / 100).replace(".", ",");
+// Blok, který se animovaně naplní vodou do výšky fill (0–1); od určité hladiny v něm plavou ryby.
+function waterTile(ico, label, value, hint, fill) {
+  const f = Math.max(0, Math.min(1, Number(fill) || 0));
+  const fish = `${f >= 0.2 ? `<span class="swim s1">${icon("fish", 14)}</span>` : ""}${f >= 0.5 ? `<span class="swim s2">${icon("fish", 11)}</span>` : ""}`;
+  return `<div class="kpi stats-kpi water-tile" style="--fill:${f.toFixed(3)}"><div class="water" aria-hidden="true">${fish}</div><small>${icon(ico, 15)}${esc(label)}</small><b>${esc(value)}</b>${hint ? `<em>${esc(hint)}</em>` : ""}</div>`;
+}
+// Napouštění začne, až je blok vidět (jinak by animace proběhla mimo obrazovku).
+function fillWater(root) {
+  const tiles = qsa(".water-tile", root);
+  if (!("IntersectionObserver" in window)) return tiles.forEach((t) => t.classList.add("filled"));
+  const io = new IntersectionObserver((entries) => entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("filled"); io.unobserve(e.target); } }), { threshold: 0.4 });
+  tiles.forEach((t) => io.observe(t));
+}
+const tileHtml = ([ico, label, value, hint]) => `<div class="kpi stats-kpi"><small>${icon(ico, 15)}${esc(label)}</small><b>${esc(value)}</b>${hint ? `<em>${esc(hint)}</em>` : ""}</div>`;
+const recordHtml = ([ico, label, value, where]) => `<div><small>${icon(ico, 15)}${esc(label)}</small><b>${esc(value)}</b><span>${esc(where)}</span></div>`;
+const placeText = (x) => `${czDate(x.date)} · ${x.revir}${x.subdistrict ? ` (${x.subdistrict})` : ""}`;
+const fishText = (c) => `${c.species} ${decimal(c.length)} cm${c.weight ? ` · ${decimal(c.weight)} kg` : ""}`;
+const catchesWord = (n) => plural(n, "úlovek", "úlovky", "úlovků");
+
+// „Jak se posledně dařilo ostatním?“ – poslední den lovu (všechny revíry) a celkové rekordy, bez jmen.
+async function loadCommunity() {
+  const box = qs("#communityStats");
+  if (!user.memberId) return;
+  try {
+    const c = await api("/me/community");
+    // Správa může veřejnou část statistiky vypnout (Nastavení → Statistika v účtu rybáře).
+    if (c.enabled === false) { box.innerHTML = ""; qs(".community-title").classList.add("hidden"); return; }
+    const d = c.lastDay;
+    const day = d ? `<p class="field-help community-day">Den lovu ${esc(czDate(d.date, { weekday: true }))} · všechny revíry · uloveno ${esc(d.catches)} ${catchesWord(d.catches)}${d.totalWeight ? ` (${esc(decimal(d.totalWeight))} kg)` : ""} na ${esc(d.anglers)} ${plural(d.anglers, "odevzdané místence", "odevzdaných místenkách", "odevzdaných místenkách")}</p>
+      <div class="kpi-grid">${[
+        waterTile("people", "Rybářský tlak", d.capacity ? `${d.issued} / ${d.capacity}` : String(d.issued), d.pressure === null ? "rybářů na revíru" : `rybářů z dostupných míst (${d.pressure} %)`, d.capacity ? d.issued / d.capacity : 0),
+        waterTile("chart", "Průměr na rybáře", decimal(d.avgPerAngler), "úlovků na místenku", d.maxPerTicket ? d.avgPerAngler / d.maxPerTicket : 0),
+        waterTile("ruler", "Průměrná velikost", d.avgLength === null ? "–" : `${decimal(d.avgLength)} cm`, d.maxLength ? `největší ${decimal(d.maxLength)} cm` : "", d.maxLength && d.avgLength ? d.avgLength / d.maxLength : 0),
+        waterTile("target", "Úspěšnost", d.successRate === null ? "–" : `${d.successRate} %`, "rybářů s úlovkem", (d.successRate || 0) / 100)
+      ].join("")}</div>` : "";
+    const records = [
+      c.biggest && ["trophy", "Největší ryba", fishText(c.biggest), placeText(c.biggest)],
+      c.bestTrip && ["star", "Nejúspěšnější lov", `${c.bestTrip.catches} ${catchesWord(c.bestTrip.catches)}${c.bestTrip.weight ? ` · ${decimal(c.bestTrip.weight)} kg` : ""} · ø ${decimal(c.bestTrip.avgLength)} cm`, placeText(c.bestTrip)]
+    ].filter(Boolean);
+    if (!day && !records.length) { box.innerHTML = '<p class="muted">Zatím nikdo neodevzdal místenku s úlovky.</p>'; return; }
+    box.innerHTML = `${day}${records.length ? `<h3 class="stats-subtitle">${icon("calendar")}Celkově</h3><div class="stats-records">${records.map(recordHtml).join("")}</div>` : ""}`;
+    fillWater(box);
+  } catch { box.innerHTML = ""; qs(".community-title")?.classList.add("hidden"); }
+}
 async function loadStats() {
   const card = qs("#statsCard");
   card.classList.toggle("hidden", !user.memberId);
@@ -254,23 +299,26 @@ async function loadStats() {
   try {
     const s = await api("/me/stats");
     if (!s.visits) { box.innerHTML = `<p class="muted">Zatím tu nic není – statistika se naplní po první místence a jejím odevzdání.</p>`; return; }
-    const place = (x) => `${czDate(x.date)} · ${x.revir}${x.subdistrict ? ` (${x.subdistrict})` : ""}`;
-    const fish = (c) => `${c.species} ${decimal(c.length)} cm${c.weight ? ` · ${decimal(c.weight)} kg` : ""}`;
+    const place = placeText;
+    const fish = fishText;
     const tiles = [
-      ["ticket", "Docházky", s.visits, s.returned < s.visits ? `odevzdáno ${s.returned}` : ""],
-      ["fish", "Úlovky", s.catches, s.totalWeight ? `celkem ${decimal(s.totalWeight)} kg` : ""],
-      ["target", "Úspěšnost", s.successRate === null ? "–" : `${s.successRate} %`, "lovů s úlovkem"],
-      ["chart", "Průměr na lov", s.returned ? decimal(s.catches / s.returned) : "–", "úlovků na odevzdanou místenku"]
+      ["fish", "Docházky a úlovky", `${s.catches} ${catchesWord(s.catches)}`, `${s.visits} ${plural(s.visits, "docházka", "docházky", "docházek")}${s.returned < s.visits ? ` (odevzdáno ${s.returned})` : ""}${s.totalWeight ? ` · celkem ${decimal(s.totalWeight)} kg` : ""}`],
+      waterTile("target", "Úspěšnost", s.successRate === null ? "–" : `${s.successRate} %`, "lovů s úlovkem", (s.successRate || 0) / 100),
+      // Průměr na lov: dvě rovnocenné hodnoty (počet a průměrná délka), dvojnásobná šířka.
+      `<div class="kpi stats-kpi kpi-wide"><small>${icon("chart", 15)}Průměr na lov</small><div class="kpi-pair">
+        <div><b>${s.returned ? esc(decimal(s.catches / s.returned)) : "–"}</b><em>úlovků na místenku</em></div>
+        <div><b>${s.avgLength ? `ø ${esc(decimal(s.avgLength))} cm` : "–"}</b><em>průměrná délka ryby</em></div></div></div>`
     ];
     const records = [
       s.biggest && ["trophy", "Největší úlovek", fish(s.biggest), place(s.biggest)],
       s.heaviest && (s.heaviest.length !== s.biggest?.length || s.heaviest.species !== s.biggest?.species || s.heaviest.date !== s.biggest?.date) && ["weight", "Nejtěžší úlovek", fish(s.heaviest), place(s.heaviest)],
-      s.bestTrip && ["star", "Nejúspěšnější lov", `${s.bestTrip.catches} ${plural(s.bestTrip.catches, "úlovek", "úlovky", "úlovků")}${s.bestTrip.weight ? ` · ${decimal(s.bestTrip.weight)} kg` : ""}`, place(s.bestTrip)]
+      s.bestTrip && ["star", "Nejúspěšnější lov", `${s.bestTrip.catches} ${catchesWord(s.bestTrip.catches)}${s.bestTrip.weight ? ` · ${decimal(s.bestTrip.weight)} kg` : ""}${s.bestTrip.avgLength ? ` · ø ${decimal(s.bestTrip.avgLength)} cm` : ""}`, place(s.bestTrip)]
     ].filter(Boolean);
-    box.innerHTML = `<div class="kpi-grid">${tiles.map(([ico, label, value, hint]) => `<div class="kpi stats-kpi"><small>${icon(ico, 15)}${esc(label)}</small><b>${esc(value)}</b>${hint ? `<em>${esc(hint)}</em>` : ""}</div>`).join("")}</div>
-      ${records.length ? `<div class="stats-records">${records.map(([ico, label, value, where]) => `<div><small>${icon(ico, 15)}${esc(label)}</small><b>${esc(value)}</b><span>${esc(where)}</span></div>`).join("")}</div>` : ""}
+    box.innerHTML = `<div class="kpi-grid">${tiles.map((t) => (typeof t === "string" ? t : tileHtml(t))).join("")}</div>
+      ${records.length ? `<div class="stats-records">${records.map(recordHtml).join("")}</div>` : ""}
       ${s.species.length ? `<h3 class="stats-subtitle">${icon("fish")}Nejčastější druhy</h3><ul class="stats-species">${s.species.map((x) => `<li><span>${esc(x.species)}</span><b>${esc(x.count)} ks</b><small>max. ${esc(decimal(x.maxLength))} cm</small></li>`).join("")}</ul>` : ""}
       ${s.years.length > 1 ? `<h3 class="stats-subtitle">${icon("calendar")}Po letech</h3><ul class="stats-species">${s.years.map((y) => `<li><span>${esc(y.year)}</span><b>${esc(y.visits)} ${plural(y.visits, "docházka", "docházky", "docházek")}</b><small>${esc(y.catches)} ${plural(y.catches, "úlovek", "úlovky", "úlovků")}</small></li>`).join("")}</ul>` : ""}`;
+    fillWater(box);
   } catch { card.classList.add("hidden"); }
 }
 

@@ -660,10 +660,11 @@ final class Service
         $tickets = Db::all("SELECT id, fishing_date, revir_id, subdistrict, returned_at FROM {p}tickets WHERE user_id = ? AND status = 'issued' AND fishing_date <= ? ORDER BY fishing_date, id", $user['id'], Time::pragueToday());
         $round = fn($n) => round($n * 100) / 100;
         $where = function (array $t) { $revir = $this->revirOf($t); return ['date' => $t['fishing_date'], 'revir' => $revir['name'], 'subdistrict' => Config::subdistrictName($revir, $t['subdistrict'])]; };
-        $out = ['visits' => count($tickets), 'returned' => 0, 'catches' => 0, 'totalWeight' => 0, 'successRate' => null, 'biggest' => null, 'heaviest' => null, 'bestTrip' => null, 'species' => [], 'years' => []];
+        $out = ['visits' => count($tickets), 'returned' => 0, 'catches' => 0, 'totalWeight' => 0, 'avgLength' => null, 'successRate' => null, 'biggest' => null, 'heaviest' => null, 'bestTrip' => null, 'species' => [], 'years' => []];
         $species = [];
         $years = [];
         $successful = 0;
+        $lengthSum = 0;
         foreach ($tickets as $t) {
             $catches = Db::all('SELECT species, length_cm, weight_kg FROM {p}catches WHERE ticket_id = ? ORDER BY id', $t['id']);
             $year = substr($t['fishing_date'], 0, 4);
@@ -672,11 +673,13 @@ final class Service
             $years[$year]['catches'] += count($catches);
             if ($t['returned_at']) { $out['returned']++; if ($catches) $successful++; }
             $weight = 0;
+            $tripLength = 0;
             foreach ($catches as $c) {
                 $length = Js::number($c['length_cm']);
                 $w = $c['weight_kg'] === null ? null : Js::number($c['weight_kg']);
                 $out['catches']++;
                 $weight += $w ?? 0;
+                $tripLength += $length;
                 $item = array_merge(['species' => $c['species'], 'length' => $length, 'weight' => $w], $where($t));
                 $big = $out['biggest'];
                 if (!$big || $length > $big['length'] || ($length == $big['length'] && ($w ?? 0) > ($big['weight'] ?? 0))) $out['biggest'] = $item;
@@ -687,12 +690,14 @@ final class Service
                 $species[$c['species']] = $s;
             }
             $out['totalWeight'] += $weight;
+            $lengthSum += $tripLength;
             $best = $out['bestTrip'];
             if ($catches && (!$best || count($catches) > $best['catches'] || (count($catches) === $best['catches'] && $weight > $best['weight']))) {
-                $out['bestTrip'] = array_merge($where($t), ['catches' => count($catches), 'weight' => $round($weight)]);
+                $out['bestTrip'] = array_merge($where($t), ['catches' => count($catches), 'weight' => $round($weight), 'avgLength' => round($tripLength / count($catches), 1)]);
             }
         }
         $out['totalWeight'] = $round($out['totalWeight']);
+        $out['avgLength'] = $out['catches'] ? round($lengthSum / $out['catches'], 1) : null;
         $out['successRate'] = $out['returned'] ? (int) round($successful / $out['returned'] * 100) : null;
         $species = array_values($species);
         usort($species, fn($a, $b) => ($b['count'] <=> $a['count']) ?: ($b['maxLength'] <=> $a['maxLength']));
@@ -700,6 +705,54 @@ final class Service
         krsort($years, SORT_STRING);
         $out['years'] = array_values($years);
         return $out;
+    }
+
+    // „Jak se posledně dařilo ostatním?“ – souhrn bez osobních údajů za všechny revíry MO:
+    // poslední den lovu před dneškem s odevzdanými místenkami + celkové rekordy (největší ryba, nejúspěšnější lov).
+    public function communityStats(): array
+    {
+        $config = $this->config();
+        if (($config['statsPolicy']['community'] ?? true) === false) return ['enabled' => false];
+        $round = fn($n) => round($n * 100) / 100;
+        $where = function (array $t) { $revir = $this->revirOf($t); return ['date' => $t['fishing_date'], 'revir' => $revir['name'], 'subdistrict' => Config::subdistrictName($revir, $t['subdistrict'])]; };
+        $date = Db::val("SELECT MAX(fishing_date) AS d FROM {p}tickets WHERE status = 'issued' AND returned_at IS NOT NULL AND fishing_date < ?", Time::pragueToday());
+        $lastDay = null;
+        if ($date) {
+            $tickets = Db::all("SELECT id FROM {p}tickets WHERE status = 'issued' AND returned_at IS NOT NULL AND fishing_date = ? ORDER BY id", $date);
+            $catches = 0; $weight = 0; $lengthSum = 0; $maxLength = 0; $maxPerTicket = 0; $successful = 0;
+            foreach ($tickets as $t) {
+                $rows = Db::all('SELECT length_cm, weight_kg FROM {p}catches WHERE ticket_id = ?', $t['id']);
+                if ($rows) $successful++;
+                $maxPerTicket = max($maxPerTicket, count($rows));
+                foreach ($rows as $c) {
+                    $length = Js::number($c['length_cm']);
+                    $catches++; $weight += $c['weight_kg'] === null ? 0 : Js::number($c['weight_kg']); $lengthSum += $length; $maxLength = max($maxLength, $length);
+                }
+            }
+            $record = Db::row("SELECT COUNT(c.id) AS n FROM {p}tickets t JOIN {p}catches c ON c.ticket_id = t.id WHERE t.status = 'issued' GROUP BY t.fishing_date ORDER BY n DESC LIMIT 1");
+            $n = count($tickets);
+            // Rybářský tlak: vystavené místenky toho dne vůči místům na revírech otevřených ten den (podrevíry v prodeji, jinak revír).
+            $issued = (int) Db::val("SELECT COUNT(*) AS n FROM {p}tickets WHERE status = 'issued' AND fishing_date = ?", $date);
+            $capacityOf = fn($r) => !empty($r['saleSubdistricts']) ? array_sum(array_column($r['saleSubdistricts'], 'dailyCapacity')) : $r['dailyCapacity'];
+            $open = array_values(array_filter($config['reviry'], fn($r) => $this->app->operations->dayStatus($r['id'], $date)['open']));
+            $capacity = array_sum(array_map($capacityOf, $open ?: $config['reviry']));
+            $lastDay = [
+                'date' => $date, 'anglers' => $n, 'issued' => $issued, 'capacity' => $capacity, 'pressure' => $capacity ? (int) round($issued / $capacity * 100) : null,
+                'catches' => $catches, 'totalWeight' => $round($weight),
+                'avgPerAngler' => $n ? round($catches / $n, 1) : 0, 'avgLength' => $catches ? round($lengthSum / $catches, 1) : null,
+                'successRate' => $n ? (int) round($successful / $n * 100) : null,
+                'maxLength' => $maxLength, 'maxPerTicket' => $maxPerTicket, 'recordDayCatches' => $record ? (int) $record['n'] : 0,
+            ];
+        }
+        $big = Db::row("SELECT c.species, c.length_cm, c.weight_kg, t.fishing_date, t.revir_id, t.subdistrict FROM {p}catches c JOIN {p}tickets t ON t.id = c.ticket_id WHERE t.status = 'issued' ORDER BY c.length_cm DESC, COALESCE(c.weight_kg, 0) DESC, t.fishing_date, c.id LIMIT 1");
+        $trip = Db::row("SELECT t.id, t.fishing_date, t.revir_id, t.subdistrict, COUNT(c.id) AS n, SUM(COALESCE(c.weight_kg, 0)) AS w, SUM(c.length_cm) AS l
+            FROM {p}tickets t JOIN {p}catches c ON c.ticket_id = t.id WHERE t.status = 'issued' GROUP BY t.id, t.fishing_date, t.revir_id, t.subdistrict ORDER BY n DESC, w DESC, t.fishing_date, t.id LIMIT 1");
+        return [
+            'enabled' => true,
+            'lastDay' => $lastDay,
+            'biggest' => $big ? array_merge(['species' => $big['species'], 'length' => Js::number($big['length_cm']), 'weight' => $big['weight_kg'] === null ? null : Js::number($big['weight_kg'])], $where($big)) : null,
+            'bestTrip' => $trip ? array_merge($where($trip), ['catches' => (int) $trip['n'], 'weight' => $round(Js::number($trip['w'])), 'avgLength' => round(Js::number($trip['l']) / (int) $trip['n'], 1)]) : null,
+        ];
     }
 
     // ---------- porybný (B2) ----------
