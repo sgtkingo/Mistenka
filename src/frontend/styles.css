@@ -371,3 +371,6 @@ th .info-tip::after{bottom:auto;top:calc(100% + 8px);left:auto;right:-6px;transf
 .pending-returns{background:#fff4e8;border-color:#f5c99a;color:#7a3d08}
 .info-box.info-warning{background:#fff4e8;border-color:#f5c99a;color:#a8520a}
 .catch-warn-inline{color:#a8520a}
+.stats-kpi small,.stats-records small,.stats-subtitle{display:flex;align-items:center;gap:6px}
+.stats-kpi .ico,.stats-subtitle .ico{color:var(--blue);flex:none}
+.stats-records .ico{color:var(--green);flex:none}

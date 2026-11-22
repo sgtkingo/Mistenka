@@ -1,5 +1,5 @@
 // Uživatelský portál: přihlášení, registrace a klientská zóna (B1).
-const { qs, qsa, esc, api, loadConfig, czDate, normalizeMemberId, isMemberId, showToast, applyBranding, loadSession, setSession, setSessionUser, isStaff, ticketState, ROLE_LABELS, qrSvg, parseCzDate, formatCzDate, passwordProblem, limitsHtml, plural } = window.Mistenka;
+const { qs, qsa, esc, api, loadConfig, czDate, normalizeMemberId, isMemberId, showToast, applyBranding, loadSession, setSession, setSessionUser, isStaff, ticketState, ROLE_LABELS, qrSvg, parseCzDate, formatCzDate, passwordProblem, limitsHtml, plural, icon } = window.Mistenka;
 
 let user = null;
 let pendingMagicToken = "";
@@ -257,20 +257,20 @@ async function loadStats() {
     const place = (x) => `${czDate(x.date)} · ${x.revir}${x.subdistrict ? ` (${x.subdistrict})` : ""}`;
     const fish = (c) => `${c.species} ${decimal(c.length)} cm${c.weight ? ` · ${decimal(c.weight)} kg` : ""}`;
     const tiles = [
-      ["Docházky", s.visits, s.returned < s.visits ? `odevzdáno ${s.returned}` : ""],
-      ["Úlovky", s.catches, s.totalWeight ? `celkem ${decimal(s.totalWeight)} kg` : ""],
-      ["Úspěšnost", s.successRate === null ? "–" : `${s.successRate} %`, "lovů s úlovkem"],
-      ["Průměr na lov", s.returned ? decimal(s.catches / s.returned) : "–", "úlovků na odevzdanou místenku"]
+      ["ticket", "Docházky", s.visits, s.returned < s.visits ? `odevzdáno ${s.returned}` : ""],
+      ["fish", "Úlovky", s.catches, s.totalWeight ? `celkem ${decimal(s.totalWeight)} kg` : ""],
+      ["target", "Úspěšnost", s.successRate === null ? "–" : `${s.successRate} %`, "lovů s úlovkem"],
+      ["chart", "Průměr na lov", s.returned ? decimal(s.catches / s.returned) : "–", "úlovků na odevzdanou místenku"]
     ];
     const records = [
-      s.biggest && ["Největší úlovek", fish(s.biggest), place(s.biggest)],
-      s.heaviest && (s.heaviest.length !== s.biggest?.length || s.heaviest.species !== s.biggest?.species || s.heaviest.date !== s.biggest?.date) && ["Nejtěžší úlovek", fish(s.heaviest), place(s.heaviest)],
-      s.bestTrip && ["Nejúspěšnější lov", `${s.bestTrip.catches} ${plural(s.bestTrip.catches, "úlovek", "úlovky", "úlovků")}${s.bestTrip.weight ? ` · ${decimal(s.bestTrip.weight)} kg` : ""}`, place(s.bestTrip)]
+      s.biggest && ["trophy", "Největší úlovek", fish(s.biggest), place(s.biggest)],
+      s.heaviest && (s.heaviest.length !== s.biggest?.length || s.heaviest.species !== s.biggest?.species || s.heaviest.date !== s.biggest?.date) && ["weight", "Nejtěžší úlovek", fish(s.heaviest), place(s.heaviest)],
+      s.bestTrip && ["star", "Nejúspěšnější lov", `${s.bestTrip.catches} ${plural(s.bestTrip.catches, "úlovek", "úlovky", "úlovků")}${s.bestTrip.weight ? ` · ${decimal(s.bestTrip.weight)} kg` : ""}`, place(s.bestTrip)]
     ].filter(Boolean);
-    box.innerHTML = `<div class="kpi-grid">${tiles.map(([label, value, hint]) => `<div class="kpi"><small>${esc(label)}</small><b>${esc(value)}</b>${hint ? `<em>${esc(hint)}</em>` : ""}</div>`).join("")}</div>
-      ${records.length ? `<div class="stats-records">${records.map(([label, value, where]) => `<div><small>${esc(label)}</small><b>${esc(value)}</b><span>${esc(where)}</span></div>`).join("")}</div>` : ""}
-      ${s.species.length ? `<h3 class="stats-subtitle">Nejčastější druhy</h3><ul class="stats-species">${s.species.map((x) => `<li><span>${esc(x.species)}</span><b>${esc(x.count)} ks</b><small>max. ${esc(decimal(x.maxLength))} cm</small></li>`).join("")}</ul>` : ""}
-      ${s.years.length > 1 ? `<h3 class="stats-subtitle">Po letech</h3><ul class="stats-species">${s.years.map((y) => `<li><span>${esc(y.year)}</span><b>${esc(y.visits)} ${plural(y.visits, "docházka", "docházky", "docházek")}</b><small>${esc(y.catches)} ${plural(y.catches, "úlovek", "úlovky", "úlovků")}</small></li>`).join("")}</ul>` : ""}`;
+    box.innerHTML = `<div class="kpi-grid">${tiles.map(([ico, label, value, hint]) => `<div class="kpi stats-kpi"><small>${icon(ico, 15)}${esc(label)}</small><b>${esc(value)}</b>${hint ? `<em>${esc(hint)}</em>` : ""}</div>`).join("")}</div>
+      ${records.length ? `<div class="stats-records">${records.map(([ico, label, value, where]) => `<div><small>${icon(ico, 15)}${esc(label)}</small><b>${esc(value)}</b><span>${esc(where)}</span></div>`).join("")}</div>` : ""}
+      ${s.species.length ? `<h3 class="stats-subtitle">${icon("fish")}Nejčastější druhy</h3><ul class="stats-species">${s.species.map((x) => `<li><span>${esc(x.species)}</span><b>${esc(x.count)} ks</b><small>max. ${esc(decimal(x.maxLength))} cm</small></li>`).join("")}</ul>` : ""}
+      ${s.years.length > 1 ? `<h3 class="stats-subtitle">${icon("calendar")}Po letech</h3><ul class="stats-species">${s.years.map((y) => `<li><span>${esc(y.year)}</span><b>${esc(y.visits)} ${plural(y.visits, "docházka", "docházky", "docházek")}</b><small>${esc(y.catches)} ${plural(y.catches, "úlovek", "úlovky", "úlovků")}</small></li>`).join("")}</ul>` : ""}`;
   } catch { card.classList.add("hidden"); }
 }
 
