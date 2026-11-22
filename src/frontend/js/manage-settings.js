@@ -155,12 +155,14 @@
       <div class="form-three-col">${field("rLat", "GPS šířka", d.gps?.lat)}${field("rLon", "GPS délka", d.gps?.lon)}${field("rGpsLabel", "GPS popisek", d.gps?.label)}</div>
       ${field("rCard", "Karta revíru (odkaz)", d.cardUrl)}
       <h3>Doba lovu</h3>
+      <p class="field-help">Nepovinné. Když žádné období nezadáte, rybáři na stránce Pravidla revíru uvidí „Doba lovu není v Místence nastavena – platí údaje v RIS“ s odkazem na kartu revíru. Pravidla revíru navíc vždy začínají upozorněním, že revír se přednostně řídí informacemi v RIS (s odkazem z pole Karta revíru).</p>
       <table class="data-table edit-table" id="hoursTable"><thead><tr><th>Měsíce (čísla)</th><th>Od</th><th>Do</th><th>Popisek</th><th></th></tr></thead><tbody>${(d.fishingHours || []).map(hoursRow).join("")}</tbody></table>
       <button class="text-button" type="button" id="addHours">+ Období</button>
       <h3>Texty pro rybáře</h3>
       ${area("rPermit", "Upozornění před nákupem", d.permitNote, 2)}
       ${area("rRestrictions", "Omezení (v detailu revíru)", d.restrictions, 2)}
       <h3>Pravidla revíru <small class="muted-inline">(každý řádek = jedna odrážka)</small></h3>
+      <p class="field-help">Na stránce Pravidla revíru se před vaše oddíly automaticky přidá oddíl „Informace v RIS“: revír se vždy řídí přednostně informacemi v RIS, s odkazem z pole Karta revíru. Za první oddíl se automaticky vloží Doba lovu a na konec tabulka lovných měr a hájení – tyto oddíly sem nepište.</p>
       <div id="rulesSections">${(d.rules || []).map(ruleSection).join("")}</div>
       <button class="text-button" type="button" id="addRule">+ Oddíl pravidel</button>
       ${footer(`revir:${r.id}`, r)}</form>`;

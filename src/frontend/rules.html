@@ -36,9 +36,15 @@
         document.title = `Pravidla revíru · ${revir.name}`;
         qs("#rulesKicker").textContent = [revir.name, revir.number].filter(Boolean).join(" · ");
         if (revir.permitNote) qs("#rulesPermit").textContent = revir.permitNote;
-        const sections = [...(revir.rules || [])];
-        if (revir.fishingHours?.length) sections.splice(1, 0, { title: "Doba lovu", items: revir.fishingHours.map((h) => `${h.label || h.months.join(", ")}: ${h.from}–${h.to}`) });
-        let html = sections.map((section) => `<div class="rules-section"><h2>${esc(section.title)}</h2><ul>${section.items.map((item) => `<li>${esc(item)}</li>`).join("")}</ul></div>`).join("");
+        // Položky jsou text (escapuje se), jen odkaz na kartu revíru v RIS je hotové HTML ({ html }).
+        const risLink = revir.cardUrl ? { html: `<a href="${esc(revir.cardUrl)}" target="_blank" rel="noreferrer">Karta revíru <span aria-hidden="true">↗</span></a>` } : null;
+        const risText = "Revír se vždy řídí přednostně informacemi v RIS (Rybářský informační systém ČRS).";
+        const sections = [{ title: "Informace v RIS", items: [risText, risLink].filter(Boolean) }, ...(revir.rules || [])];
+        const hours = revir.fishingHours?.length
+          ? revir.fishingHours.map((h) => `${h.label || h.months.join(", ")}: ${h.from}–${h.to}`)
+          : ["Doba lovu není v Místence nastavena – platí údaje v RIS.", risLink].filter(Boolean);
+        sections.splice(2, 0, { title: "Doba lovu", items: hours });
+        let html = sections.map((section) => `<div class="rules-section"><h2>${esc(section.title)}</h2><ul>${section.items.map((item) => `<li>${item.html ?? esc(item)}</li>`).join("")}</ul></div>`).join("");
         const fish = revir.fishRules;
         if (fish) {
           const { seasonText } = window.Mistenka;
