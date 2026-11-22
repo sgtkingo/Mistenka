@@ -165,8 +165,11 @@ final class Config
         if ($contactEmail && !self::emailOk($contactEmail)) self::fail('neplatný veřejný e-mail');
         // Podrevír v prodeji může mít vlastní cenu a počet míst (jinak platí hodnoty revíru).
         foreach ($config['reviry'] as $i => $r) {
+            // GPS: revír bez podrevírů má společnou GPS; s podrevíry má GPS každý podrevír (společná je jen záložní).
+            if ($problem = self::gpsProblem($r['gps'] ?? null)) self::fail("revír {$r['id']}: {$problem}");
             foreach (is_array($r['subdistrictList'] ?? null) ? $r['subdistrictList'] : [] as $s) {
                 $n = Js::str($s['number'] ?? '');
+                if ($problem = self::gpsProblem($s['gps'] ?? null)) self::fail("revír {$r['id']}, podrevír {$n}: {$problem}");
                 if (array_key_exists('priceCzk', $s) && $s['priceCzk'] !== null && !(Js::isNumber($s['priceCzk']) && $s['priceCzk'] >= 0)) self::fail("revír {$r['id']}, podrevír {$n}: cena musí být číslo >= 0");
                 if (array_key_exists('dailyCapacity', $s) && $s['dailyCapacity'] !== null && !(Js::isInteger($s['dailyCapacity']) && $s['dailyCapacity'] >= 1)) self::fail("revír {$r['id']}, podrevír {$n}: počet míst musí být kladné celé číslo");
             }
@@ -188,8 +191,6 @@ final class Config
     // ---------- mapy revírů (src/node/lib/config.js) ----------
     public const MAP_KINDS = ['Polygon' => ['revir', 'subdistrict', 'restricted'], 'LineString' => ['path', 'restricted'], 'Point' => ['parking', 'wc', 'entrance', 'info', 'danger', 'other']];
     private const MAP_BASES = ['outdoor', 'basic', 'aerial', 'winter'];
-    private const MAP_PREVIEW_MAX = 2000000;
-    private const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
     private static function position($p): bool
     {
@@ -202,6 +203,8 @@ final class Config
         $where = "mapa revíru {$id}";
         if (!is_array($doc) || !Js::isAssoc($doc) || ($doc['type'] ?? null) !== 'FeatureCollection' || !is_array($doc['features'] ?? null) || !array_is_list($doc['features'])) self::fail("{$where}: musí být GeoJSON FeatureCollection");
         if (count($doc['features']) > 300) self::fail("{$where}: nejvýš 300 prvků");
+        // Starší verze ukládaly i náhled PNG (preview) – už se nepoužívá, zahodí se.
+        unset($doc['preview']);
         $total = 0;
         foreach ($doc['features'] as $index => $feature) {
             $label = "{$where}, prvek " . ($index + 1);
@@ -244,32 +247,13 @@ final class Config
             if (!is_array($view) || !Js::isAssoc($view) || !is_array($center) || count($center) < 2 || !self::position([$center[1] ?? null, $center[0] ?? null])
                 || !Js::isInteger($view['zoom'] ?? null) || $view['zoom'] < 3 || $view['zoom'] > 20 || (array_key_exists('base', $view) && !in_array($view['base'], self::MAP_BASES, true))) self::fail("{$where}: neplatný výchozí pohled (view)");
         }
-        $preview = $doc['preview'] ?? null;
-        if ($preview !== null) {
-            $prefix = 'data:image/png;base64,';
-            $data = is_string($preview) && str_starts_with($preview, $prefix) ? rtrim(substr($preview, strlen($prefix)), '=') : null;
-            $padding = is_string($preview) ? strlen($preview) - strlen(rtrim($preview, '=')) : 0;
-            if ($data === null || $data === '' || strlen($preview) > self::MAP_PREVIEW_MAX || $padding > 2 || strspn($data, self::BASE64_CHARS) !== strlen($data)) self::fail("{$where}: náhled musí být obrázek PNG (nejvýš 1,5 MB)");
-        }
         return $doc;
     }
 
-    // Mapa bez náhledu (veřejné API, editor) a krátký otisk náhledu (adresa obrázku se mění s každým uložením).
-    public static function mapWithoutPreview(?array $map)
-    {
-        if (!$map) return null;
-        unset($map['preview']);
-        return $map;
-    }
-
-    public static function mapPreviewHash(?array $map): ?string
-    {
-        return !empty($map['preview']) ? substr(sha1($map['preview']), 0, 12) : null;
-    }
-
+    // Souhrn mapy pro veřejnou konfiguraci (počet zakreslených prvků).
     public static function mapSummary(?array $map): ?array
     {
-        return $map ? ['features' => count($map['features']), 'preview' => self::mapPreviewHash($map)] : null;
+        return $map ? ['features' => count($map['features'])] : null;
     }
 
     private static function speciesRulesFor(array $docs, $ref, string $owner): array
@@ -353,6 +337,48 @@ final class Config
     }
 
     // Podrevír místenky, např. "1 – Petr 1" (null = celý revír).
+    // GPS { lat, lon, label? }: null = v pořádku (nebo nezadaná), jinak popis chyby.
+    private static function gpsProblem($gps): ?string
+    {
+        if ($gps === null) return null;
+        if (!is_array($gps) || ($gps && !Js::isAssoc($gps))) return 'GPS musí být objekt { lat, lon }';
+        $lat = $gps['lat'] ?? null;
+        $lon = $gps['lon'] ?? null;
+        if (!(Js::isNumber($lat) && $lat >= -90 && $lat <= 90) || !(Js::isNumber($lon) && $lon >= -180 && $lon <= 180)) return 'GPS: šířka −90 až 90, délka −180 až 180';
+        if (isset($gps['label']) && !(is_string($gps['label']) && Js::len($gps['label']) <= 120)) return 'GPS: popisek do 120 znaků';
+        return null;
+    }
+
+    private static function hasGps($gps): bool
+    {
+        return is_array($gps) && Js::isNumber($gps['lat'] ?? null) && Js::isNumber($gps['lon'] ?? null);
+    }
+
+    // Místo lovu místenky: vybraný podrevír s jeho GPS (bez ní záložní GPS revíru), jinak celý revír a GPS revíru.
+    public static function fishingPlace(array $revir, $number): array
+    {
+        if ($number !== null && $number !== '') {
+            $item = null;
+            foreach ($revir['subdistrictList'] ?? [] as $s) if (Js::str($s['number'] ?? '') === Js::str($number)) $item = $s;
+            $gps = self::hasGps($item['gps'] ?? null) ? $item['gps'] : (self::hasGps($revir['gps'] ?? null) ? $revir['gps'] : null);
+            return ['subdistrict' => true, 'title' => 'Podrevír ' . self::subdistrictName($revir, $number), 'gps' => $gps];
+        }
+        return ['subdistrict' => false, 'title' => 'Celý revír ' . $revir['name'], 'gps' => self::hasGps($revir['gps'] ?? null) ? $revir['gps'] : null];
+    }
+
+    public static function gpsText(array $gps): string
+    {
+        if (!empty($gps['label'])) return (string) $gps['label'];
+        return number_format((float) $gps['lat'], 5, '.', '') . ', ' . number_format((float) $gps['lon'], 5, '.', '');
+    }
+
+    public static function mapyUrl(array $gps, int $zoom = 16): string
+    {
+        $lat = Js::str($gps['lat']);
+        $lon = Js::str($gps['lon']);
+        return "https://mapy.cz/zakladni?source=coor&id={$lon}%2C{$lat}&x={$lon}&y={$lat}&z={$zoom}";
+    }
+
     public static function subdistrictName(?array $revir, $number): ?string
     {
         if ($number === null || $number === '') return null;

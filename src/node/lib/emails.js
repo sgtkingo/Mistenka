@@ -1,7 +1,7 @@
 "use strict";
 // Šablony e-mailů. Ve WordPressu budou stejné texty odesílány přes wp_mail().
 const fs = require("node:fs");
-const { ticketSubdistrictLabel, subdistrictName } = require("./config");
+const { ticketSubdistrictLabel, subdistrictName, fishingPlace, gpsText, mapyUrl } = require("./config");
 // Podrevír místenky (vybraný při nákupu), u starších místenek podrevíry revíru.
 const ticketSub = (ticket, revir) => (ticket.subdistrict ? { title: "Podrevír", label: subdistrictName(revir, ticket.subdistrict) } : ticketSubdistrictLabel(revir) ? { title: revir.ticketSubdistricts.length > 1 ? "Podrevíry" : "Podrevír", label: ticketSubdistrictLabel(revir) } : null);
 const path = require("node:path");
@@ -58,7 +58,15 @@ const highlight = (label, value, sub = "", tone = "brand") => {
 };
 const checklist = (items) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px;font-size:14px">${items.map((item) => `<tr><td style="width:22px;vertical-align:top;color:${C.ok};font-weight:700;padding:3px 0">✓</td><td style="padding:3px 0">${esc(item)}</td></tr>`).join("")}</table>`;
 // Mapa revíru (jen když je zakreslená): schematický náhled s odkazem na interaktivní mapu.
-const mapBlock = (links) => (!links.map ? "" : `<p style="margin:0 0 8px;font-weight:600">Mapa revíru</p>${links.mapImage ? `<a href="${esc(links.map)}" style="display:block;margin:0 0 6px;text-decoration:none"><img src="${esc(links.mapImage)}" width="536" alt="Mapa revíru – otevřete interaktivní mapu" style="display:block;width:100%;max-width:536px;height:auto;border:1px solid ${C.line};border-radius:8px"></a>` : ""}<p style="margin:0 0 4px;font-size:13px;color:${C.muted}">Hranice revíru a podrevírů, parkování, WC a další místa.</p>${button(links.map, "Otevřít interaktivní mapu", true)}`);
+// Místo lovu (podrevír místenky, jinak celý revír) zvýrazněné s GPS a odkazem na interaktivní mapu
+// (mapa jen jako odkaz – podklad Mapy.com se do e-mailu vkládat nesmí).
+const placeBlock = (place, links) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px"><tr><td style="background:#eef6fe;border:2px solid ${C.brand};border-radius:10px;padding:14px 18px">
+  <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:${C.muted}">Místo lovu</div>
+  <div style="font-size:20px;font-weight:700;color:${C.brandDark};margin-top:4px">${esc(place.title)}</div>
+  ${place.gps ? `<div style="font-size:14px;margin-top:6px">GPS <a href="${esc(mapyUrl(place.gps))}" style="color:${C.brand};font-weight:600">${esc(gpsText(place.gps))}</a></div>` : ""}
+  ${links.map ? `<div style="font-size:14px;margin-top:6px"><a href="${esc(links.map)}" style="color:${C.brand};font-weight:600">Interaktivní mapa revíru →</a> <span style="color:${C.muted}">hranice podrevírů, parkování, WC</span></div>` : ""}
+</td></tr></table>`;
+const placeText = (place, links) => [`Místo lovu: ${place.title}`, ...(place.gps ? [`GPS: ${gpsText(place.gps)} (${mapyUrl(place.gps)})`] : []), ...(links.map ? [`Mapa revíru: ${links.map}`] : [])];
 const noteBox = (text) => `<p style="margin:0 0 16px;padding:12px 14px;background:${C.soft};border-radius:8px;font-size:13px;color:${C.muted}">${esc(text)}</p>`;
 const textBlock = (lines) => lines.filter((line) => line !== null).join("\n");
 // Doba lovu v den lovu podle revíru (fishingHours).
@@ -83,16 +91,17 @@ function paymentInstructions(config, { ticket, revir, links }) {
 
 function ticketIssued(config, { ticket, revir, links }) {
   const sub = ticketSub(ticket, revir);
+  const place = fishingPlace(revir, ticket.subdistrict);
   const hours = huntingHours(revir, ticket.fishing_date);
   const rows = [["Revír", [revir.name, revir.number].filter(Boolean).join(" · ")], ...(sub ? [[sub.title, sub.label]] : []), ["Datum lovu", `${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)}`], ...(hours ? [["Doba lovu", hours]] : []), ["Rybář", `${ticket.first_name} ${ticket.last_name}`], ["Číslo členské legitimace", ticket.member_id]];
   return {
     subject: `Místenka ${ticket.code} – ${revir.name}, ${czDate(ticket.fishing_date)}`,
-    html: layout(config, "success", "Vaše místenka je vystavena", `${highlight("Kód místenky", ticket.code, `${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)} · ${revir.name}`, "ok")}${table(rows)}
+    html: layout(config, "success", "Vaše místenka je vystavena", `${highlight("Kód místenky", ticket.code, `${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)} · ${revir.name}`, "ok")}${placeBlock(place, links)}${table(rows)}
       ${button(links.ticket, "Zobrazit místenku a QR kód")}
       <p style="margin:0 0 8px;font-weight:600">Než vyrazíte</p>${checklist(["Platný rybářský lístek a povolenka – místenka je nenahrazuje.", "Místenka v telefonu nebo vytištěná (QR kód pro kontrolu).", "Každou ponechanou rybu ihned zapište do povolenky."])}
-      ${mapBlock(links)}<p style="margin:0 0 8px;font-weight:600">Po skončení lovu</p><p style="margin:0 0 8px">Místenku odevzdejte ještě týž den a zapište ponechané ryby (nebo „žádná ponechaná ryba“). Opožděně ji lze odevzdat do ${esc(revir.lateReturnDays)} dnů, pak se uzavře jako neodevzdaná.</p>
+      <p style="margin:0 0 8px;font-weight:600">Po skončení lovu</p><p style="margin:0 0 8px">Místenku odevzdejte ještě týž den a zapište ponechané ryby (nebo „žádná ponechaná ryba“). Opožděně ji lze odevzdat do ${esc(revir.lateReturnDays)} dnů, pak se uzavře jako neodevzdaná.</p>
       ${button(links.return, "Odevzdat místenku", true)}`, "", { preheader: `Kód ${ticket.code} · ${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)} · ${revir.name}${hours ? ` · lov ${hours}` : ""}` }),
-    text: textBlock(["Vaše místenka je vystavena.", `Kód místenky: ${ticket.code}`, ...rows.map(([k, v]) => `${k}: ${v}`), "Místenka nenahrazuje rybářský lístek ani povolenku.", `Místenka: ${links.ticket}`, ...(links.map ? [`Mapa revíru: ${links.map}`] : []), `Odevzdání po lovu: ${links.return}`])
+    text: textBlock(["Vaše místenka je vystavena.", `Kód místenky: ${ticket.code}`, ...placeText(place, links), ...rows.map(([k, v]) => `${k}: ${v}`), "Místenka nenahrazuje rybářský lístek ani povolenku.", `Místenka: ${links.ticket}`, `Odevzdání po lovu: ${links.return}`])
   };
 }
 

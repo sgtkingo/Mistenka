@@ -18,7 +18,7 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
-const { loadConfig, publicConfig, getRevir, mapWithoutPreview, mapPreviewHash } = require("./lib/config");
+const { loadConfig, publicConfig, getRevir } = require("./lib/config");
 const { openDatabase, serviceLaunched, seasonOpen } = require("./lib/db");
 const { createProvider } = require("./lib/payments");
 const { createFileMailer } = require("./lib/emails");
@@ -145,18 +145,10 @@ async function handleApi(req, res, url, ip) {
   if (pathname === "/api/config" && method === "GET") {
     return send(res, 200, publicConfig(config, { today: time.pragueToday(), now: time.now().toISOString(), devMode: DEV, service: { launched: serviceLaunched(db), seasonOpen: seasonOpen(db, time.pragueToday()) } }));
   }
-  // Mapa revíru (veřejná): zakreslené plochy a body + otisk náhledu; náhled PNG pro e-mail a PDF zvlášť.
+  // Mapa revíru (veřejná): zakreslené plochy a body.
   if ((m = pathname.match(/^\/api\/maps\/([a-z0-9-]+)$/)) && method === "GET") {
     if (!getRevir(config, m[1])) throw new ApiError(404, "unknown_revir", "Revír neexistuje.");
-    const map = config.maps?.[m[1]] || null;
-    return send(res, 200, { revirId: m[1], map: mapWithoutPreview(map), preview: mapPreviewHash(map) });
-  }
-  if ((m = pathname.match(/^\/api\/maps\/([a-z0-9-]+)\/preview\.png$/)) && method === "GET") {
-    const preview = config.maps?.[m[1]]?.preview;
-    if (!preview) throw new ApiError(404, "not_found", "Náhled mapy neexistuje.");
-    const png = Buffer.from(preview.slice(preview.indexOf(",") + 1), "base64");
-    res.writeHead(200, { "Content-Type": "image/png", "Content-Length": png.length, "Cache-Control": "public, max-age=86400", "X-Content-Type-Options": "nosniff" });
-    return res.end(png);
+    return send(res, 200, { revirId: m[1], map: config.maps?.[m[1]] || null });
   }
   if ((m = pathname.match(/^\/api\/reviry\/([a-z0-9-]+)\/availability$/)) && method === "GET") {
     return send(res, 200, service.availability(m[1]));

@@ -3,7 +3,7 @@
 const crypto = require("node:crypto");
 const { transaction } = require("./db");
 const time = require("./time");
-const { getRevir, revirRules, subdistrictName, mapPreviewHash } = require("./config");
+const { getRevir, revirRules, subdistrictName } = require("./config");
 const { spayd } = require("./payments");
 const emails = require("./emails");
 const { GROUPS, groupOf, noticeRecipients } = require("./mail-accounts");
@@ -126,12 +126,11 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       ...mapLinks(ticket.revir_id)
     };
   }
-  // Interaktivní mapa revíru a její náhled (jen když je mapa zakreslená).
+  // Odkaz na interaktivní mapu revíru (jen když je mapa zakreslená).
   function mapLinks(revirId) {
     const map = config.maps?.[revirId];
     if (!map?.features?.length) return {};
-    const id = encodeURIComponent(revirId);
-    return { map: `${appUrl}/map.html?revir=${id}`, mapImage: map.preview ? `${appUrl}/api/maps/${id}/preview.png?v=${mapPreviewHash(map)}` : null };
+    return { map: `${appUrl}/map.html?revir=${encodeURIComponent(revirId)}` };
   }
   function enqueueEmail(ticket, kind, token, extra = {}) {
     const revir = revirOf(ticket);

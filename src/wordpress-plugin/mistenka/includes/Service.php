@@ -208,16 +208,12 @@ final class Service
         ] + $this->mapLinks($ticket['revir_id']);
     }
 
-    // Interaktivní mapa revíru a její náhled (jen když je mapa zakreslená).
+    // Odkaz na interaktivní mapu revíru (jen když je mapa zakreslená).
     private function mapLinks(string $revirId): array
     {
         $map = $this->config()['maps'][$revirId] ?? null;
         if (empty($map['features'])) return [];
-        $base = $this->app->appUrl;
-        $id = rawurlencode($revirId);
-        $api = Plugin::apiPath();
-        $image = !empty($map['preview']) ? $base . $api . "/maps/{$id}/preview.png" . (str_contains($api, '?') ? '&' : '?') . 'v=' . Config::mapPreviewHash($map) : null;
-        return ['map' => "{$base}/map.html?revir={$id}", 'mapImage' => $image];
+        return ['map' => $this->app->appUrl . '/map.html?revir=' . rawurlencode($revirId)];
     }
 
     private function enqueueEmail(array $ticket, string $kind, ?string $token, array $extra = []): void

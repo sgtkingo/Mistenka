@@ -127,10 +127,12 @@ Není součástí API. Frontend ji načítá přímo z [Open-Meteo](https://open
 ### `GET /config`
 Veřejná konfigurace: `organization` (`name`, `shortName`, `web`, `privacyUrl`, `contact`), `payment` (`mode`: `fake` | `fio`, `reservationMinutes`), `reviry[]` (včetně `species`), `today` (Praha), `now`, `devMode`, `service: { launched, seasonOpen }` (viz Spuštění služby; `seasonOpen` = dnes je otevřená některá sezona). Nikdy neobsahuje číslo účtu, IBAN ani tokeny.
 
-Revír má v `GET /config` navíc `map: { features, preview } | null` – počet zakreslených prvků mapy a otisk náhledu (`null` bez náhledu); konfigurace má `mapTiles: { provider: "mapy", apiKey } | { provider: "osm" }` (podklad interaktivní mapy, klíč Mapy.com z `MISTENKA_MAPY_API_KEY`).
+GPS: revír bez podrevírů má společnou `gps: { lat, lon, label? }`; revír s podrevíry má `gps` u každé položky `subdistrictList` (společná GPS je pak jen pro počasí a jako náhradní poloha podrevíru bez GPS). Server kontroluje rozsah (šířka −90 až 90, délka −180 až 180). E-mail `ticket_issued`, PDF i rekapitulace zvýrazní **místo lovu** – podrevír místenky s jeho GPS, jinak celý revír s GPS revíru.
+
+Revír má v `GET /config` navíc `map: { features } | null` – počet zakreslených prvků mapy; konfigurace má `mapTiles: { provider: "mapy", apiKey } | { provider: "osm" }` (podklad interaktivní mapy, klíč Mapy.com z `MISTENKA_MAPY_API_KEY`).
 
 ### `GET /maps/{revirId}`
-Mapa revíru pro interaktivní mapu: `{ revirId, map, preview }`. `map` je GeoJSON `FeatureCollection` (souřadnice `[lon, lat]`) bez náhledu, nebo `null` (mapa není zakreslena); `view: { center: [lat, lon], zoom, base }` je volitelný výchozí pohled. `preview` je otisk náhledu PNG, nebo `null`. Neznámý revír `404 unknown_revir`.
+Mapa revíru pro interaktivní mapu: `{ revirId, map }`. `map` je GeoJSON `FeatureCollection` (souřadnice `[lon, lat]`), nebo `null` (mapa není zakreslena); `view: { center: [lat, lon], zoom, base }` je volitelný výchozí pohled. Neznámý revír `404 unknown_revir`. Stav podrevírů se do mapy neukládá: frontend podrevír, který není v `ticketSubdistricts` revíru (místenka na něj neplatí), kreslí šrafovaně s upozorněním; název podrevíru bez `name` bere ze `subdistrictList`. E-mail `ticket_issued` u revíru se zakreslenou mapou obsahuje odkaz na `map.html?revir=<id>` (bez obrázku), PDF místenky také.
 
 | Druh (`properties.kind`) | Geometrie | Význam |
 | --- | --- | --- |
@@ -139,9 +141,6 @@ Mapa revíru pro interaktivní mapu: `{ revirId, map, preview }`. `map` je GeoJS
 | `parking`, `wc`, `entrance`, `info`, `danger`, `other` | `Point` | parkoviště, WC, vstup k vodě, informace, pozor, jiné místo |
 
 Vlastnosti prvku: `kind` (povinné), `name` (do 80 znaků), `note` (do 300), `number` (podrevír). Nejvýš 300 prvků a 10 000 bodů, plochy uzavřené.
-
-### `GET /maps/{revirId}/preview.png`
-Schematický náhled mapy (PNG, kreslený jen ze zakreslených dat, bez podkladu mapy) pro e-mail a kartu na úvodu; adresa obsahuje `?v=<otisk>`, odpověď se smí cachovat. Bez náhledu `404 not_found`. E-mail `ticket_issued` u revíru se zakreslenou mapou obsahuje náhled a odkaz na `map.html?revir=<id>`; PDF místenky má mapu jako druhou stránku.
 
 ### `GET /reviry/{id}/availability`
 `{ revirId, today, days: [{ date, capacity, taken, available, subdistricts: [{ number, name, priceCzk, capacity, taken, available }], closed, closedReason, closedCode }] }` pro dnešek až `bookingDaysAhead`. U revíru s podrevíry v prodeji jsou místa po podrevírech a `capacity` / `taken` / `available` dne jsou jejich součty; jinak je `subdistricts` prázdné. Uzavřený den (mimo sezonu nebo mimořádně uzavřený, viz Provoz) má `closed: true`, `available: 0`, důvod a kód (`out_of_season` | `revir_closed`); otevřený den má `closedReason` i `closedCode` `null`. Když jsou všechny dny `out_of_season`, úvodní stránka ukáže „sezona je uzavřená“. Neznámý revír → `404 unknown_revir`.
@@ -420,17 +419,17 @@ Konfigurace = soubor (`config/organization.json` + pravidla druhů, ve WordPress
 | `payment` | `{ accountNumber, bankCode, recipientName, reservationMinutes, messagePrefix }` – po změně dostanou všichni admini e-mail `payment_settings_changed`; v portálu **Admin → Bankovní spojení** (podsekce Platební brána je zatím jen připravená, nepodporováno) | **jen admin** |
 | `revir:<id>` | revír bez `id` a odvozených `fishRules` (cena, kapacita, podrevíry, doba lovu, texty, pravidla, `speciesOverrides`, …) | správce, admin |
 | `species:<odkaz>` | dokument pravidel druhů (druhy, míry, hájení, `dailyLimits`, `periodLimits`) | správce, admin |
-| `map:<id revíru>` | mapa revíru: GeoJSON `FeatureCollection` + `view` + `preview` (data URL PNG do 1,5 MB, kreslí ji editor v portálu – Revíry → Mapy revírů); výchozí hodnoty ze souboru mapy revíru | správce, admin |
+| `map:<id revíru>` | mapa revíru: GeoJSON `FeatureCollection` + `view` (kreslí ji editor v portálu – Revíry → Mapy revírů; `preview` starších verzí se zahodí); výchozí hodnoty ze souboru mapy revíru | správce, admin |
 
 | Endpoint 🛠 | Tělo | Odpověď / chyby |
 | --- | --- | --- |
-| `GET /manage/settings` | – | `{ organization: { data, version, source: "file" \| "database", updatedAt, updatedBy }, payment: { data, iban, provider, … }, reviry: [{ id, data, … }], species: [{ ref, data, … }], maps: [{ revirId, data (bez náhledu), preview, hasFile, … }], canEditPayment }` |
+| `GET /manage/settings` | – | `{ organization: { data, version, source: "file" \| "database", updatedAt, updatedBy }, payment: { data, iban, provider, … }, reviry: [{ id, data, … }], species: [{ ref, data, … }], maps: [{ revirId, data, hasFile, … }], canEditPayment }` |
 | `PUT /manage/settings/organization` | `{ data, note? }` | `{ scope, version, settings }`; `400 invalid_settings` (zpráva říká co je špatně) |
 | `PUT /manage/settings/payment` | `{ data, note? }` | totéž; `403 forbidden_role` pro správce |
 | `POST /manage/settings/reviry` | `{ id, data, note? }` | `201`; nový revír (id `a-z0-9-`, nelze změnit); `409 revir_exists` |
 | `PUT /manage/settings/reviry/{id}` | `{ data, note? }` | `200`; `404` |
 | `PUT /manage/settings/species` | `{ ref, data, note? }` | `200`; `404` |
-| `PUT /manage/settings/maps/{revirId}` | `{ data, note? }` (do 3 MB) | `200`; `404` neznámý revír; `400 invalid_settings` (neplatný GeoJSON, druh, souřadnice, náhled) |
+| `PUT /manage/settings/maps/{revirId}` | `{ data, note? }` (do 3 MB) | `200`; `404` neznámý revír; `400 invalid_settings` (neplatný GeoJSON, druh, souřadnice, pohled) |
 | `GET /manage/settings/history?scope=` | – | `{ scope, versions: [{ version, note, createdAt, createdBy }], hasFile }` |
 | `GET /manage/settings/versions/{id}` | – | `{ scope, version, data, createdAt }` |
 | `POST /manage/settings/versions/{id}/restore` | – | jako uložení |

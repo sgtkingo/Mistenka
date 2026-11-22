@@ -3,7 +3,6 @@
 // Jiná MO = jiný konfigurační soubor (proměnná MISTENKA_CONFIG), kód zůstává stejný.
 const fs = require("node:fs");
 const path = require("node:path");
-const crypto = require("node:crypto");
 
 const CONFIG_DIR = path.join(__dirname, "..", "..", "..", "config");
 const DEFAULT_PATH = path.join(CONFIG_DIR, "organization.json");
@@ -88,8 +87,11 @@ function buildConfig(rawInput, speciesDocs, mapDocs = {}) {
         if (Array.isArray(revir.subdistrictList) && !revir.subdistrictList.some((s) => String(s.number) === String(number))) fail(`revír ${revir.id}: podrevír ${number} z ticketSubdistricts není v subdistrictList`);
       }
     }
+    // GPS: revír bez podrevírů má společnou GPS; s podrevíry má GPS každý podrevír (společná je jen záložní).
+    if (gpsProblem(revir.gps)) fail(`revír ${revir.id}: ${gpsProblem(revir.gps)}`);
     // Podrevír v prodeji může mít vlastní cenu a počet míst (jinak platí hodnoty revíru).
     for (const s of Array.isArray(revir.subdistrictList) ? revir.subdistrictList : []) {
+      if (gpsProblem(s.gps)) fail(`revír ${revir.id}, podrevír ${s.number}: ${gpsProblem(s.gps)}`);
       if (s.priceCzk !== undefined && s.priceCzk !== null && !(typeof s.priceCzk === "number" && s.priceCzk >= 0)) fail(`revír ${revir.id}, podrevír ${s.number}: cena musí být číslo >= 0`);
       if (s.dailyCapacity !== undefined && s.dailyCapacity !== null && !(Number.isInteger(s.dailyCapacity) && s.dailyCapacity >= 1)) fail(`revír ${revir.id}, podrevír ${s.number}: počet míst musí být kladné celé číslo`);
     }
@@ -143,14 +145,15 @@ function buildConfig(rawInput, speciesDocs, mapDocs = {}) {
 
 // ---------- mapy revírů ----------
 // GeoJSON FeatureCollection: plochy (revír, podrevír, zákaz lovu), čáry (cesta, zákaz lovu) a body (parkoviště, WC …).
-// Navíc view = výchozí pohled { center: [lat, lon], zoom, base } a preview = schematický náhled PNG (data URL)
-// pro e-mail a PDF – kreslí se jen ze zakreslených dat, bez podkladu mapy (dlaždice Mapy.com se nesmí ukládat).
+// Navíc view = výchozí pohled { center: [lat, lon], zoom, base }. Stav podrevírů (místenka platí / neplatí) se do mapy
+// neukládá – mapa ho bere z aktuálního nastavení revíru (ticketSubdistricts).
 const MAP_KINDS = { Polygon: ["revir", "subdistrict", "restricted"], LineString: ["path", "restricted"], Point: ["parking", "wc", "entrance", "info", "danger", "other"] };
 const MAP_BASES = ["outdoor", "basic", "aerial", "winter"];
-const MAP_PREVIEW_MAX = 2000000;
-function validateMap(doc, id) {
+function validateMap(input, id) {
   const where = `mapa revíru ${id}`;
-  if (!doc || typeof doc !== "object" || Array.isArray(doc) || doc.type !== "FeatureCollection" || !Array.isArray(doc.features)) fail(`${where}: musí být GeoJSON FeatureCollection`);
+  if (!input || typeof input !== "object" || Array.isArray(input) || input.type !== "FeatureCollection" || !Array.isArray(input.features)) fail(`${where}: musí být GeoJSON FeatureCollection`);
+  // Starší verze ukládaly i náhled PNG (preview) – už se nepoužívá, zahodí se.
+  const { preview, ...doc } = input;
   if (doc.features.length > 300) fail(`${where}: nejvýš 300 prvků`);
   const position = (p) => Array.isArray(p) && p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]) && p[0] >= -180 && p[0] <= 180 && p[1] >= -85 && p[1] <= 85;
   let total = 0;
@@ -189,24 +192,11 @@ function validateMap(doc, id) {
   if (view !== undefined && view !== null) {
     if (typeof view !== "object" || Array.isArray(view) || !Array.isArray(view.center) || !position([view.center[1], view.center[0]]) || !Number.isInteger(view.zoom) || view.zoom < 3 || view.zoom > 20 || (view.base !== undefined && !MAP_BASES.includes(view.base))) fail(`${where}: neplatný výchozí pohled (view)`);
   }
-  const preview = doc.preview;
-  if (preview !== undefined && preview !== null && !(typeof preview === "string" && preview.length <= MAP_PREVIEW_MAX && /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(preview))) fail(`${where}: náhled musí být obrázek PNG (nejvýš 1,5 MB)`);
   return doc;
 }
-// Mapa bez náhledu (veřejné API, editor) a krátký otisk náhledu (adresa obrázku se mění s každým uložením).
-function mapWithoutPreview(map) {
-  if (!map) return null;
-  const { preview, ...rest } = map;
-  return rest;
-}
-const previewHashes = new WeakMap();
-function mapPreviewHash(map) {
-  if (!map?.preview) return null;
-  if (!previewHashes.has(map)) previewHashes.set(map, crypto.createHash("sha1").update(map.preview).digest("hex").slice(0, 12));
-  return previewHashes.get(map);
-}
+// Souhrn mapy pro veřejnou konfiguraci (počet zakreslených prvků).
 function mapSummary(map) {
-  return map ? { features: map.features.length, preview: mapPreviewHash(map) } : null;
+  return map ? { features: map.features.length } : null;
 }
 
 // Pravidla druhů ryb (míry, hájení, limity), např. config/species/crs-smas-mp-2026-2027.json.
@@ -290,6 +280,26 @@ function ticketSubdistrictLabel(revir) {
   }).join(", ");
 }
 
+// GPS { lat, lon, label? }: null = v pořádku (nebo nezadaná), jinak popis chyby.
+function gpsProblem(gps) {
+  if (gps === undefined || gps === null) return null;
+  if (typeof gps !== "object" || Array.isArray(gps)) return "GPS musí být objekt { lat, lon }";
+  if (!(typeof gps.lat === "number" && gps.lat >= -90 && gps.lat <= 90) || !(typeof gps.lon === "number" && gps.lon >= -180 && gps.lon <= 180)) return "GPS: šířka −90 až 90, délka −180 až 180";
+  if (gps.label !== undefined && gps.label !== null && !(typeof gps.label === "string" && gps.label.length <= 120)) return "GPS: popisek do 120 znaků";
+  return null;
+}
+const hasGps = (gps) => Boolean(gps) && typeof gps.lat === "number" && typeof gps.lon === "number";
+// Místo lovu místenky: vybraný podrevír s jeho GPS (bez ní záložní GPS revíru), jinak celý revír a GPS revíru.
+function fishingPlace(revir, number) {
+  if (number !== undefined && number !== null && number !== "") {
+    const item = (revir.subdistrictList || []).find((s) => String(s.number) === String(number));
+    return { subdistrict: true, title: `Podrevír ${subdistrictName(revir, number)}`, gps: hasGps(item?.gps) ? item.gps : hasGps(revir.gps) ? revir.gps : null };
+  }
+  return { subdistrict: false, title: `Celý revír ${revir.name}`, gps: hasGps(revir.gps) ? revir.gps : null };
+}
+const gpsText = (gps) => gps.label || `${gps.lat.toFixed(5)}, ${gps.lon.toFixed(5)}`;
+const mapyUrl = (gps, zoom = 16) => `https://mapy.cz/zakladni?source=coor&id=${gps.lon}%2C${gps.lat}&x=${gps.lon}&y=${gps.lat}&z=${zoom}`;
+
 function revirRules(revir) {
   return revir.fishRules;
 }
@@ -323,4 +333,4 @@ function czIban(accountNumber, bankCode) {
   return `CZ${String(98 - remainder).padStart(2, "0")}${bban}`;
 }
 
-module.exports = { loadConfig, readSource, buildConfig, getRevir, revirRules, ticketSubdistrictLabel, saleSubdistricts, subdistrictName, publicConfig, czIban, validateMap, mapWithoutPreview, mapPreviewHash, mapSummary, MAP_KINDS };
+module.exports = { loadConfig, readSource, buildConfig, getRevir, revirRules, ticketSubdistrictLabel, saleSubdistricts, subdistrictName, fishingPlace, gpsText, mapyUrl, publicConfig, czIban, validateMap, mapSummary, MAP_KINDS };

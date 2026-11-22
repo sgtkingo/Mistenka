@@ -133,7 +133,7 @@ final class Settings
         $maps = [];
         foreach ($config['reviry'] as $revir) {
             $map = $config['maps'][$revir['id']] ?? null;
-            $maps[] = array_merge(['revirId' => $revir['id'], 'data' => Config::mapWithoutPreview($map), 'preview' => Config::mapPreviewHash($map), 'hasFile' => !empty($this->source['maps'][$revir['id']])], $this->versionMeta('map:' . $revir['id']));
+            $maps[] = array_merge(['revirId' => $revir['id'], 'data' => $map, 'hasFile' => !empty($this->source['maps'][$revir['id']])], $this->versionMeta('map:' . $revir['id']));
         }
         return [
             'organization' => array_merge(['data' => Js::obj(self::pick($config, self::ORG_KEYS))], $this->versionMeta('organization')),
@@ -181,6 +181,7 @@ final class Settings
             unset($data['id'], $data['fishRules'], $data['map']);
             return $data;
         }
+        if (str_starts_with($scope, 'map:')) unset($data['preview']); // náhled PNG starších verzí se neukládá
         return $data;
     }
 

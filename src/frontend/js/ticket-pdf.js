@@ -1,6 +1,5 @@
 // PDF místenky bez externích knihoven: místenka se vykreslí na plátno (systémové písmo → plná česká diakritika),
-// vloží se do PDF (A4) jako obrázek JPEG a odkaz na kontrolu zůstane klikací. Má-li revír zakreslenou mapu,
-// přidá se druhá stránka se schématem revíru (bez podkladu mapy) a klikacím odkazem na interaktivní mapu.
+// vloží se do jednostránkového PDF (A4) jako obrázek JPEG a odkazy (kontrola, GPS místa lovu, mapa revíru) zůstanou klikací.
 // Nad obrázkem je neviditelná textová vrstva (jako u PDF s OCR): každý text na stejném místě a se stejnými
 // šířkami znaků, takže údaje jdou označit, kopírovat i vyhledat (Unicode přes ToUnicode, vč. diakritiky).
 (function () {
@@ -58,27 +57,8 @@
   }
 
   // testMode = falešná banka (testovací web): oranžová hlavička a razítko „TEST – NEPLATÍ“.
-  // Hlavička stránky (pruh s logem a organizací; v testovací verzi oranžová s upozorněním).
-  function header(ctx, organization, testMode, subtitle = "rybářská místenka") {
-    const M = 80;
-    roundRect(ctx, M, 70, W - 2 * M, 120, 22, testMode ? COL.test : COL.brand);
-    roundRect(ctx, M + 34, 104, 52, 52, 12, "#fff");
-    text(ctx, "⌁", M + 60, 145, { size: 38, weight: 700, color: testMode ? COL.test : COL.brand, align: "center" });
-    text(ctx, "Místenka", M + 106, 142, { size: 38, weight: 700, color: "#fff" });
-    text(ctx, testMode ? "TESTOVACÍ VERZE" : organization.shortName, W - M - 34, 128, { size: 22, weight: testMode ? 700 : 400, color: testMode ? "#fff" : "#d6e9fd", align: "right" });
-    text(ctx, testMode ? "neopravňuje k lovu" : subtitle, W - M - 34, 158, { size: 20, color: testMode ? "#fde3c8" : "#d6e9fd", align: "right" });
-  }
-  function footer(ctx, organization, url) {
-    const M = 80;
-    roundRect(ctx, M, H - 190, W - 2 * M, 110, 16, COL.soft);
-    text(ctx, organization.name || organization.shortName, M + 30, H - 145, { size: 19, weight: 600 });
-    const contact = [organization.contact?.email, organization.contact?.phone].filter(Boolean).join(" · ");
-    if (contact) text(ctx, contact, M + 30, H - 117, { size: 18, color: COL.muted });
-    text(ctx, url, M + 30, H - 92, { size: 16, color: COL.brand });
-  }
-
-  function drawTicket({ ticket, revir, organization, checkUrl, hours, testMode = false }) {
-    const { czDate, qrMatrix, subdistrictLabel, subdistrictTitle, czk } = window.Mistenka;
+  function drawTicket({ ticket, revir, organization, checkUrl, hours, testMode = false, mapUrl = "" }) {
+    const { czDate, qrMatrix, subdistrictLabel, subdistrictTitle, czk, fishingPlace, gpsText, mapyUrl } = window.Mistenka;
     textRuns = [];
     const canvas = document.createElement("canvas");
     canvas.width = W;
@@ -87,8 +67,14 @@
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, W, H);
 
+    // Hlavička
     const M = 80;
-    header(ctx, organization, testMode);
+    roundRect(ctx, M, 70, W - 2 * M, 120, 22, testMode ? COL.test : COL.brand);
+    roundRect(ctx, M + 34, 104, 52, 52, 12, "#fff");
+    text(ctx, "⌁", M + 60, 145, { size: 38, weight: 700, color: testMode ? COL.test : COL.brand, align: "center" });
+    text(ctx, "Místenka", M + 106, 142, { size: 38, weight: 700, color: "#fff" });
+    text(ctx, testMode ? "TESTOVACÍ VERZE" : organization.shortName, W - M - 34, 128, { size: 22, weight: testMode ? 700 : 400, color: testMode ? "#fff" : "#d6e9fd", align: "right" });
+    text(ctx, testMode ? "neopravňuje k lovu" : "rybářská místenka", W - M - 34, 158, { size: 20, color: testMode ? "#fde3c8" : "#d6e9fd", align: "right" });
 
     // Revír
     let y = 268;
@@ -127,7 +113,35 @@
     const issued = ticket.issuedAt ? new Date(ticket.issuedAt).toLocaleString("cs-CZ", { timeZone: "Europe/Prague", day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
     const left2 = field(ctx, "Cena", price, M, y, colW);
     const right2 = field(ctx, "Vystaveno", issued, M + colW + 40, y, colW);
-    y = Math.max(left2, right2) + 40;
+    y = Math.max(left2, right2) + 14;
+
+    // Místo lovu (zvýrazněné): podrevír místenky, jinak celý revír; GPS a interaktivní mapa jako klikací odkazy
+    // (mapa jen odkazem – podklad Mapy.com se do PDF vkládat nesmí).
+    const place = fishingPlace(revir, ticket.subdistrict?.number);
+    const placeLinks = [];
+    const boxH = place.gps || mapUrl ? 150 : 112;
+    roundRect(ctx, M, y, W - 2 * M, boxH, 18, "#eef6fe", COL.brand);
+    text(ctx, "MÍSTO LOVU", M + 30, y + 40, { size: 17, weight: 600, color: COL.muted, spacing: 1.5 });
+    text(ctx, place.title, M + 30, y + 86, { size: 34, weight: 700, color: COL.brandDark });
+    if (place.gps || mapUrl) {
+      let x = M + 30;
+      const lineY = y + 126;
+      if (place.gps) {
+        text(ctx, "GPS", x, lineY, { size: 21, weight: 600, color: COL.muted });
+        x += ctx.measureText("GPS").width + 10;
+        const label = `${gpsText(place.gps)} ↗`;
+        text(ctx, label, x, lineY, { size: 21, weight: 600, color: COL.brand });
+        const w = ctx.measureText(label).width;
+        placeLinks.push({ x, y: lineY - 24, w, h: 32, url: mapyUrl(place.gps.lat, place.gps.lon, 16) });
+        x += w + 36;
+      }
+      if (mapUrl) {
+        const label = "Interaktivní mapa revíru →";
+        text(ctx, label, x, lineY, { size: 21, weight: 600, color: COL.brand });
+        placeLinks.push({ x, y: lineY - 24, w: ctx.measureText(label).width, h: 32, url: mapUrl });
+      }
+    }
+    y += boxH + 50;
 
     // Než vyrazíte / po lovu
     ctx.fillStyle = COL.line;
@@ -135,7 +149,7 @@
     y += 34;
     text(ctx, "Než vyrazíte", M, y, { size: 26, weight: 700 });
     y += 44;
-    const checks = ["Mějte u sebe platný rybářský lístek a povolenku – místenka je nenahrazuje.", "Místenka platí jen pro uvedený den a revír" + (sub ? ` (${subdistrictTitle(revir, ticket).toLowerCase()} ${sub}).` : "."), "Každou ponechanou rybu ihned zapište do povolenky."];
+    const checks = ["Mějte u sebe platný rybářský lístek a povolenku – místenka je nenahrazuje.", `Místenka platí jen pro uvedený den a ${place.subdistrict ? "podrevír" : "revír"}.`, "Každou ponechanou rybu ihned zapište do povolenky."];
     for (const item of checks) {
       text(ctx, "✓", M, y, { size: 24, weight: 700, color: COL.ok });
       y = wrap(ctx, item, M + 38, y, W - 2 * M - 38, { size: 22 }) + 6;
@@ -146,7 +160,11 @@
     y = wrap(ctx, `Místenku odevzdejte ještě týž den: na webu zvolte „Vrátit místenku“, načtěte tento QR kód nebo zadejte kód ${ticket.code} a zapište ponechané ryby (nebo „žádná ponechaná ryba“). Opožděně ji lze odevzdat do ${revir.lateReturnDays} dnů, pak se uzavře jako neodevzdaná.`, M, y, W - 2 * M, { size: 22 });
 
     // Patička
-    footer(ctx, organization, checkUrl);
+    roundRect(ctx, M, H - 190, W - 2 * M, 110, 16, COL.soft);
+    text(ctx, organization.name || organization.shortName, M + 30, H - 145, { size: 19, weight: 600 });
+    const contact = [organization.contact?.email, organization.contact?.phone].filter(Boolean).join(" · ");
+    if (contact) text(ctx, contact, M + 30, H - 117, { size: 18, color: COL.muted });
+    text(ctx, checkUrl, M + 30, H - 92, { size: 16, color: COL.brand });
 
     // Razítko stavu (místenka už neplatí pro lov)
     const stamp = STAMPS[ticket.status] || (testMode ? ["TEST – NEPLATÍ", COL.test] : null);
@@ -169,51 +187,14 @@
       ctx.restore();
     }
     // Klikací oblasti v PDF (QR a odkaz) v pixelech plátna.
-    return { canvas, runs: textRuns, links: [{ x: qrX, y, w: qrSize, h: qrSize, url: checkUrl, top: 350 }, { x: M + 30, y: H - 110, w: W - 2 * M - 60, h: 26, url: checkUrl }] };
-  }
-
-  // Druhá stránka: schéma revíru (zakreslené plochy a místa, bez podkladu mapy), legenda a odkaz na interaktivní mapu.
-  function drawMapPage({ revir, organization, map, mapUrl, testMode = false }) {
-    textRuns = [];
-    const canvas = document.createElement("canvas");
-    canvas.width = W;
-    canvas.height = H;
-    const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, W, H);
-    const M = 80;
-    header(ctx, organization, testMode, "mapa revíru");
-    text(ctx, "MAPA REVÍRU", M, 262, { size: 19, weight: 600, color: COL.muted, spacing: 2 });
-    text(ctx, [revir.name, revir.number].filter(Boolean).join(" · "), M, 310, { size: 40, weight: 700 });
-    const mapTop = 350;
-    const mapH = 1000;
-    window.MistenkaMap.drawSchematic(ctx, map, { x: M, y: mapTop, w: W - 2 * M, h: mapH }, { scale: 1.3 });
-    ctx.strokeStyle = COL.line;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(M, mapTop, W - 2 * M, mapH, 18);
-    ctx.stroke();
-    let y = mapTop + mapH + 48;
-    if (revir.gps) {
-      text(ctx, "GPS", M, y, { size: 17, weight: 600, color: COL.muted, spacing: 1.5 });
-      text(ctx, revir.gps.label || `${revir.gps.lat}, ${revir.gps.lon}`, M + 70, y, { size: 22, weight: 600 });
-      y += 40;
-    }
-    text(ctx, "Interaktivní mapa s podkladem (klepněte):", M, y, { size: 20, color: COL.muted });
-    y += 34;
-    text(ctx, mapUrl, M, y, { size: 22, weight: 600, color: COL.brand });
-    const urlTop = y - 26;
-    y += 40;
-    wrap(ctx, "Schéma je orientační – závazné jsou údaje v RIS a na kartě revíru.", M, y, W - 2 * M, { size: 19, color: COL.muted });
-    footer(ctx, organization, mapUrl);
-    return { canvas, runs: textRuns, links: [{ x: M, y: mapTop, top: mapTop, w: W - 2 * M, h: mapH, url: mapUrl }, { x: M, y: urlTop, top: urlTop, w: W - 2 * M, h: 34, url: mapUrl }, { x: M + 30, y: H - 110, w: W - 2 * M - 60, h: 26, url: mapUrl }] };
+    return { canvas, runs: textRuns, links: [{ x: qrX, y, w: qrSize, h: qrSize, url: checkUrl, top: 350 }, { x: M + 30, y: H - 110, w: W - 2 * M - 60, h: 26, url: checkUrl }, ...placeLinks] };
   }
 
   // Neviditelná textová vrstva: písmo s vlastním 8bitovým kódováním (kód → znak přes ToUnicode), text režim 3
   // (nevykresluje se), polohy a šířky znaků podle plátna (TJ s posunem každého znaku na změřenou šířku).
-  function textLayer(pagesRuns) {
+  function textLayer(runs) {
     const codes = new Map();
-    for (const runs of pagesRuns) for (const run of runs) for (const [ch] of run.chars) if (!codes.has(ch) && codes.size < 254) codes.set(ch, codes.size + 1);
+    for (const run of runs) for (const [ch] of run.chars) if (!codes.has(ch) && codes.size < 254) codes.set(ch, codes.size + 1);
     const hex = (n, len = 2) => n.toString(16).toUpperCase().padStart(len, "0");
     const utf16 = (ch) => Array.from(ch).map((c) => { const cp = c.codePointAt(0); if (cp < 0x10000) return hex(cp, 4); const v = cp - 0x10000; return hex(0xd800 + (v >> 10), 4) + hex(0xdc00 + (v & 0x3ff), 4); }).join("");
     const entries = [...codes].map(([ch, code]) => `<${hex(code)}> <${utf16(ch)}>`);
@@ -223,7 +204,6 @@
     const n = Math.max(1, codes.size);
     const font = `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /FirstChar 1 /LastChar ${n} /Widths [${Array(n).fill(500).join(" ")}] /Encoding << /Type /Encoding /Differences [1 ${Array.from({ length: n }, (_, i) => `/g${i + 1}`).join(" ")}] >> /ToUnicode TOUNICODE >>`;
     const f = (v) => (Math.round(v * 1000) / 1000).toString();
-    const contents = pagesRuns.map((runs) => {
     let content = "BT 3 Tr\n";
     for (const run of runs) {
       const [a, b, c, d, e, g] = run.m;
@@ -238,50 +218,41 @@
       }
       content += "] TJ\n";
     }
-    return `${content}ET`;
-    });
-    return { font, cmap, contents };
+    content += "ET";
+    return { font, cmap, content };
   }
 
-  // PDF (A4) – každá stránka = obrázek JPEG (DCTDecode) + neviditelná textová vrstva + odkazy.
-  // pages = [{ jpeg, links, runs }]; starší volání buildPdf(jpeg, links, runs) = jedna stránka.
-  function buildPdf(pagesOrJpeg, linksArg = [], runsArg = []) {
-    const pages = pagesOrJpeg instanceof Uint8Array ? [{ jpeg: pagesOrJpeg, links: linksArg, runs: runsArg }] : pagesOrJpeg;
+  // Jednostránkové PDF s obrázkem JPEG (DCTDecode), neviditelnou textovou vrstvou a odkazy.
+  function buildPdf(jpegBytes, links, runs = []) {
     const enc = new TextEncoder();
     const parts = [];
     let length = 0;
     const offsets = [];
     const push = (part) => { const bytes = typeof part === "string" ? enc.encode(part) : part; parts.push(bytes); length += bytes.length; };
     const obj = (n, body) => { offsets[n] = length; push(`${n} 0 obj\n${body}\nendobj\n`); };
-    const layer = textLayer(pages.map((page) => page.runs || []));
-    let next = 3; // 1 = katalog, 2 = seznam stránek
-    const fontId = next++;
-    const cmapId = next++;
-    const ids = pages.map((page) => ({ page: next++, image: next++, content: next++, links: (page.links || []).map(() => next++) }));
+    const layer = textLayer(runs);
+    const first = 8; // 6 = písmo, 7 = ToUnicode, od 8 odkazy
+    const annots = links.map((_, i) => `${first + i} 0 R`).join(" ");
     push("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
     obj(1, "<< /Type /Catalog /Pages 2 0 R >>");
-    obj(2, `<< /Type /Pages /Kids [${ids.map((id) => `${id.page} 0 R`).join(" ")}] /Count ${pages.length} >>`);
-    obj(fontId, layer.font.replace("TOUNICODE", `${cmapId} 0 R`));
-    obj(cmapId, `<< /Length ${enc.encode(layer.cmap).length} >>\nstream\n${layer.cmap}\nendstream`);
-    pages.forEach((page, index) => {
-      const id = ids[index];
-      const annots = id.links.length ? ` /Annots [${id.links.map((n) => `${n} 0 R`).join(" ")}]` : "";
-      obj(id.page, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im1 ${id.image} 0 R >> /Font << /F1 ${fontId} 0 R >> >> /Contents ${id.content} 0 R${annots} >>`);
-      offsets[id.image] = length;
-      push(`${id.image} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${W} /Height ${H} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${page.jpeg.length} >>\nstream\n`);
-      push(page.jpeg);
-      push("\nendstream\nendobj\n");
-      const draw = `q 595 0 0 842 0 0 cm /Im1 Do Q\n${layer.contents[index]}`;
-      obj(id.content, `<< /Length ${enc.encode(draw).length} >>\nstream\n${draw}\nendstream`);
-      (page.links || []).forEach((link, i) => {
-        const x1 = (link.x * PT).toFixed(1);
-        const y1 = (842 - (link.top ?? link.y) * PT - link.h * PT).toFixed(1);
-        const x2 = ((link.x + link.w) * PT).toFixed(1);
-        const y2 = (842 - (link.top ?? link.y) * PT).toFixed(1);
-        obj(id.links[i], `<< /Type /Annot /Subtype /Link /Rect [${x1} ${y1} ${x2} ${y2}] /Border [0 0 0] /A << /S /URI /URI (${link.url.replace(/([\\()])/g, "\\$1")}) >> >>`);
-      });
+    obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+    obj(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im1 4 0 R >> /Font << /F1 6 0 R >> >> /Contents 5 0 R /Annots [${annots}] >>`);
+    offsets[4] = length;
+    push(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${W} /Height ${H} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`);
+    push(jpegBytes);
+    push("\nendstream\nendobj\n");
+    const draw = `q 595 0 0 842 0 0 cm /Im1 Do Q\n${layer.content}`;
+    obj(5, `<< /Length ${enc.encode(draw).length} >>\nstream\n${draw}\nendstream`);
+    obj(6, layer.font.replace("TOUNICODE", "7 0 R"));
+    obj(7, `<< /Length ${enc.encode(layer.cmap).length} >>\nstream\n${layer.cmap}\nendstream`);
+    links.forEach((link, i) => {
+      const x1 = (link.x * PT).toFixed(1);
+      const y1 = (842 - (link.top ?? link.y) * PT - link.h * PT).toFixed(1);
+      const x2 = ((link.x + link.w) * PT).toFixed(1);
+      const y2 = (842 - (link.top ?? link.y) * PT).toFixed(1);
+      obj(first + i, `<< /Type /Annot /Subtype /Link /Rect [${x1} ${y1} ${x2} ${y2}] /Border [0 0 0] /A << /S /URI /URI (${link.url.replace(/([\\()])/g, "\\$1")}) >> >>`);
     });
-    const count = next;
+    const count = first + links.length;
     const xref = length;
     let table = `xref\n0 ${count}\n0000000000 65535 f \n`;
     for (let n = 1; n < count; n++) table += `${String(offsets[n]).padStart(10, "0")} 00000 n \n`;
@@ -289,18 +260,11 @@
     return new Blob(parts, { type: "application/pdf" });
   }
 
-  const toJpeg = async (canvas) => new Uint8Array(await (await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92))).arrayBuffer());
   async function download(options) {
     if (document.fonts?.ready) await document.fonts.ready;
-    const pages = [];
-    const ticketPage = drawTicket(options);
-    pages.push({ jpeg: await toJpeg(ticketPage.canvas), links: ticketPage.links, runs: ticketPage.runs });
-    // Mapa revíru jako druhá stránka (jen zakreslená mapa; schéma kreslí map.js).
-    if (options.map?.features?.length && options.mapUrl && window.MistenkaMap) {
-      const mapPage = drawMapPage(options);
-      pages.push({ jpeg: await toJpeg(mapPage.canvas), links: mapPage.links, runs: mapPage.runs });
-    }
-    const pdf = buildPdf(pages);
+    const { canvas, links, runs } = drawTicket(options);
+    const jpeg = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    const pdf = buildPdf(new Uint8Array(await jpeg.arrayBuffer()), links, runs);
     const url = URL.createObjectURL(pdf);
     const link = document.createElement("a");
     link.href = url;
@@ -311,5 +275,5 @@
     window.setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
 
-  window.MistenkaPdf = { download, drawTicket, drawMapPage, buildPdf };
+  window.MistenkaPdf = { download, drawTicket, buildPdf };
 })();

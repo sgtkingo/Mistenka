@@ -137,13 +137,21 @@
           "number": 1,
           "name": "Horní nádrž",
           "priceCzk": 200,
-          "dailyCapacity": 30
+          "dailyCapacity": 30,
+          "gps": {
+            "lat": 49.913791,
+            "lon": 18.556791
+          }
         },
         {
           "number": 2,
           "name": "Dolní nádrž",
           "priceCzk": 250,
-          "dailyCapacity": 2
+          "dailyCapacity": 2,
+          "gps": {
+            "lat": 49.913791,
+            "lon": 18.560591
+          }
         }
       ],
       "ticketSubdistricts": [

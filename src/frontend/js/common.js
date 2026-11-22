@@ -86,11 +86,6 @@
   }
 
   // Výběr revíru: ?revir=<id>, jinak jediný revír v konfiguraci.
-  // Absolutní adresa API (např. obrázek náhledu mapy); prefix WordPressu už obsahuje „?“.
-  function apiUrl(path, query = {}) {
-    const params = new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== "")).toString();
-    return API_BASE + path + (params ? (API_BASE.includes("?") ? "&" : "?") + params : "");
-  }
   function selectedRevir(config) {
     const id = new URLSearchParams(location.search).get("revir");
     if (id) return config.reviry.find((revir) => revir.id === id) || null;
@@ -210,6 +205,29 @@
       return item?.name ? `${number} – ${item.name}` : String(number);
     }).join(", ");
   }
+  // ---------- GPS a místo lovu ----------
+  // Revír bez podrevírů má společnou GPS; s podrevíry má GPS každý podrevír (společná je jen záložní).
+  const hasGps = (gps) => Boolean(gps) && Number.isFinite(Number(gps.lat)) && Number.isFinite(Number(gps.lon));
+  const gpsText = (gps) => gps.label || `${Number(gps.lat).toFixed(5)}, ${Number(gps.lon).toFixed(5)}`;
+  const mapyUrl = (lat, lon, zoom = 16) => `https://mapy.cz/zakladni?source=coor&id=${encodeURIComponent(lon)}%2C${encodeURIComponent(lat)}&x=${encodeURIComponent(lon)}&y=${encodeURIComponent(lat)}&z=${zoom}`;
+  const gpsLink = (gps, zoom = 16) => `<a href="${esc(mapyUrl(gps.lat, gps.lon, zoom))}" target="_blank" rel="noreferrer">${esc(gpsText(gps))} ↗</a>`;
+  // Místo lovu místenky: vybraný podrevír s jeho GPS (bez ní záložní GPS revíru), jinak celý revír a GPS revíru.
+  function fishingPlace(revir, number) {
+    if (number !== undefined && number !== null && number !== "") {
+      const item = (revir?.subdistrictList || []).find((s) => String(s.number) === String(number));
+      const label = item?.name ? `${number} – ${item.name}` : String(number);
+      return { subdistrict: true, label, title: `Podrevír ${label}`, gps: hasGps(item?.gps) ? item.gps : hasGps(revir?.gps) ? revir.gps : null };
+    }
+    return { subdistrict: false, label: revir?.name || "", title: `Celý revír ${revir?.name || ""}`, gps: hasGps(revir?.gps) ? revir.gps : null };
+  }
+  // GPS k zobrazení u revíru: s podrevíry GPS jednotlivých podrevírů, jinak (nebo když je žádný nemá) společná GPS.
+  function gpsPlaces(revir) {
+    const sale = (revir?.ticketSubdistricts || []).map(String);
+    const subs = (revir?.subdistrictList || []).filter((s) => hasGps(s.gps));
+    if (subs.length) return subs.map((s) => ({ label: s.name ? `${s.number} – ${s.name}` : String(s.number), gps: s.gps, closed: sale.length > 0 && !sale.includes(String(s.number)) }));
+    return hasGps(revir?.gps) ? [{ label: "", gps: revir.gps, closed: false }] : [];
+  }
+  const gpsListHtml = (revir) => gpsPlaces(revir).map((p) => `<span class="gps-line">${p.label ? `<b>${esc(p.label)}</b> ` : ""}${gpsLink(p.gps)}${p.closed ? ' <small class="gps-closed">místenka není</small>' : ""}</span>`).join("");
   const subdistrictTitle = (revir, ticket = null) => (!ticket?.subdistrict && (revir?.ticketSubdistricts || []).length > 1 ? "Podrevíry" : "Podrevír");
   const plural = (n, one, few, many) => (n === 1 ? one : n >= 2 && n <= 4 ? few : many);
 
@@ -731,7 +749,7 @@
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", addBugButton); else addBugButton();
 
-  window.Mistenka = { infoTip, apiUrl, icon, openBugReport, logEvent, qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest, attachQrScanner, attachMemberIdScanner, codeFromQr, memberIdFromBarcode, roleBadge, roleBadges };
+  window.Mistenka = { infoTip, icon, hasGps, gpsText, mapyUrl, gpsLink, fishingPlace, gpsPlaces, gpsListHtml, openBugReport, logEvent, qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest, attachQrScanner, attachMemberIdScanner, codeFromQr, memberIdFromBarcode, roleBadge, roleBadges };
 })();
 
 // Pole s číslem členské legitimace (max. 8 znaků): ponechá jen číslice, aby vložené „1234 5678“ nepřišlo o číslici.

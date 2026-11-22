@@ -188,18 +188,6 @@ final class App
         return is_array($data) ? $data : [];
     }
 
-    // Obrázek (náhled mapy revíru) – mimo JSON server WordPressu, lze ho cachovat (adresa obsahuje otisk).
-    private static function image(string $contentType, string $content): void
-    {
-        status_header(200);
-        header('Content-Type: ' . $contentType);
-        header('Content-Length: ' . strlen($content));
-        header('Cache-Control: public, max-age=86400');
-        header('X-Content-Type-Options: nosniff');
-        echo $content;
-        exit;
-    }
-
     // Surová odpověď (CSV, soubor zálohy) – mimo JSON server WordPressu.
     private static function raw(string $contentType, string $filename, string $content): void
     {
@@ -234,16 +222,10 @@ final class App
 
         if ($path === '/config' && $method === 'GET') return self::json(200, Config::publicConfig($this->config, ['today' => Time::pragueToday(), 'now' => Time::nowIso(), 'devMode' => Env::dev(), 'service' => ['launched' => Db::serviceLaunched(), 'seasonOpen' => Db::seasonOpen(Time::pragueToday())]]));
         if ($match('#^/reviry/([a-z0-9-]+)/availability$#') && $method === 'GET') return self::json(200, $svc->availability($m[1]));
-        // Mapa revíru (veřejná): zakreslené plochy a body + otisk náhledu; náhled PNG pro e-mail a PDF zvlášť.
+        // Mapa revíru (veřejná): zakreslené plochy a body.
         if ($match('#^/maps/([a-z0-9-]+)$#') && $method === 'GET') {
             if (!Config::getRevir($this->config, $m[1])) throw new ApiError(404, 'unknown_revir', 'Revír neexistuje.');
-            $map = $this->config['maps'][$m[1]] ?? null;
-            return self::json(200, ['revirId' => $m[1], 'map' => Config::mapWithoutPreview($map), 'preview' => Config::mapPreviewHash($map)]);
-        }
-        if ($match('#^/maps/([a-z0-9-]+)/preview\.png$#') && $method === 'GET') {
-            $preview = $this->config['maps'][$m[1]]['preview'] ?? null;
-            if (!$preview) throw new ApiError(404, 'not_found', 'Náhled mapy neexistuje.');
-            self::image('image/png', (string) base64_decode(substr($preview, strpos($preview, ',') + 1)));
+            return self::json(200, ['revirId' => $m[1], 'map' => $this->config['maps'][$m[1]] ?? null]);
         }
         // Hlášení chyby (kdokoli; snímek obrazovky až ~1,5 MB).
         if ($path === '/bug-reports' && $method === 'POST') {

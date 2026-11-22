@@ -7,7 +7,7 @@
 const { transaction } = require("./db");
 const time = require("./time");
 const emails = require("./emails");
-const { buildConfig, mapWithoutPreview, mapPreviewHash } = require("./config");
+const { buildConfig } = require("./config");
 const { ApiError } = require("./validate");
 
 const ORG_KEYS = ["organization", "returnPolicy", "salesPolicy", "publicCheck", "statsPolicy", "limitPolicy", "penaltyPolicy", "privacy"];
@@ -86,7 +86,7 @@ function createSettings({ db, config }) {
       reviry: config.reviry.map((revir) => ({ id: revir.id, data: (({ id, ...rest }) => rest)(stripRevir(revir)), ...versionMeta(`revir:${revir.id}`) })),
       species: Object.entries(species).map(([ref, doc]) => ({ ref, data: doc, ...versionMeta(`species:${ref}`) })),
       // Mapy revírů bez náhledu PNG (editor si ho při uložení vykreslí znovu).
-      maps: config.reviry.map((revir) => ({ revirId: revir.id, data: mapWithoutPreview(config.maps?.[revir.id]), preview: mapPreviewHash(config.maps?.[revir.id]), hasFile: Boolean(source.maps?.[revir.id]), ...versionMeta(`map:${revir.id}`) })),
+      maps: config.reviry.map((revir) => ({ revirId: revir.id, data: config.maps?.[revir.id] || null, hasFile: Boolean(source.maps?.[revir.id]), ...versionMeta(`map:${revir.id}`) })),
       canEditPayment: rolesOf(actor).includes("admin")
     };
   }
@@ -122,6 +122,7 @@ function createSettings({ db, config }) {
     if (scope === "organization") return pick(data, ORG_KEYS);
     if (scope === "payment") return pick(data, PAYMENT_KEYS);
     if (scope.startsWith("revir:")) { const { id, fishRules, map, ...rest } = data; return rest; }
+    if (scope.startsWith("map:")) { const { preview, ...rest } = data; return rest; } // náhled PNG starších verzí se neukládá
     return data;
   }
   function save(actor, scope, data, { note = "", creating = false } = {}) {

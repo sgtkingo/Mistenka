@@ -1,4 +1,4 @@
-const { qs, esc, api, loadConfig, revirUrl, czDate, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, credentialsFor, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, limitsHtml } = window.Mistenka;
+const { qs, esc, api, loadConfig, fishingPlace, gpsLink, revirUrl, czDate, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, credentialsFor, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, limitsHtml } = window.Mistenka;
 
 const code = (new URLSearchParams(location.search).get("code") || "").trim().toUpperCase();
 const credentials = credentialsFor(code);
@@ -28,6 +28,12 @@ function renderPending() {
   qs("#paymentSubdistrictTitle").textContent = subdistrictTitle(revir, ticket);
   qs("#paymentSubdistrict").textContent = subdistrictLabel(revir, ticket);
   qs("#paymentSubdistrictRow").classList.toggle("hidden", !subdistrictLabel(revir, ticket));
+  // Zvýrazněné místo lovu: podrevír místenky (s jeho GPS), jinak celý revír.
+  const place = fishingPlace(revir, ticket.subdistrict?.number);
+  qs("#paymentSubdistrictRow").classList.toggle("summary-place", place.subdistrict);
+  qs("#paymentRevirRow").classList.toggle("summary-place", !place.subdistrict);
+  qs("#paymentSubdistrictGps").innerHTML = place.subdistrict && place.gps ? `GPS ${gpsLink(place.gps)}` : "";
+  qs("#paymentRevirGps").innerHTML = !place.subdistrict ? `Celý revír${place.gps ? ` · GPS ${gpsLink(place.gps)}` : ""}` : "";
   qs("#paymentDate").textContent = czDate(ticket.date, { weekday: true });
   qs("#paymentPerson").textContent = `${ticket.firstName} ${ticket.lastName}`;
   qs("#paymentAmount").textContent = czk(p.amountHalere);
@@ -62,17 +68,23 @@ function renderIssued() {
   qs("#ticketCard").innerHTML = `<div class="ticket-top"><span class="section-kicker">${esc([ticket.revir.name, ticket.revir.number].filter(Boolean).join(" · "))}</span><span class="ticket-status">${esc(statusLabel)}</span></div>
     <div class="ticket-code">${esc(ticket.code)}</div>
     <div class="ticket-details"><span><small>Rybář</small><b>${esc(`${ticket.firstName} ${ticket.lastName}`)}</b></span>${subdistrictLabel(revir, ticket) ? `<span><small>${esc(subdistrictTitle(revir, ticket))}</small><b>${esc(subdistrictLabel(revir, ticket))}</b></span>` : ""}<span><small>Datum lovu</small><b>${esc(czDate(ticket.date, { weekday: true }))}</b></span><span><small>Č. legitimace</small><b>${esc(ticket.memberId)}</b></span></div>
+    ${placeHtml(revir)}
     <div class="ticket-qr">${qrSvg(ticketCheckUrl(ticket.code), "QR kód pro kontrolu místenky")}<small>Kód pro kontrolu místenky</small></div>`;
   qs("#ticketLimits").innerHTML = limitsHtml((ticket.limits || []).filter((l) => l.period !== "day" || ticket.status === "expired_returned"), { title: "Vaše limity úlovků" });
   const rules = [];
   if (hours) rules.push(`Doba lovu v tento den: <b>${esc(hours)}</b>.`);
   (revir.fishingHours || []).forEach((rule) => rules.push(`${esc(rule.label || rule.months.join(", "))}: ${esc(rule.from)}–${esc(rule.to)}`));
   rules.push("Mějte u sebe platný rybářský lístek a povolenku.", "Každou ponechanou rybu je nutné ihned zapsat do povolenky.", `Místenku odevzdejte ihned po ukončení lovu v daný den. Pozdější odevzdání je možné nejpozději do ${esc(revir.lateReturnDays)} ${plural(revir.lateReturnDays, "dne", "dnů", "dnů")} a bude označeno jako opožděné; pak se místenka automaticky uzavře jako neodevzdaná.`);
-  // Interaktivní mapa revíru (parkování, WC, hranice podrevírů) – když je zakreslená.
-  if (revir.map?.features) rules.push(`<a class="text-link" href="map.html?revir=${encodeURIComponent(revir.id)}">Interaktivní mapa revíru →</a> – parkování, WC a hranice podrevírů.`);
   qs("#ticketRules").innerHTML = rules.map((rule) => `<li>${rule}</li>`).join("");
   qs("#emailNote").textContent = `Potvrzení jsme poslali na ${ticket.email}. Najdete v něm i odkaz pro odevzdání místenky po skončení lovu.`;
   show("successState");
+}
+
+// Místo lovu na vystavené místence: podrevír (nebo celý revír), GPS a odkaz na interaktivní mapu.
+function placeHtml(revir) {
+  const place = fishingPlace(revir, ticket.subdistrict?.number);
+  const map = revir.map?.features ? `<a href="map.html?revir=${encodeURIComponent(revir.id)}">Interaktivní mapa revíru →</a>` : "";
+  return `<div class="ticket-place"><small>Místo lovu</small><b>${esc(place.title)}</b><span>${[place.gps && `GPS ${gpsLink(place.gps)}`, map].filter(Boolean).join(" · ")}</span></div>`;
 }
 
 function renderEnded(kind) {
@@ -124,17 +136,11 @@ qs("#cancelPayment").addEventListener("click", async () => {
     render();
   } catch (error) { showToast(error.message, "error"); }
 });
-qs("#downloadTicket").addEventListener("click", async (event) => {
-  const button = event.currentTarget;
+qs("#downloadTicket").addEventListener("click", () => {
   const revir = revirOf(ticket);
-  button.disabled = true;
-  try {
-    // Má-li revír zakreslenou mapu, přidá se do PDF jako druhá stránka s odkazem na interaktivní mapu.
-    let map = null;
-    if (revir.map?.features) map = (await api(`/maps/${encodeURIComponent(revir.id)}`).catch(() => ({ map: null }))).map;
-    const mapUrl = new URL(`map.html?revir=${encodeURIComponent(revir.id)}`, location.href).href;
-    await window.MistenkaPdf.download({ ticket, revir, organization: config.organization, checkUrl: ticketCheckUrl(ticket.code), hours: fishingHours(revir, ticket.date), testMode: config.payment.mode === "fake", map, mapUrl });
-  } catch (error) { showToast(error.message, "error"); } finally { button.disabled = false; }
+  // Má-li revír zakreslenou mapu, PDF obsahuje klikací odkaz na interaktivní mapu.
+  const mapUrl = revir.map?.features ? new URL(`map.html?revir=${encodeURIComponent(revir.id)}`, location.href).href : "";
+  window.MistenkaPdf.download({ ticket, revir, organization: config.organization, checkUrl: ticketCheckUrl(ticket.code), hours: fishingHours(revir, ticket.date), testMode: config.payment.mode === "fake", mapUrl });
 });
 qs("#printTicket").addEventListener("click", () => window.print());
 

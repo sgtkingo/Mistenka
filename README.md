@@ -78,10 +78,12 @@ Identifikátor revíru (`id`) se ukládá k místenkám, po spuštění ho nemě
 
 ## Mapy revírů
 
-Správce v portálu (Revíry → Mapy revírů) zakreslí nad mapou hranice revíru a podrevírů, úseky se zákazem lovu, cesty a místa (parkoviště, WC, vstup k vodě, informace, pozor). Rybáři mapu uvidí na stránce `map.html?revir=<id>` (odkaz v kartě Interaktivní mapa na úvodu, v pravidlech revíru a na místence). E-mail s místenkou a PDF obsahují schéma revíru s odkazem na interaktivní mapu.
+Správce v portálu (Revíry → Mapy revírů) zakreslí nad mapou hranice revíru a podrevírů, úseky se zákazem lovu, cesty a místa (parkoviště, WC, vstup k vodě, informace, pozor). Rybáři mapu uvidí na stránce `map.html?revir=<id>` (odkaz v kartě Interaktivní mapa na úvodu, v pravidlech revíru a na místence). Na úvodu je živá mini-mapa, e-mail s místenkou a PDF obsahují odkaz na interaktivní mapu.
 
 - Podklad mapy: [Mapy.com](https://developer.mapy.com/) s API klíčem v proměnné `MISTENKA_MAPY_API_KEY` (WordPress: konstanta ve `wp-config.php`), jinak OpenStreetMap. Klíč se používá v prohlížeči – v účtu Mapy.com ho omezte na doménu aplikace (HTTP referer). Bezplatný tarif má 250 000 dlaždic měsíčně.
-- Schéma v e-mailu a PDF se kreslí jen ze zakreslených dat, bez podkladu (dlaždice Mapy.com se podle podmínek nesmí ukládat).
+- Do e-mailu a PDF se mapa nevkládá jako obrázek (dlaždice Mapy.com se podle podmínek nesmí ukládat ani z nich dělat odvozená díla), jen odkaz.
+- GPS: revír bez podrevírů má společnou GPS, revír s podrevíry GPS u každého podrevíru (Revíry → Voda a podrevíry; lze vložit souřadnice zkopírované z Mapy.com). Místenka, e-mail, PDF a rekapitulace zvýrazní místo lovu – podrevír s jeho GPS, jinak celý revír.
+- Podrevír se v mapě zakresluje jen s číslem; název a stav se berou z aktuálního nastavení revíru. Podrevír, na který místenka neplatí (není zaškrtnutý ve sloupci „Platí místenka“), je šrafovaný s upozorněním, že se na něm na místenku neloví.
 
 ## Platby
 

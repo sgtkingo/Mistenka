@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Místenka — jednoduchá online rezervace rybolovu.">
   <title>Místenka</title>
+  <link rel="stylesheet" href="leaflet.css">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -176,7 +177,7 @@
           </div>
           <div id="paymentPanel" class="panel-content hidden">
             <button class="back-button" id="backButton" type="button">← Zpět</button>
-            <div class="payment-layout"><div><span class="section-kicker">Rekapitulace</span><h2>Vaše místenka</h2><dl class="summary-list"><div><dt>Revír</dt><dd data-revir-name></dd></div><div id="summaryNumberRow"><dt>Číslo revíru</dt><dd id="summaryNumber">—</dd></div><div id="summarySubdistrictRow"><dt id="summarySubdistrictTitle">Podrevír</dt><dd id="summarySubdistrict">—</dd></div><div><dt>Datum</dt><dd id="summaryDate">—</dd></div><div><dt>Rybář</dt><dd id="summaryPerson">—</dd></div><div><dt>E-mail</dt><dd id="summaryEmail">—</dd></div><div><dt>Celkem</dt><dd class="total" id="summaryTotal">—</dd></div></dl></div></div>
+            <div class="payment-layout"><div><span class="section-kicker">Rekapitulace</span><h2>Vaše místenka</h2><dl class="summary-list"><div id="summaryRevirRow"><dt>Revír</dt><dd><span data-revir-name></span><small class="place-gps" id="summaryRevirGps"></small></dd></div><div id="summaryNumberRow"><dt>Číslo revíru</dt><dd id="summaryNumber">—</dd></div><div id="summarySubdistrictRow"><dt id="summarySubdistrictTitle">Podrevír</dt><dd><span id="summarySubdistrict">—</span><small class="place-gps" id="summarySubdistrictGps"></small></dd></div><div><dt>Datum</dt><dd id="summaryDate">—</dd></div><div><dt>Rybář</dt><dd id="summaryPerson">—</dd></div><div><dt>E-mail</dt><dd id="summaryEmail">—</dd></div><div><dt>Celkem</dt><dd class="total" id="summaryTotal">—</dd></div></dl></div></div>
             <div class="weather-card hidden" id="weatherCard"><span class="weather-main" id="weatherIcon"></span><div><span class="section-kicker" id="weatherTitle"></span><strong id="weatherMain"></strong><small id="weatherDetail"></small></div></div>
             <label class="field-label voucher-label" for="voucherCode">Dárkový poukaz <span class="optional">(volitelné)</span><span class="info-tip" tabindex="0" role="img" aria-label="Poukaz se odečte až po odeslání objednávky." data-tip="Poukaz se odečte až po odeslání objednávky.">i</span></label>
             <div class="voucher-input-row"><input id="voucherCode" type="text" maxlength="16" placeholder="16znakový kód" autocomplete="off" spellcheck="false"><button class="voucher-verify-button" id="verifyVoucher" type="button">Ověřit</button></div>
@@ -187,7 +188,7 @@
         <aside class="info-column">
           <div class="notice-card hidden" id="noticeCard" aria-roledescription="carousel"><span class="notice-icon">✦</span><div class="notice-body"><span class="section-kicker">Důležité</span><div id="noticeSlides" aria-live="polite"></div><div class="notice-footer"><div class="notice-dots" id="noticeDots" role="tablist" aria-label="Důležité zprávy"></div><a class="rules-link" href="rules.html"><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>Pravidla revíru →</a></div></div></div>
           <div class="details-card" id="revir"><div class="details-top"><span class="section-kicker">O revíru</span></div><h3 data-revir-name></h3><p class="muted" id="revirSubtitle"></p><div class="detail-list" id="revirDetails"></div><div class="details-links" id="revirLinks"></div></div>
-          <div class="details-card map-card hidden" id="mapCard"><div class="details-top"><span class="section-kicker">Interaktivní mapa</span></div><a class="map-card-preview hidden" id="mapCardPreview" href="map.html" aria-label="Otevřít interaktivní mapu revíru"><img id="mapCardImg" alt="Schéma revíru: hranice, podrevíry a důležitá místa" loading="lazy"></a><p class="muted" id="mapCardText"></p><div class="detail-list" id="mapCardGps"></div><div class="details-links"><a class="map-link" id="mapCardLink" href="map.html"><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg>Otevřít interaktivní mapu <span>→</span></a></div></div>
+          <div class="details-card map-card hidden" id="mapCard"><div class="details-top"><span class="section-kicker">Interaktivní mapa</span></div><div class="map-card-preview hidden" id="mapCardPreview"><div class="map-card-map" id="mapCardMap" aria-hidden="true"></div><a class="map-card-overlay" id="mapCardOverlay" href="map.html" aria-label="Otevřít interaktivní mapu revíru"></a></div><p class="muted" id="mapCardText"></p><div class="detail-list" id="mapCardGps"></div><div class="details-links"><a class="map-link" id="mapCardLink" href="map.html"><svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg>Otevřít interaktivní mapu <span>→</span></a></div></div>
         </aside>
       </div>
     </section>
@@ -200,6 +201,8 @@
   <script src="js/env.js"></script>
   <script src="js/common.js"></script>
   <script src="js/weather.js"></script>
+  <script src="vendor/leaflet.js"></script>
+  <script src="js/map.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

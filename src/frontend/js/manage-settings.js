@@ -153,9 +153,10 @@
       <p class="field-help">Cenu a počet míst nastavíte v sekci <a class="text-link" href="#pricing" onclick="document.querySelector('[data-section=pricing]').click();return false">Ceny a místa</a>.</p>
       <h3>Voda a podrevíry</h3>
       <div class="form-two-col">${field("rArea", "Výměra (např. 4,8 ha)", d.area)}${field("rSubText", "Popis podrevírů", d.subdistricts)}</div>
-      <table class="data-table edit-table" id="subTable"><thead><tr><th>Č.</th><th>Název</th><th>Výměra</th><th>Platí místenka</th><th></th></tr></thead><tbody>${subs.map((s, i) => subRow(s, ticketSubs.includes(String(s.number)), i)).join("")}</tbody></table>
+      <table class="data-table edit-table" id="subTable"><thead><tr><th>Č.</th><th>Název</th><th>Výměra</th><th>GPS (šířka, délka)${infoTip("Souřadnice podrevíru, např. 49.91379, 18.55679 (lze vložit i zkopírované z Mapy.com, např. 49.9137911N, 18.5586933E). Rybáři ji uvidí na místence, v e-mailu, v rekapitulaci a na mapě revíru.")}</th><th>Platí místenka</th><th></th></tr></thead><tbody>${subs.map((s, i) => subRow(s, ticketSubs.includes(String(s.number)), i)).join("")}</tbody></table>
       <button class="text-button" type="button" id="addSub">+ Podrevír</button>
-      <div class="form-three-col">${field("rLat", "GPS šířka", d.gps?.lat)}${field("rLon", "GPS délka", d.gps?.lon)}${field("rGpsLabel", "GPS popisek", d.gps?.label)}</div>
+      <div class="revir-gps${subs.length ? " muted-gps" : ""}" id="revirGps"><label class="field-label">Společná GPS revíru${infoTip("Revír bez podrevírů: tato GPS se ukazuje rybářům (místenka, e-mail, mapa, počasí). Revír s podrevíry: rybáři vidí GPS jednotlivých podrevírů; společná GPS slouží jen pro předpověď počasí a jako náhradní poloha podrevíru, který svou GPS nemá.")}</label>
+        <div class="form-three-col">${field("rLat", "GPS šířka", d.gps?.lat)}${field("rLon", "GPS délka", d.gps?.lon)}${field("rGpsLabel", "GPS popisek", d.gps?.label)}</div></div>
       ${field("rCard", "Karta revíru (odkaz)", d.cardUrl)}
       <h3>Doba lovu${infoTip("Nepovinné. Když žádné období nezadáte, rybáři na stránce Pravidla revíru uvidí „Doba lovu není v Místence nastavena – platí údaje v RIS“ s odkazem na kartu revíru. Pravidla revíru navíc vždy začínají upozorněním, že revír se přednostně řídí informacemi v RIS (s odkazem z pole Karta revíru).")}</h3>
       <table class="data-table edit-table" id="hoursTable"><thead><tr><th>Měsíce (čísla)</th><th>Od</th><th>Do</th><th>Popisek</th><th></th></tr></thead><tbody>${(d.fishingHours || []).map(hoursRow).join("")}</tbody></table>
@@ -168,7 +169,18 @@
       <button class="text-button" type="button" id="addRule">+ Oddíl pravidel</button>
       ${footer(`revir:${r.id}`, r)}</form>`;
   }
-  const subRow = (s = {}, active = false) => `<tr><td><input class="sub-number" value="${esc(s.number ?? "")}" size="2"></td><td><input class="sub-name" value="${esc(s.name ?? "")}"></td><td><input class="sub-area" value="${esc(s.area ?? "")}" placeholder="0,9 ha"></td><td><input type="checkbox" class="sub-ticket"${active ? " checked" : ""}></td><td><button class="text-button remove-row" type="button">✕</button></td></tr>`;
+  const gpsValue = (gps) => (gps && Number.isFinite(Number(gps.lat)) && Number.isFinite(Number(gps.lon)) ? `${gps.lat}, ${gps.lon}` : "");
+  // „49.91379, 18.55679“, „49,91379 18,55679“ i „49.9137911N, 18.5586933E“ (zkopírované z Mapy.com) → { lat, lon }.
+  function parseGps(raw, label) {
+    const text = String(raw || "").trim();
+    if (!text) return null;
+    const nums = (text.match(/-?\d+(?:[.,]\d+)?/g) || []).map((n) => Number(n.replace(",", ".")));
+    const south = /\d\s*S\b/i.test(text);
+    const west = /\d\s*W\b/i.test(text);
+    if (nums.length !== 2 || !(Math.abs(nums[0]) <= 90) || !(Math.abs(nums[1]) <= 180)) throw new Error(`${label}: zadejte GPS jako „šířka, délka“, např. 49.91379, 18.55679.`);
+    return { lat: south ? -Math.abs(nums[0]) : nums[0], lon: west ? -Math.abs(nums[1]) : nums[1] };
+  }
+  const subRow = (s = {}, active = false) => `<tr><td><input class="sub-number" value="${esc(s.number ?? "")}" size="2"></td><td><input class="sub-name" value="${esc(s.name ?? "")}"></td><td><input class="sub-area" value="${esc(s.area ?? "")}" placeholder="0,9 ha"></td><td><input class="sub-gps" value="${esc(gpsValue(s.gps))}" placeholder="49.91379, 18.55679"></td><td><input type="checkbox" class="sub-ticket"${active ? " checked" : ""}></td><td><button class="text-button remove-row" type="button">✕</button></td></tr>`;
   const hoursRow = (h = {}) => `<tr><td><input class="h-months" value="${esc((h.months || []).join(", "))}" placeholder="4, 5, 6"></td><td><input class="h-from" value="${esc(h.from ?? "")}" placeholder="04:00" size="5"></td><td><input class="h-to" value="${esc(h.to ?? "")}" placeholder="24:00" size="5"></td><td><input class="h-label" value="${esc(h.label ?? "")}"></td><td><button class="text-button remove-row" type="button">✕</button></td></tr>`;
   const ruleSection = (s = {}) => `<div class="rule-section"><input class="rule-title" value="${esc(s.title ?? "")}" placeholder="Nadpis oddílu"><textarea class="rule-items" rows="4">${esc((s.items || []).join("\n"))}</textarea><button class="text-button remove-section" type="button">Odebrat oddíl</button></div>`;
   function revirData(r) {
@@ -177,9 +189,15 @@
     delete d.bookingDaysAhead;
     Object.assign(d, { name: val("rName"), number: val("rNumber"), union: val("rUnion"), kind: val("rKind"),
       area: val("rArea"), subdistricts: val("rSubText"), cardUrl: val("rCard"), permitNote: val("rPermit"), restrictions: val("rRestrictions") });
-    const subs = qsa("#subTable tbody tr").map((tr) => ({ number: Number(qs(".sub-number", tr).value) || qs(".sub-number", tr).value.trim(), name: qs(".sub-name", tr).value.trim(), area: qs(".sub-area", tr).value.trim(), ticket: qs(".sub-ticket", tr).checked }));
+    const subs = qsa("#subTable tbody tr").map((tr) => ({ number: Number(qs(".sub-number", tr).value) || qs(".sub-number", tr).value.trim(), name: qs(".sub-name", tr).value.trim(), area: qs(".sub-area", tr).value.trim(), gpsRaw: qs(".sub-gps", tr).value, ticket: qs(".sub-ticket", tr).checked }));
     const previous = new Map((r.data.subdistrictList || []).map((s) => [String(s.number), s]));
-    d.subdistrictList = subs.filter((s) => s.name || s.number).map(({ ticket, ...s }) => ({ ...(previous.get(String(s.number)) || {}), ...s }));
+    d.subdistrictList = subs.filter((s) => s.name || s.number).map(({ ticket, gpsRaw, ...s }) => {
+      const item = { ...(previous.get(String(s.number)) || {}), ...s };
+      const gps = parseGps(gpsRaw, `Podrevír ${s.number}`);
+      // Popisek GPS (např. ve stupních) zůstane, jen když se souřadnice nezměnily.
+      if (gps) item.gps = item.gps && Number(item.gps.lat) === gps.lat && Number(item.gps.lon) === gps.lon ? item.gps : gps; else delete item.gps;
+      return item;
+    });
     d.subdistrictCount = d.subdistrictList.length;
     const ticketSubs = subs.filter((s) => s.ticket).map((s) => s.number);
     if (ticketSubs.length) d.ticketSubdistricts = ticketSubs; else delete d.ticketSubdistricts;
@@ -251,14 +269,16 @@
     const form = qs("#settingsPanel form");
     if (!form) return; // platební brána: zatím jen informace
     qs("#speciesSelect")?.addEventListener("change", (e) => { speciesRef = e.target.value; render(); });
-    qs("#addSub")?.addEventListener("click", () => qs("#subTable tbody").insertAdjacentHTML("beforeend", subRow()));
+    // Společná GPS je u revíru s podrevíry jen záložní – zašedne.
+    const syncGps = () => qs("#revirGps")?.classList.toggle("muted-gps", qsa("#subTable tbody tr").length > 0);
+    qs("#addSub")?.addEventListener("click", () => { qs("#subTable tbody").insertAdjacentHTML("beforeend", subRow()); syncGps(); });
     qs("#addHours")?.addEventListener("click", () => qs("#hoursTable tbody").insertAdjacentHTML("beforeend", hoursRow()));
     qs("#addRule")?.addEventListener("click", () => qs("#rulesSections").insertAdjacentHTML("beforeend", ruleSection()));
     form.addEventListener("change", (e) => {
       if (e.target.classList.contains("section-toggle")) e.target.closest(".toggle-section").classList.toggle("collapsed", !e.target.checked);
     });
     form.addEventListener("click", (e) => {
-      if (e.target.classList.contains("remove-row")) e.target.closest("tr").remove();
+      if (e.target.classList.contains("remove-row")) { e.target.closest("tr").remove(); qs("#revirGps")?.classList.toggle("muted-gps", qsa("#subTable tbody tr").length > 0); }
       if (e.target.classList.contains("remove-section")) e.target.closest(".rule-section").remove();
     });
     form.addEventListener("submit", async (event) => {

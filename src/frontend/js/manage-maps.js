@@ -1,7 +1,7 @@
 // Editor map revírů (Správa → Revíry → Mapy revírů). Nad podkladem mapy se zakreslí plochy (hranice revíru,
 // podrevíry, zákaz lovu), čáry (cesta, zákaz lovu na úseku) a body (parkoviště, WC, vstup k vodě …).
-// Mapa se uloží jako část nastavení map:<id revíru> s verzemi (GeoJSON + výchozí pohled + schematický náhled PNG
-// pro e-mail a PDF – kreslí se jen ze zakreslených dat, podklad Mapy.com se ukládat nesmí).
+// Mapa se uloží jako část nastavení map:<id revíru> s verzemi (GeoJSON + výchozí pohled). Podrevír nese jen číslo –
+// název a stav (místenka platí / neplatí → šrafování) se berou z aktuálního nastavení revíru.
 // Export/import JSON = soubor pro config/maps/<id revíru>.json (výchozí mapa při instalaci).
 (function () {
   const { qs, qsa, esc, api, loadConfig, showToast, czDateTime } = window.Mistenka;
@@ -14,7 +14,7 @@
     { group: "Body", items: [["place", "parking", "Point"], ["place", "wc", "Point"], ["place", "entrance", "Point"], ["place", "info", "Point"], ["place", "danger", "Point"], ["place", "other", "Point"]] }
   ];
   const state = {
-    config: null, maps: [], revirId: "",
+    config: null, maps: [], reviry: [], revirId: "",
     features: [], view: null, selected: null,
     mode: { type: "select" }, draft: [],
     undo: [], dirty: false, editSnapshot: null,
@@ -23,7 +23,13 @@
   let seq = 0;
   const newId = () => `f${Date.now().toString(36)}${(++seq).toString(36)}`;
   const round6 = (n) => Math.round(n * 1e6) / 1e6;
-  const revir = () => state.config?.reviry.find((r) => r.id === state.revirId) || null;
+  // Revír podle platného nastavení (podrevíry a „Platí místenka“ i těsně po změně v sekci Revíry).
+  const revir = () => {
+    const base = state.config?.reviry.find((r) => r.id === state.revirId);
+    const data = state.reviry.find((r) => r.id === state.revirId)?.data;
+    return base || data ? { ...(base || {}), ...(data || {}), id: state.revirId } : null;
+  };
+  const subdistricts = () => revir()?.subdistrictList || [];
   const mapMeta = () => state.maps.find((m) => m.revirId === state.revirId) || null;
   const selectedFeature = () => state.features.find((f) => f.properties._id === state.selected) || null;
   const visible = () => !qs("#section-maps")?.classList.contains("hidden");
@@ -35,6 +41,7 @@
       const [config, settings] = await Promise.all([loadConfig(), api("/manage/settings")]);
       state.config = config;
       state.maps = settings.maps || [];
+      state.reviry = settings.reviry || [];
       const ids = config.reviry.map((r) => r.id);
       const target = ids.includes(initial) ? initial : ids.includes(state.revirId) ? state.revirId : ids[0];
       renderTabs(target);
@@ -141,7 +148,7 @@
     const sorted = [...state.features].sort((a, b) => order[a.geometry.type] - order[b.geometry.type] || (a.properties.kind === "revir" ? -1 : b.properties.kind === "revir" ? 1 : 0));
     for (const f of sorted) {
       const id = f.properties._id;
-      const layer = MM.featureLayer(f, { selected: id === state.selected });
+      const layer = MM.featureLayer(f, { selected: id === state.selected, revir: revir() });
       // V režimu výběru klepnutí prvek vybere (a nepropadne do mapy); při kreslení propadne a přidá bod tvaru.
       layer.options.bubblingMouseEvents = state.mode.type !== "select";
       layer.on("click", (e) => {
@@ -149,7 +156,7 @@
         Lf().DomEvent.stop(e);
         select(id);
       });
-      if (f.properties.kind === "subdistrict" && f.properties.number !== undefined && f.properties.number !== null && f.properties.number !== "") layer.bindTooltip(String(f.properties.number), { permanent: true, direction: "center", className: "map-label" });
+      MM.labelSubdistrict(layer, f, revir());
       const draggable = f.geometry.type === "Point" && state.mode.type === "select";
       if (draggable) layer.options.draggable = true;
       layer.addTo(state.fg);
@@ -280,15 +287,15 @@
     markDirty();
     refresh();
   }
-  // Nový prvek: podrevír dostane další číslo (a název podle revíru), hranice revíru jeho název.
+  // Nový prvek: podrevír dostane číslo dalšího nezakresleného podrevíru z nastavení revíru (název se bere odtud),
+  // hranice revíru název revíru.
   function makeFeature(kind, geometry, coordinates) {
     const properties = { kind, _id: newId() };
     if (kind === "subdistrict") {
       const used = new Set(state.features.filter((f) => f.properties.kind === "subdistrict").map((f) => String(f.properties.number)));
-      const known = (revir()?.subdistrictList || []).find((s) => !used.has(String(s.number)));
+      const known = subdistricts().find((s) => !used.has(String(s.number)));
       const numbers = state.features.map((f) => Number(f.properties.number)).filter(Number.isFinite);
       properties.number = known ? known.number : (numbers.length ? Math.max(...numbers) + 1 : 1);
-      if (known?.name) properties.name = known.name;
     }
     if (kind === "revir") properties.name = revir()?.name || "";
     return { type: "Feature", geometry: { type: geometry, coordinates }, properties };
@@ -358,9 +365,12 @@
       box.innerHTML = `<span><b>Umístěte: ${esc(MM.kindLabel(m.kind, "Point"))}.</b> Klepněte do mapy.</span><button class="text-button" type="button" id="mapCancel">Zrušit (Esc)</button>`;
       qs("#mapCancel").addEventListener("click", () => setMode({ type: "select" }));
     } else {
+      const drawn = new Set(state.features.filter((f) => f.properties.kind === "subdistrict").map((f) => String(f.properties.number)));
+      const missing = subdistricts().filter((s) => !drawn.has(String(s.number)));
+      const todo = missing.length ? ` Nezakreslené podrevíry: <b>${missing.map((s) => esc([s.number, s.name].filter(Boolean).join(" – "))).join(", ")}</b> (nástroj Podrevír).` : "";
       box.innerHTML = state.features.length
-        ? "<span>Klepnutím na prvek ho vyberete a upravíte. Značky i body tvaru jde přetahovat.</span>"
-        : "<span>Začněte nástrojem nahoře – např. <b>Hranice revíru</b> a klepejte do mapy kolem vody.</span>";
+        ? `<span>Klepnutím na prvek ho vyberete a upravíte. Značky i body tvaru jde přetahovat.${todo}</span>`
+        : `<span>Začněte nástrojem nahoře – např. <b>Hranice revíru</b> a klepejte do mapy kolem vody.${todo}</span>`;
     }
   }
   function renderForm() {
@@ -375,12 +385,19 @@
     const p = f.properties;
     const type = f.geometry.type;
     const kinds = MM.GEOMETRY_KINDS[type];
-    const subs = revir()?.subdistrictList || [];
-    box.innerHTML = `<h3>${esc(MM.featureTitle(f))}</h3>
+    const r = revir();
+    const subs = subdistricts();
+    const info = MM.subdistrictInfo(r, p.number);
+    const drawnBy = (number) => state.features.some((other) => other !== f && other.properties.kind === "subdistrict" && String(other.properties.number) === String(number));
+    const numberField = !subs.length
+      ? `<input id="mfNumber" maxlength="10" value="${esc(p.number ?? "")}"><p class="field-help">Revír nemá v nastavení seznam podrevírů (sekce Revíry → Voda a podrevíry).</p>`
+      : `<select id="mfNumber">${subs.map((s) => `<option value="${esc(s.number)}"${String(s.number) === String(p.number) ? " selected" : ""}>${esc([s.number, s.name].filter(Boolean).join(" – "))}${MM.subdistrictInfo(r, s.number).closed ? " · místenka není" : ""}${drawnBy(s.number) ? " · už zakreslen" : ""}</option>`).join("")}${info.known ? "" : `<option value="${esc(p.number ?? "")}" selected>${esc(p.number ?? "?")} – není v nastavení revíru</option>`}</select>
+        ${info.closed ? `<p class="field-help map-closed-text">${esc(MM.CLOSED_TEXT)} V mapě je šrafovaný; změníte to v sekci Revíry (sloupec „Platí místenka“).</p>` : ""}`;
+    box.innerHTML = `<h3>${esc(MM.featureTitle(f, r))}</h3>
       <label class="field-label" for="mfKind">Druh</label>
       <select id="mfKind">${kinds.map((k) => `<option value="${k}"${k === p.kind ? " selected" : ""}>${esc(MM.kindLabel(k, type))}</option>`).join("")}</select>
-      ${p.kind === "subdistrict" ? `<label class="field-label" for="mfNumber">Číslo podrevíru</label><input id="mfNumber" list="mfNumbers" maxlength="10" value="${esc(p.number ?? "")}"><datalist id="mfNumbers">${subs.map((s) => `<option value="${esc(s.number)}">${esc(s.name || "")}</option>`).join("")}</datalist>` : ""}
-      <label class="field-label" for="mfName">Název <span class="optional">(volitelné)</span></label><input id="mfName" maxlength="80" value="${esc(p.name || "")}" placeholder="${esc(MM.kindLabel(p.kind, type))}">
+      ${p.kind === "subdistrict" ? `<label class="field-label" for="mfNumber">Podrevír</label>${numberField}` : ""}
+      <label class="field-label" for="mfName">Název <span class="optional">(volitelné${p.kind === "subdistrict" ? " – jinak název z nastavení revíru" : ""})</span></label><input id="mfName" maxlength="80" value="${esc(p.name || "")}" placeholder="${esc(p.kind === "subdistrict" ? info.name || "Podrevír" : MM.kindLabel(p.kind, type))}">
       <label class="field-label" for="mfNote">Poznámka pro rybáře <span class="optional">(volitelné)</span></label><textarea id="mfNote" maxlength="300" placeholder="např. Parkujte jen na zpevněné ploše.">${esc(p.note || "")}</textarea>
       <p class="field-help">${type === "Point" ? "Značku přesunete přetažením." : "Body tvaru přetáhněte; poloprůhledným bodem uprostřed hrany přidáte nový, dvojklikem (nebo pravým tlačítkem) bod odeberete."}</p>
       <button class="danger-button" type="button" id="mfDelete">Smazat prvek</button>`;
@@ -392,13 +409,13 @@
       if (p.kind !== "subdistrict") delete p.number;
       refresh();
     }));
-    qs("#mfNumber")?.addEventListener("input", (e) => apply(() => {
+    qs("#mfNumber")?.addEventListener(subs.length ? "change" : "input", (e) => apply(() => {
       const raw = e.target.value.trim();
+      // Název převzatý dřív z nastavení revíru se se změnou čísla zahodí (zobrazí se název nového podrevíru).
+      if (p.name && p.name === info.name) delete p.name;
       p.number = /^\d+$/.test(raw) ? Number(raw) : raw;
-      const known = subs.find((s) => String(s.number) === raw);
-      if (known?.name && !p.name) { p.name = known.name; qs("#mfName").value = known.name; }
-      drawFeatures();
-      renderList();
+      if (subs.length) refresh();
+      else { drawFeatures(); renderList(); }
     }));
     qs("#mfName").addEventListener("input", (e) => apply(() => { p.name = e.target.value; if (!p.name) delete p.name; renderList(); }));
     qs("#mfNote").addEventListener("input", (e) => apply(() => { p.note = e.target.value; if (!p.note) delete p.note; }));
@@ -411,12 +428,10 @@
     const order = { Polygon: 0, LineString: 1, Point: 2 };
     const items = [...state.features].sort((a, b) => order[a.geometry.type] - order[b.geometry.type]);
     list.innerHTML = items.length ? items.map((f) => {
-      const style = MM.KINDS[f.properties.kind] || MM.KINDS.other;
-      const chip = f.geometry.type === "Point"
-        ? `<span class="map-poi small${style.symbol.length > 1 ? " wide" : ""}" style="background:${style.color}">${esc(style.symbol)}</span>`
-        : `<span class="legend-area" style="background:${style.fill || style.color}55;border:2px ${style.dash ? "dashed" : "solid"} ${style.color}${f.geometry.type === "LineString" ? ";height:0;border-width:3px 0 0" : ""}"></span>`;
-      const info = f.geometry.type === "Point" ? MM.kindLabel(f.properties.kind, "Point") : `${MM.kindLabel(f.properties.kind, f.geometry.type)} · ${shapePoints(f).length} bodů`;
-      return `<li data-id="${esc(f.properties._id)}" class="${f.properties._id === state.selected ? "selected" : ""}">${chip}<span class="grow">${esc(MM.featureTitle(f))}<br><small>${esc(info)}</small></span><button class="text-button" type="button" data-delete="${esc(f.properties._id)}" aria-label="Smazat prvek">✕</button></li>`;
+      const closed = MM.isClosed(f, revir());
+      const chip = MM.swatchHtml(f.properties.kind, f.geometry.type === "Point" ? "point" : f.geometry.type === "LineString" ? "line" : "area", { closed });
+      const info = f.geometry.type === "Point" ? MM.kindLabel(f.properties.kind, "Point") : `${MM.kindLabel(f.properties.kind, f.geometry.type)} · ${shapePoints(f).length} bodů${closed ? " · místenka není" : ""}`;
+      return `<li data-id="${esc(f.properties._id)}" class="${f.properties._id === state.selected ? "selected" : ""}">${chip}<span class="grow">${esc(MM.featureTitle(f, revir()))}<br><small>${esc(info)}</small></span><button class="text-button" type="button" data-delete="${esc(f.properties._id)}" aria-label="Smazat prvek">✕</button></li>`;
     }).join("") : '<li class="muted">Zatím nic – mapa je prázdná.</li>';
     qsa("li[data-id]", list).forEach((li) => li.addEventListener("click", (e) => {
       if (e.target.closest("[data-delete]")) return;
@@ -457,7 +472,7 @@
   }
 
   // ---------- uložení, export, import, historie ----------
-  // Dokument mapy: GeoJSON bez místních id + výchozí pohled + schematický náhled PNG (jen když jsou prvky).
+  // Dokument mapy: GeoJSON bez místních id + výchozí pohled.
   function buildDoc() {
     const features = state.features.map((f) => {
       const { _id, ...properties } = f.properties;
@@ -465,9 +480,7 @@
       if (properties.number === "") delete properties.number;
       return { type: "Feature", properties, geometry: f.geometry };
     });
-    const doc = { type: "FeatureCollection", ...(state.view ? { view: state.view } : {}), features };
-    if (features.length) doc.preview = MM.renderPreview(doc, { width: 1200, height: 760, title: revir()?.name || "" }).toDataURL("image/png");
-    return doc;
+    return { type: "FeatureCollection", ...(state.view ? { view: state.view } : {}), features };
   }
   async function save() {
     const button = qs("#mapSave");
@@ -475,6 +488,7 @@
     try {
       const result = await api(`/manage/settings/maps/${encodeURIComponent(state.revirId)}`, { method: "PUT", body: { data: buildDoc(), note: qs("#mapNote").value } });
       state.maps = result.settings.maps || [];
+      state.reviry = result.settings.reviry || state.reviry;
       state.dirty = false;
       state.undo = [];
       showToast("Mapa revíru uložena.", "success");
