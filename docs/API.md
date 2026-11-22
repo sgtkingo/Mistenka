@@ -77,7 +77,7 @@ Seznam druhů, lovné míry, doby hájení a denní limity jsou v samostatném s
 
 `periodLimits`: `[{ id, label, species: [id…], period: "week" | "month", maxCount, maxAreaHa?, source }]` – týdenní (kalendářní týden po–ne) a měsíční limity podle **všech vystavených místenek téhož čísla legitimace** v období dne lovu, i bez účtu. `maxAreaHa`: limit platí jen na místenkách, jejichž voda (největší z podrevírů místenky, jinak výměra revíru, údaj `area` „1,7 ha“) má nejvýš tuto výměru – např. kapr 2 ks týdně do 5 ha.
 
-`limitsEnabled` (výchozí false), `sizeRulesEnabled` (výchozí true): hlídání limitů úlovků a lovných měr (nejmenší míra, hájení, povinné vrácení). Odhad hmotnosti podle `weightFactor` funguje vždy. Vypnuté limity se nepočítají nikde (odevzdání, kontrola porybným, místenka, účet) a nevedou k blokaci; vypnuté míry se nekontrolují při odevzdání a pravidla revíru je neukazují. Ve správě Nastavení → Ryby a limity.
+`limitsEnabled` (výchozí false), `sizeRulesEnabled` (výchozí true): hlídání limitů úlovků a lovných měr (nejmenší míra, hájení, povinné vrácení). Odhad hmotnosti podle `weightFactor` funguje vždy. Vypnuté limity se nepočítají nikde (odevzdání, kontrola porybným, místenka, účet) a nevedou k blokaci; vypnuté míry se nekontrolují při odevzdání a pravidla revíru je neukazují. Ve správě Rybáři → Míry, váhy a hájení.
 
 **Překročení žádného limitu (denního, týdenního ani měsíčního) neblokuje odevzdání ani nákup.** Místenka vidí jen své místenky; limity svazu platí na všech revírech dohromady.
 

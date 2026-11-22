@@ -22,6 +22,7 @@ qsa(".manage-nav-item").forEach((item) => item.addEventListener("click", () => {
   if (section === "stocking") window.MistenkaReports.loadStocking();
   if (section === "reports") window.MistenkaReports.loadReports(location.hash.startsWith("#reports/") ? location.hash.split("/")[1] : "");
   if (section === "settings") window.MistenkaSettings.load(decodeURIComponent(location.hash.split("/")[1] || ""), "settings");
+  if (section === "species") window.MistenkaSettings.load("species", "species");
   if (section === "bank") window.MistenkaSettings.load(decodeURIComponent(location.hash.split("/")[1] || ""), "bank");
   if (section === "reviry") window.MistenkaSettings.load(decodeURIComponent(location.hash.split("/")[1] || ""), "reviry");
   if (section === "payments") loadPayments();
@@ -109,7 +110,7 @@ qs("#userSearch").addEventListener("submit", (event) => {
 // ---------- limity a blokace (B3) ----------
 const PERIODS = { day: "den", week: "týden", month: "měsíc" };
 // Pravidla následků (uložená v nastavení organizace: limitPolicy + penaltyPolicy).
-const LIMITS_TIP = "Platí jen při zapnutém hlídání limitů v Nastavení → Ryby a limity. Když jsou limity vypnuté, překročení se nezaznamenává a toto pravidlo nic nedělá.";
+const LIMITS_TIP = "Platí jen při zapnutém hlídání limitů v sekci Míry, váhy a hájení. Když jsou limity vypnuté, překročení se nezaznamenává a toto pravidlo nic nedělá.";
 let penaltyOrg = null;
 async function loadPenaltyRules() {
   const box = qs("#penaltyRules");

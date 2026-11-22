@@ -355,3 +355,4 @@ th .info-tip::after{bottom:auto;top:calc(100% + 8px);left:auto;right:-6px;transf
 .catch-warning-box small{display:block;color:inherit;opacity:.85}
 .catch-warn-inline{color:#c8302a;font-size:12px}
 .catch-warning-box{text-align:left;margin-bottom:16px}
+.toggle-section h3 .toggle-off{color:#c8302a;font-weight:600}

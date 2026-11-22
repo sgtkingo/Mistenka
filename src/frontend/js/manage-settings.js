@@ -3,7 +3,7 @@
   const { qs, qsa, esc, api, showToast, czDateTime, loadSession, hasRole } = window.Mistenka;
   let view = null;
   let tab = "organization";
-  let mode = "settings"; // settings = organizace, ryby, platby; reviry = jednotlivé revíry
+  let mode = "settings"; // settings = organizace; species = míry, váhy a hájení; bank = platby; reviry = jednotlivé revíry
   let isAdmin = false;
 
   const val = (id) => qs(`#${id}`)?.value.trim() ?? "";
@@ -52,9 +52,9 @@
     const panel = qs("#settingsPanel");
     const inMode = (key) => (mode === "reviry" ? key.startsWith("revir:") || key === "new-revir"
       : mode === "bank" ? BANK_TABS.includes(key)
-        : !key.startsWith("revir:") && key !== "new-revir" && !BANK_TABS.includes(key));
+        : mode === "species" ? key === "species" : key === "organization");
     if (initialTab && inMode(initialTab)) tab = initialTab;
-    else if (!inMode(tab)) tab = mode === "reviry" ? "" : mode === "bank" ? "payment" : "organization";
+    else if (!inMode(tab)) tab = mode === "reviry" ? "" : mode === "bank" ? "payment" : mode === "species" ? "species" : "organization";
     try {
       isAdmin = hasRole(await loadSession(), "admin");
       view = await api("/manage/settings");
@@ -66,10 +66,11 @@
     const tabs = mode === "reviry"
       ? [...view.reviry.map((r) => [`revir:${r.id}`, r.data.name]), ["new-revir", "+ Nový revír"]]
       : mode === "bank" ? [["payment", "Bankovní převody a QR platby"], ["gateway", "Platební brána"]]
-        : [["organization", "Organizace"], ["species", "Ryby a limity"]];
+        : mode === "species" ? [["species", "Míry, váhy a hájení"]] : [["organization", "Organizace"]];
     if (!tabs.some(([key]) => key === tab)) tab = tabs[0][0];
     qs("#settingsTabs").innerHTML = tabs.map(([key, label]) => `<button type="button" class="tab${key === tab ? " active" : ""}" data-tab="${esc(key)}">${esc(label)}</button>`).join("");
     qsa("#settingsTabs .tab").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; renderTabs(); render(); }));
+    qs("#settingsTabs").classList.toggle("hidden", tabs.length < 2); // jediná záložka = bez lišty
   }
   function render() {
     const panel = qs("#settingsPanel");
@@ -162,7 +163,7 @@
       ${area("rPermit", "Upozornění před nákupem", d.permitNote, 2)}
       ${area("rRestrictions", "Omezení (v detailu revíru)", d.restrictions, 2)}
       <h3>Pravidla revíru <small class="muted-inline">(každý řádek = jedna odrážka)</small></h3>
-      <p class="field-help">Na stránce Pravidla revíru se před vaše oddíly automaticky přidá oddíl „Informace v RIS“: revír se vždy řídí přednostně informacemi v RIS, s odkazem z pole Karta revíru. Za první oddíl se automaticky vloží Doba lovu a na konec tabulka lovných měr a hájení (jen když jsou lovné míry nebo limity zapnuté v sekci Ryby a limity) – tyto oddíly sem nepište.</p>
+      <p class="field-help">Na stránce Pravidla revíru se před vaše oddíly automaticky přidá oddíl „Informace v RIS“: revír se vždy řídí přednostně informacemi v RIS, s odkazem z pole Karta revíru. Za první oddíl se automaticky vloží Doba lovu a na konec tabulka lovných měr a hájení (jen když jsou lovné míry nebo limity zapnuté v sekci Míry, váhy a hájení) – tyto oddíly sem nepište.</p>
       <div id="rulesSections">${(d.rules || []).map(ruleSection).join("")}</div>
       <button class="text-button" type="button" id="addRule">+ Oddíl pravidel</button>
       ${footer(`revir:${r.id}`, r)}</form>`;
@@ -210,7 +211,7 @@
       <h3>${esc(d.name || part.ref)}</h3><p class="field-help">Platí ${esc(d.validFrom || "?")} – ${esc(d.validTo || "?")}. Změny se uplatní hned při dalších odevzdáních; místenka si pamatuje verzi pravidel, podle které byla zkontrolována.</p>
       ${toggleSection("spLimitsOn", "Limity úlovků", d.limitsEnabled === true, "Limity se nepočítají: odevzdání, kontrola porybným, místenka ani profil rybáře je neukazují a za překročení se neblokuje.", `
       <table class="data-table edit-table"><thead><tr><th>Druhy</th><th>Období</th><th>Max. ks</th><th>Zdroj</th></tr></thead><tbody>${limitRows(d.dailyLimits, "day")}${limitRows(d.periodLimits, "period")}</tbody></table>`)}
-      ${toggleSection("spSizesOn", "Lovné míry", d.sizeRulesEnabled !== false, "Při odevzdání se nekontroluje lovná míra, doba hájení ani povinné vrácení a pravidla revíru tabulku měr neukazují. Seznam druhů a odhad hmotnosti zůstávají.", `
+      ${toggleSection("spSizesOn", "Lovné míry a váhy", d.sizeRulesEnabled !== false, "Při odevzdání se nekontroluje lovná míra, doba hájení ani povinné vrácení a pravidla revíru tabulku měr neukazují. Seznam druhů zůstává a odhad hmotnosti podle koeficientu se předvyplňuje dál – vypnutí se vah netýká.", `
       <p class="field-help">Prázdné pole = bez omezení. Koeficient hmotnosti se používá i při vypnutých lovných mírách – odhad hmotnosti úlovku se předvyplňuje vždy.</p>
       <div class="table-scroll"><table class="data-table edit-table species-table"><thead><tr><th>Druh</th><th>Lovná míra (cm)</th><th>Vrátit od (cm)</th><th>Doba hájení</th><th>Koef. hmotnosti${infoTip("Odhad hmotnosti z délky: hmotnost (kg) ≈ koeficient × délka³ / 100 000 (délka v cm), např. kapr s koeficientem 2 a délkou 50 cm ≈ 2,5 kg. Rybáři se při odevzdání předvyplní orientační hmotnost, kterou může přepsat. Prázdné = bez odhadu.")}</th></tr></thead><tbody>${d.species.map((s, i) => `
         <tr data-index="${i}"><td><b>${esc(s.name)}</b>${s.invasive ? ' <small class="muted-inline">invazní</small>' : ""}</td><td><input class="sp-min" type="number" min="0" value="${esc(s.minLength ?? "")}" size="3"></td><td><input class="sp-release" type="number" min="0" value="${esc(s.releaseFromLength ?? "")}" size="3"></td>

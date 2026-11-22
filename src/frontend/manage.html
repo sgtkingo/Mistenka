@@ -25,7 +25,7 @@
         <button class="manage-nav-item" type="button" data-section="payments">Platby <span class="nav-count hidden" id="paymentCount"></span></button>
         <button class="manage-nav-item" type="button" data-section="vouchers">Poukazy</button>
         <span class="manage-nav-group">Rybáři</span>
-        <button class="manage-nav-item" type="button" data-section="users">Uživatelé a role</button>
+        <button class="manage-nav-item" type="button" data-section="species">Míry, váhy a hájení</button>
         <button class="manage-nav-item" type="button" data-section="limits">Limity a blokace</button>
         <span class="manage-nav-group">Revíry</span>
         <button class="manage-nav-item" type="button" data-section="reviry">Revíry</button>
@@ -36,6 +36,7 @@
         <button class="manage-nav-item" type="button" data-section="stocking">Zarybnění</button>
         <button class="manage-nav-item" type="button" data-section="reports">Přehledy a uzávěrky</button>
         <span class="manage-nav-group">Organizace</span>
+        <button class="manage-nav-item" type="button" data-section="users">Uživatelé a role</button>
         <button class="manage-nav-item" type="button" data-section="settings">Nastavení</button>
         <span class="manage-nav-group admin-only hidden">Admin</span>
         <button class="manage-nav-item admin-only hidden" type="button" data-section="bank">Bankovní spojení</button>
@@ -89,7 +90,7 @@
       </section>
 
       <section class="panel-card manage-section hidden" id="section-users">
-        <div class="panel-heading"><div><span class="section-kicker">Uživatelé</span><h1>Uživatelé a role</h1></div></div>
+        <div class="panel-heading"><div><span class="section-kicker">Organizace</span><h1>Uživatelé a role</h1></div></div>
         <p class="panel-intro" id="rolesHelp"></p>
         <details class="invite-box admin-only hidden" id="inviteBox">
           <summary>+ Pozvat správce nebo admina</summary>
@@ -207,6 +208,12 @@
         <div class="panel-heading"><div><span class="section-kicker">Organizace</span><h1>Nastavení</h1></div></div>
         <p class="panel-intro">Každé uložení vytvoří novou verzi s vaším jménem; starší verzi lze obnovit. Výchozí hodnoty jsou v konfiguračním souboru serveru.</p>
         <div class="settings-host" data-host="settings"><div class="tabs settings-tabs" id="settingsTabs"></div><div id="settingsPanel"></div></div>
+      </section>
+
+      <section class="panel-card manage-section hidden" id="section-species">
+        <div class="panel-heading"><div><span class="section-kicker">Rybáři</span><h1>Míry, váhy a hájení</h1></div></div>
+        <p class="panel-intro">Pravidla druhů ryb: lovné míry, doby hájení, koeficienty pro odhad hmotnosti a limity úlovků. Rozhodují pravidla v RIS – Místenka podle nich jen upozorňuje. Každé uložení vytvoří novou verzi s vaším jménem; starší verzi lze obnovit.</p>
+        <div class="settings-host" data-host="species"></div>
       </section>
 
       <section class="panel-card manage-section hidden" id="section-bank">
