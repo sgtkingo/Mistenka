@@ -146,7 +146,7 @@ qs("#submitReturn").addEventListener("click", async () => {
       }
       return { species: name, length, weight: weight || null, weightEstimated: Boolean(weight) && row.dataset.estimated === "true" };
     });
-    if (!valid) return showToast("Doplňte druh a délku u každého úlovku, nebo zvolte „Bez úlovku“.", "warning");
+    if (!valid) return showToast("Doplňte druh a délku u každé ponechané ryby, nebo zvolte „Žádná ponechaná ryba“.", "warning");
   }
   if (!qs("#returnDeclaration").checked) {
     // Stejně jako u nákupu: zčervenat potvrzení a dorolovat k němu.
@@ -154,7 +154,7 @@ qs("#submitReturn").addEventListener("click", async () => {
     label.classList.add("declaration-invalid");
     label.scrollIntoView({ behavior: "smooth", block: "center" });
     qs("#returnDeclaration").focus({ preventScroll: true });
-    return showToast("Potvrďte, že jste uvedl/a všechny úlovky a údaje jsou úplné.", "warning");
+    return showToast("Potvrďte, že jste uvedl/a všechny ponechané ryby a údaje jsou úplné.", "warning");
   }
   const button = qs("#submitReturn");
   button.disabled = true;
@@ -162,7 +162,7 @@ qs("#submitReturn").addEventListener("click", async () => {
     ticket = await api(`/tickets/${code}/return`, { method: "POST", body: { noCatch, catches }, ...credentials });
     qs("#returnedText").textContent = ticket.late
       ? "Místenka je odevzdaná. Odevzdání proběhlo po skončení dne lovu, a je proto označeno jako opožděné."
-      : "Děkujeme za vyplnění sumáře úlovků. Místenka je nyní označena jako odevzdaná.";
+      : "Děkujeme za vyplnění sumáře ponechaných ryb. Místenka je nyní označena jako odevzdaná.";
     // Překročený limit odevzdání neblokuje – rybář dostane upozornění (správce e-mail).
     const warned = (ticket.catches || []).filter((c) => c.warning);
     qs("#returnedLimits").innerHTML = (warned.length ? `<div class="warn-box catch-warning-box"><b>Možné porušení pravidel u ${warned.length === 1 ? "úlovku" : "úlovků"}</b><ul>${warned.map((c) => `<li>${esc(c.species)} ${esc(c.length)} cm: ${esc(c.warning)}</li>`).join("")}</ul><small>Místenka je odevzdaná. Rozhodují pravidla v RIS – údaje v Místence nemusí být aktuální. Porybný i správce upozornění uvidí.</small></div>` : "")

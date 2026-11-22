@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Místenka
  * Description: Online rybářské místenky – prodej, platba převodem (QR + Fio), kontrola, odevzdání úlovků a manažerský portál. Aplikace běží na vlastní (sub)doméně.
- * Version: 1.1.3
+ * Version: 1.1.4
  * Requires at least: 6.4
  * Requires PHP: 8.1
  * Author: Ing. Jiří Konečný
@@ -12,7 +12,7 @@
 
 defined('ABSPATH') || exit;
 
-define('MISTENKA_VERSION', '1.1.3');
+define('MISTENKA_VERSION', '1.1.4');
 define('MISTENKA_DIR', plugin_dir_path(__FILE__));
 
 foreach (['Util', 'Time', 'Db', 'Config', 'Settings', 'Emails', 'Smtp', 'Mailer', 'Payments', 'Accounts', 'Operations', 'Service', 'Reports', 'Backups', 'Retention', 'Bugs', 'App', 'Plugin', 'Admin'] as $mistenka_file) {

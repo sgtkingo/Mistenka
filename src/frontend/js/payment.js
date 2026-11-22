@@ -67,7 +67,7 @@ function renderIssued() {
   const rules = [];
   if (hours) rules.push(`Doba lovu v tento den: <b>${esc(hours)}</b>.`);
   (revir.fishingHours || []).forEach((rule) => rules.push(`${esc(rule.label || rule.months.join(", "))}: ${esc(rule.from)}–${esc(rule.to)}`));
-  rules.push("Mějte u sebe platný rybářský lístek a povolenku.", "Každý úlovek je nutné ihned zapsat do povolenky.", `Místenku odevzdejte ihned po ukončení lovu v daný den. Pozdější odevzdání je možné nejpozději do ${esc(revir.lateReturnDays)} ${plural(revir.lateReturnDays, "dne", "dnů", "dnů")} a bude označeno jako opožděné; pak se místenka automaticky uzavře jako neodevzdaná.`);
+  rules.push("Mějte u sebe platný rybářský lístek a povolenku.", "Každou ponechanou rybu je nutné ihned zapsat do povolenky.", `Místenku odevzdejte ihned po ukončení lovu v daný den. Pozdější odevzdání je možné nejpozději do ${esc(revir.lateReturnDays)} ${plural(revir.lateReturnDays, "dne", "dnů", "dnů")} a bude označeno jako opožděné; pak se místenka automaticky uzavře jako neodevzdaná.`);
   qs("#ticketRules").innerHTML = rules.map((rule) => `<li>${rule}</li>`).join("");
   qs("#emailNote").textContent = `Potvrzení jsme poslali na ${ticket.email}. Najdete v něm i odkaz pro odevzdání místenky po skončení lovu.`;
   show("successState");

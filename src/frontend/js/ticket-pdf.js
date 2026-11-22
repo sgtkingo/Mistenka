@@ -121,7 +121,7 @@
     y += 34;
     text(ctx, "Než vyrazíte", M, y, { size: 26, weight: 700 });
     y += 44;
-    const checks = ["Mějte u sebe platný rybářský lístek a povolenku – místenka je nenahrazuje.", "Místenka platí jen pro uvedený den a revír" + (sub ? ` (${subdistrictTitle(revir, ticket).toLowerCase()} ${sub}).` : "."), "Každý úlovek ihned zapište do povolenky."];
+    const checks = ["Mějte u sebe platný rybářský lístek a povolenku – místenka je nenahrazuje.", "Místenka platí jen pro uvedený den a revír" + (sub ? ` (${subdistrictTitle(revir, ticket).toLowerCase()} ${sub}).` : "."), "Každou ponechanou rybu ihned zapište do povolenky."];
     for (const item of checks) {
       text(ctx, "✓", M, y, { size: 24, weight: 700, color: COL.ok });
       y = wrap(ctx, item, M + 38, y, W - 2 * M - 38, { size: 22 }) + 6;
@@ -129,7 +129,7 @@
     y += 18;
     text(ctx, "Po skončení lovu", M, y, { size: 26, weight: 700 });
     y += 44;
-    y = wrap(ctx, `Místenku odevzdejte ještě týž den: na webu zvolte „Vrátit místenku“, načtěte tento QR kód nebo zadejte kód ${ticket.code} a zapište úlovky (nebo „bez úlovku“). Opožděně ji lze odevzdat do ${revir.lateReturnDays} dnů, pak se uzavře jako neodevzdaná.`, M, y, W - 2 * M, { size: 22 });
+    y = wrap(ctx, `Místenku odevzdejte ještě týž den: na webu zvolte „Vrátit místenku“, načtěte tento QR kód nebo zadejte kód ${ticket.code} a zapište ponechané ryby (nebo „žádná ponechaná ryba“). Opožděně ji lze odevzdat do ${revir.lateReturnDays} dnů, pak se uzavře jako neodevzdaná.`, M, y, W - 2 * M, { size: 22 });
 
     // Patička
     roundRect(ctx, M, H - 190, W - 2 * M, 110, 16, COL.soft);

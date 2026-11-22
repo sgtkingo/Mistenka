@@ -396,3 +396,4 @@ th .info-tip::after{bottom:auto;top:calc(100% + 8px);left:auto;right:-6px;transf
 .warn-button:hover{background:#fff4e8;color:#a3510a;border-color:#a3510a}
 .return-now{width:100%;margin-top:10px;padding:12px 16px;font-size:14px}
 @media print{.return-now{display:none!important}}
+.code-row>.primary-button{align-self:flex-start;white-space:nowrap;min-height:46px;padding-top:0;padding-bottom:0}

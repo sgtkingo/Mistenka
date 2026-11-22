@@ -28,19 +28,19 @@
           </div>
           <div id="ticketSummary" class="ticket-summary hidden"></div>
           <div id="catchPageForm" class="hidden">
-            <div class="legal-warning"><strong>Než místenku odevzdáte</strong><p>Zkontrolujte, že jsou v sumáři uvedeny všechny úlovky. Každý úlovek musí být ihned zapsán také do povolenky. Místenku je nutné odevzdat ihned po ukončení lovu v daný den; pozdější odevzdání bude označeno jako opožděné.</p></div>
-            <label class="checkbox-label no-catch-label"><input type="checkbox" id="noCatch"> <span><b>Bez úlovku</b> – dnes jsem nic neulovil/a</span></label>
+            <div class="legal-warning"><strong>Než místenku odevzdáte</strong><p>Zapisují se jen <b>ponechané ryby</b> (přisvojené úlovky) – ryby vrácené zpět do vody se neuvádějí. Zkontrolujte, že jsou v sumáři všechny ponechané ryby; každou je nutné ihned zapsat také do povolenky. Místenku je nutné odevzdat ihned po ukončení lovu v daný den; pozdější odevzdání bude označeno jako opožděné.</p></div>
+            <label class="checkbox-label no-catch-label"><input type="checkbox" id="noCatch"> <span><b>Žádná ponechaná ryba</b> – nic jsem si neponechal/a (nic nezabralo, nebo jsem vše pustil/a zpět)</span></label>
             <div id="catchSection">
               <div class="catch-table-wrap">
-                <div class="table-head catch-grid"><span>Druh ryby <em class="required-marker">*</em></span><span>Délka (cm) <em class="required-marker">*</em></span><span>Váha (kg)<span class="info-tip" tabindex="0" role="img" aria-label="Váha se odhadne podle délky; pokud ji znáte, přepište ji skutečnou hodnotou." data-tip="Váha se odhadne podle délky; pokud ji znáte, přepište ji skutečnou hodnotou.">i</span></span><span></span></div>
+                <div class="table-head catch-grid"><span>Ponechaná ryba – druh <em class="required-marker">*</em></span><span>Délka (cm) <em class="required-marker">*</em></span><span>Váha (kg)<span class="info-tip" tabindex="0" role="img" aria-label="Váha se odhadne podle délky; pokud ji znáte, přepište ji skutečnou hodnotou." data-tip="Váha se odhadne podle délky; pokud ji znáte, přepište ji skutečnou hodnotou.">i</span></span><span></span></div>
                 <div id="catchRows"></div>
               </div>
               <button class="text-button add-catch" id="addCatch" type="button">+ Přidat další rybu</button>
             </div>
-            <label class="checkbox-label return-confirm"><input type="checkbox" id="returnDeclaration"> <span>Potvrzuji, že jsem uvedl/a všechny úlovky a údaje jsou úplné.</span></label>
+            <label class="checkbox-label return-confirm"><input type="checkbox" id="returnDeclaration"> <span>Potvrzuji, že jsem uvedl/a všechny ponechané ryby a údaje jsou úplné.</span></label>
             <button class="primary-button full-width" id="submitReturn" type="button">Odevzdat místenku</button>
           </div>
-          <div id="returnedState" class="hidden returned-state"><span class="success-big">✓</span><h2>Místenka byla odevzdána</h2><p id="returnedText">Děkujeme za vyplnění sumáře úlovků. Místenka je nyní označena jako odevzdaná.</p><div id="returnedLimits"></div><a class="primary-button" id="returnedHome" href="./">Zpět na revír</a></div>
+          <div id="returnedState" class="hidden returned-state"><span class="success-big">✓</span><h2>Místenka byla odevzdána</h2><p id="returnedText">Děkujeme za vyplnění sumáře ponechaných ryb. Místenka je nyní označena jako odevzdaná.</p><div id="returnedLimits"></div><a class="primary-button" id="returnedHome" href="./">Zpět na revír</a></div>
           <div id="returnError" class="hidden status-error"></div>
         </div>
       </div>

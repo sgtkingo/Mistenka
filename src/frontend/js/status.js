@@ -50,7 +50,7 @@ async function loadStatus() {
 }
 
 // ---------- porybný: plná kontrola a zadržení (B2) ----------
-const catchText = (t) => (t.catches.length ? t.catches.map((c) => `${c.species} ${c.length} cm${c.warning ? " ⚠" : ""}`).join(", ") : t.noCatch ? "bez úlovku" : "—");
+const catchText = (t) => (t.catches.length ? t.catches.map((c) => `${c.species} ${c.length} cm${c.warning ? " ⚠" : ""}`).join(", ") : t.noCatch ? "nic neponecháno" : "—");
 // Úlovky s možným porušením pravidel (míra, hájení, povinné vrácení) – porybný je má zkontrolovat podle RIS.
 const catchWarningsHtml = (catches) => {
   const warned = (catches || []).filter((c) => c.warning);

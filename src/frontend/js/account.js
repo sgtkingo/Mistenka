@@ -349,7 +349,7 @@ async function loadTickets() {
       ? `<table class="data-table"><thead><tr><th>Datum lovu</th><th>Revír</th><th>Kód</th><th>Stav</th><th></th></tr></thead><tbody>${tickets.map((ticket) => {
         const state = ticketState(ticket);
         const link = ticketLink(ticket);
-        const catches = ticket.status === "expired_returned" ? (ticket.noCatch ? "bez úlovku" : `${ticket.catches.length} ${ticket.catches.length === 1 ? "úlovek" : ticket.catches.length < 5 ? "úlovky" : "úlovků"}`) : "";
+        const catches = ticket.status === "expired_returned" ? (ticket.noCatch ? "nic neponecháno" : `${ticket.catches.length} ${ticket.catches.length === 1 ? "úlovek" : ticket.catches.length < 5 ? "úlovky" : "úlovků"}`) : "";
         return `<tr><td data-label="Datum">${esc(czDate(ticket.date))}</td><td data-label="Revír">${esc(ticket.revir.name)}</td><td data-label="Kód"><b>${esc(ticket.code)}</b></td><td data-label="Stav"><span class="badge badge-${esc(state.tone)}">${esc(state.label)}</span>${catches ? ` <small class="muted-inline">${esc(catches)}</small>` : ""}</td><td><a class="text-link" href="${esc(link.href)}">${esc(link.label)} →</a></td></tr>`;
       }).join("")}</tbody></table>`
       : '<p class="muted">Zatím nemáte žádné místenky. Místenky koupené dříve bez účtu se připojí, pokud mají stejný e-mail a číslo legitimace.</p>';

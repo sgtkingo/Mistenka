@@ -267,7 +267,7 @@ async function loadTickets(append = false) {
       return `<tr class="clickable" data-code="${esc(t.code)}"><td data-label="Den">${esc(czDate(t.date, { year: false }))}</td><td data-label="Kód"><b>${esc(t.code)}</b></td>
         <td data-label="Rybář">${esc(`${t.firstName} ${t.lastName}`)}<br><small class="muted-inline">${esc(t.memberId)}${t.account ? " · účet" : ""}</small></td>
         <td data-label="Revír">${esc(t.revir)}${t.subdistrict ? `<br><small class="muted-inline">${esc(t.subdistrict)}</small>` : ""}</td><td data-label="Stav"><span class="badge badge-${esc(state.tone)}">${esc(state.label)}</span>${t.seized && t.status !== "seized" ? ' <span class="badge badge-bad">zadržena</span>' : ""}</td>
-        <td data-label="Úlovky">${t.status === "expired_returned" ? (t.noCatch ? "bez úlovku" : esc(t.catchCount)) : ""}</td><td data-label="Cena">${t.voucherUsed ? "poukaz" : esc(czk(t.priceHalere))}</td></tr>`;
+        <td data-label="Úlovky">${t.status === "expired_returned" ? (t.noCatch ? "nic neponecháno" : esc(t.catchCount)) : ""}</td><td data-label="Cena">${t.voucherUsed ? "poukaz" : esc(czk(t.priceHalere))}</td></tr>`;
     }).join("");
     if (append) qs("#ticketTable tbody").insertAdjacentHTML("beforeend", rows);
     else table.innerHTML = total ? `<table class="data-table"><thead><tr><th>Den</th><th>Kód</th><th>Rybář</th><th>Revír</th><th>Stav</th><th>Úlovky</th><th>Cena</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">Žádné místenky neodpovídají filtru.</p>';
@@ -291,7 +291,7 @@ async function openTicket(code) {
     const d = await api(`/manage/tickets/${encodeURIComponent(code)}`);
     const t = d.ticket;
     const state = ticketState(t);
-    const catches = t.catches.length ? t.catches.map((c) => `${esc(c.species)} ${esc(c.length)} cm${c.weight ? ` · ${esc(c.weight)} kg${c.weightEstimated ? " (odhad)" : ""}` : ""}${c.warning ? ` <span class="catch-warn-inline">⚠ ${esc(c.warning)}</span>` : ""}`).join("<br>") : t.noCatch ? "bez úlovku" : "—";
+    const catches = t.catches.length ? t.catches.map((c) => `${esc(c.species)} ${esc(c.length)} cm${c.weight ? ` · ${esc(c.weight)} kg${c.weightEstimated ? " (odhad)" : ""}` : ""}${c.warning ? ` <span class="catch-warn-inline">⚠ ${esc(c.warning)}</span>` : ""}`).join("<br>") : t.noCatch ? "nic neponecháno" : "—";
     body.innerHTML = `
       <div class="dialog-head"><div><span class="section-kicker">Místenka</span><h2>${esc(t.code)} <span class="badge badge-${esc(state.tone)}">${esc(state.label)}</span></h2></div><button class="text-button" type="button" id="closeDialog">Zavřít ✕</button></div>
       <dl class="summary-list">

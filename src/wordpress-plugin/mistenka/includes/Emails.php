@@ -200,7 +200,7 @@ final class Emails
             self::layout($config, 'success', 'Vaše místenka je vystavena', self::highlight('Kód místenky', $t['code'], "{$day} · {$revir['name']}", 'ok') . self::table($rows) . '
       ' . self::button($x['links']['ticket'], 'Zobrazit místenku a QR kód') . '
       <p style="margin:0 0 8px;font-weight:600">Než vyrazíte</p>' . self::checklist(['Platný rybářský lístek a povolenka – místenka je nenahrazuje.', 'Místenka v telefonu nebo vytištěná (QR kód pro kontrolu).', 'Každý úlovek ihned zapište do povolenky.']) . '
-      <p style="margin:0 0 8px;font-weight:600">Po skončení lovu</p><p style="margin:0 0 8px">Místenku odevzdejte ještě týž den a zapište úlovky (nebo „bez úlovku“). Opožděně ji lze odevzdat do ' . $late . ' dnů, pak se uzavře jako neodevzdaná.</p>
+      <p style="margin:0 0 8px;font-weight:600">Po skončení lovu</p><p style="margin:0 0 8px">Místenku odevzdejte ještě týž den a zapište ponechané ryby (nebo „žádná ponechaná ryba“). Opožděně ji lze odevzdat do ' . $late . ' dnů, pak se uzavře jako neodevzdaná.</p>
       ' . self::button($x['links']['return'], 'Odevzdat místenku', true), '', "Kód {$t['code']} · {$day} · {$revir['name']}" . ($hours ? " · lov {$hours}" : '')),
             self::text(array_merge(['Vaše místenka je vystavena.', "Kód místenky: {$t['code']}"], self::rowsText($rows), ['Místenka nenahrazuje rybářský lístek ani povolenku.', "Místenka: {$x['links']['ticket']}", "Odevzdání po lovu: {$x['links']['return']}"]))
         );
@@ -215,7 +215,7 @@ final class Emails
             "Místenka {$t['code']} – nezapomeňte ji odevzdat",
             self::layout($config, 'warning', 'Odevzdejte prosím místenku', '<p style="margin:0 0 16px">Lov na revíru <b>' . self::esc($revir['name']) . '</b> dne ' . self::esc(self::czDate($t['fishing_date'])) . ' skončil a místenka <b>' . self::esc($t['code']) . '</b> ještě nebyla odevzdána.</p>
       ' . self::highlight('Odevzdejte nejpozději', $deadline, 'Odevzdání po dni lovu se označí jako opožděné.', 'warn') . self::button($x['links']['return'], 'Odevzdat místenku') . '
-      ' . self::note('Po této lhůtě se místenka automaticky uzavře jako neodevzdaná, bez úlovku. Pokud jste nic nechytili, zvolte při odevzdání „Bez úlovku“.'), '', "Místenku {$t['code']} odevzdejte do {$deadline}"),
+      ' . self::note('Po této lhůtě se místenka automaticky uzavře jako neodevzdaná, bez úlovku. Pokud jste si nic neponechali, zvolte při odevzdání „Žádná ponechaná ryba“.'), '', "Místenku {$t['code']} odevzdejte do {$deadline}"),
             self::text(["Místenka {$t['code']} ještě nebyla odevzdána.", "Odevzdání je možné do {$deadline} (opožděně). Poté se místenka automaticky uzavře jako neodevzdaná, bez úlovku.", "Odevzdat: {$x['links']['return']}"])
         );
     }

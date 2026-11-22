@@ -88,7 +88,7 @@ function ticketIssued(config, { ticket, revir, links }) {
     html: layout(config, "success", "Vaše místenka je vystavena", `${highlight("Kód místenky", ticket.code, `${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)} · ${revir.name}`, "ok")}${table(rows)}
       ${button(links.ticket, "Zobrazit místenku a QR kód")}
       <p style="margin:0 0 8px;font-weight:600">Než vyrazíte</p>${checklist(["Platný rybářský lístek a povolenka – místenka je nenahrazuje.", "Místenka v telefonu nebo vytištěná (QR kód pro kontrolu).", "Každý úlovek ihned zapište do povolenky."])}
-      <p style="margin:0 0 8px;font-weight:600">Po skončení lovu</p><p style="margin:0 0 8px">Místenku odevzdejte ještě týž den a zapište úlovky (nebo „bez úlovku“). Opožděně ji lze odevzdat do ${esc(revir.lateReturnDays)} dnů, pak se uzavře jako neodevzdaná.</p>
+      <p style="margin:0 0 8px;font-weight:600">Po skončení lovu</p><p style="margin:0 0 8px">Místenku odevzdejte ještě týž den a zapište ponechané ryby (nebo „žádná ponechaná ryba“). Opožděně ji lze odevzdat do ${esc(revir.lateReturnDays)} dnů, pak se uzavře jako neodevzdaná.</p>
       ${button(links.return, "Odevzdat místenku", true)}`, "", { preheader: `Kód ${ticket.code} · ${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)} · ${revir.name}${hours ? ` · lov ${hours}` : ""}` }),
     text: textBlock(["Vaše místenka je vystavena.", `Kód místenky: ${ticket.code}`, ...rows.map(([k, v]) => `${k}: ${v}`), "Místenka nenahrazuje rybářský lístek ani povolenku.", `Místenka: ${links.ticket}`, `Odevzdání po lovu: ${links.return}`])
   };
@@ -99,7 +99,7 @@ function returnReminder(config, { ticket, revir, links, deadline }) {
     subject: `Místenka ${ticket.code} – nezapomeňte ji odevzdat`,
     html: layout(config, "warning", "Odevzdejte prosím místenku", `<p style="margin:0 0 16px">Lov na revíru <b>${esc(revir.name)}</b> dne ${esc(czDate(ticket.fishing_date))} skončil a místenka <b>${esc(ticket.code)}</b> ještě nebyla odevzdána.</p>
       ${highlight("Odevzdejte nejpozději", czDateTime(deadline), "Odevzdání po dni lovu se označí jako opožděné.", "warn")}${button(links.return, "Odevzdat místenku")}
-      ${noteBox("Po této lhůtě se místenka automaticky uzavře jako neodevzdaná, bez úlovku. Pokud jste nic nechytili, zvolte při odevzdání „Bez úlovku“.")}`, "", { preheader: `Místenku ${ticket.code} odevzdejte do ${czDateTime(deadline)}` }),
+      ${noteBox("Po této lhůtě se místenka automaticky uzavře jako neodevzdaná, bez úlovku. Pokud jste si nic neponechali, zvolte při odevzdání „Žádná ponechaná ryba“.")}`, "", { preheader: `Místenku ${ticket.code} odevzdejte do ${czDateTime(deadline)}` }),
     text: textBlock([`Místenka ${ticket.code} ještě nebyla odevzdána.`, `Odevzdání je možné do ${czDateTime(deadline)} (opožděně). Poté se místenka automaticky uzavře jako neodevzdaná, bez úlovku.`, `Odevzdat: ${links.return}`])
   };
 }
