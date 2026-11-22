@@ -54,6 +54,10 @@ function renderIssued() {
   const revir = revirOf(ticket);
   const hours = fishingHours(revir, ticket.date);
   setHeading("Místenka vystavena", "Vaše místenka je připravená", "Hotovo");
+  // Rovnou na odevzdání této místenky (přístup si stránka odevzdání vezme z prohlížeče); jen když odevzdat jde.
+  const returnable = ticket.status === "active" || ((ticket.status === "expired_unreturned" || ticket.status === "seized") && ticket.returnable);
+  qs("#returnNow").href = `return.html?code=${encodeURIComponent(ticket.code)}`;
+  qs("#returnNow").classList.toggle("hidden", !returnable);
   const statusLabel = { future: "● Platí od dne lovu", active: "● Aktivní", expired_unreturned: "! Neodevzdaná", closed_unreturned: "× Uzavřená, neodevzdaná", expired_returned: "↩ Odevzdaná", seized: "! Zadržená – odevzdejte" }[ticket.status] || ticket.status;
   qs("#ticketCard").innerHTML = `<div class="ticket-top"><span class="section-kicker">${esc([ticket.revir.name, ticket.revir.number].filter(Boolean).join(" · "))}</span><span class="ticket-status">${esc(statusLabel)}</span></div>
     <div class="ticket-code">${esc(ticket.code)}</div>

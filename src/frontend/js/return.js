@@ -125,6 +125,7 @@ qs("#accessButton").addEventListener("click", () => {
   loadTicket().catch((error) => showError(error.message));
 });
 qs("#accessMemberId").addEventListener("keydown", (event) => { if (event.key === "Enter") qs("#accessButton").click(); });
+qs("#returnDeclaration").addEventListener("change", (event) => { if (event.target.checked) event.target.closest("label").classList.remove("declaration-invalid"); });
 qs("#noCatch").addEventListener("change", (event) => qs("#catchSection").classList.toggle("hidden", event.target.checked));
 qs("#addCatch").addEventListener("click", addRow);
 
@@ -147,7 +148,14 @@ qs("#submitReturn").addEventListener("click", async () => {
     });
     if (!valid) return showToast("Doplňte druh a délku u každého úlovku, nebo zvolte „Bez úlovku“.", "warning");
   }
-  if (!qs("#returnDeclaration").checked) return showToast("Potvrďte úplnost údajů.", "warning");
+  if (!qs("#returnDeclaration").checked) {
+    // Stejně jako u nákupu: zčervenat potvrzení a dorolovat k němu.
+    const label = qs("#returnDeclaration").closest("label");
+    label.classList.add("declaration-invalid");
+    label.scrollIntoView({ behavior: "smooth", block: "center" });
+    qs("#returnDeclaration").focus({ preventScroll: true });
+    return showToast("Potvrďte, že jste uvedl/a všechny úlovky a údaje jsou úplné.", "warning");
+  }
   const button = qs("#submitReturn");
   button.disabled = true;
   try {
