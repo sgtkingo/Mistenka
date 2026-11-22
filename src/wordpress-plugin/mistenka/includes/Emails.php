@@ -7,6 +7,8 @@ defined('ABSPATH') || exit;
 final class Emails
 {
     private const MONTHS = ['ledna', 'února', 'března', 'dubna', 'května', 'června', 'července', 'srpna', 'září', 'října', 'listopadu', 'prosince'];
+    // „Místo“ s neviditelným znakem (U+200C): Gmail jinak slovo považuje za obec Místo a udělá z něj odkaz na Google Mapy.
+    private const NO_PLACE_LINK = "Mí\u{200C}sto";
     private const C = ['brand' => '#0075de', 'brandDark' => '#005bab', 'ink' => '#252321', 'muted' => '#6d6862', 'line' => '#e6e4e0', 'soft' => '#f6f5f4', 'okBg' => '#eef8f1', 'ok' => '#17803f', 'warnBg' => '#fff6e5', 'warn' => '#8a5a00'];
     private const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
@@ -112,7 +114,7 @@ final class Emails
         $gps = $place['gps'] ? '<div style="font-size:14px;margin-top:6px">GPS <a href="' . self::esc(Config::mapyUrl($place['gps'])) . '" style="color:' . $c['brand'] . ';font-weight:600">' . self::esc(Config::gpsText($place['gps'])) . '</a></div>' : '';
         $map = !empty($links['map']) ? '<div style="font-size:14px;margin-top:6px"><a href="' . self::esc($links['map']) . '" style="color:' . $c['brand'] . ';font-weight:600">Interaktivní mapa revíru →</a> <span style="color:' . $c['muted'] . '">hranice podrevírů, parkování, WC</span></div>' : '';
         return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px"><tr><td style="background:#eef6fe;border:2px solid ' . $c['brand'] . ';border-radius:10px;padding:14px 18px">
-  <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:' . $c['muted'] . '">Místo lovu</div>
+  <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:' . $c['muted'] . '">' . self::NO_PLACE_LINK . ' lovu</div>
   <div style="font-size:20px;font-weight:700;color:' . $c['brandDark'] . ';margin-top:4px">' . self::esc($place['title']) . '</div>' . $gps . $map . '
 </td></tr></table>';
     }
@@ -196,7 +198,7 @@ final class Emails
         $amount = self::czk($t['amount_due_halere']);
         return self::mail(
             "Místenka {$t['code']} – pokyny k platbě",
-            self::layout($config, 'info', 'Dokončete platbu místenky', '<p style="margin:0 0 16px">Místo na revíru <b>' . self::esc($revir['name']) . '</b> je pro vás rezervované. Místenku vystavíme hned po připsání platby a pošleme vám ji e-mailem.</p>
+            self::layout($config, 'info', 'Dokončete platbu místenky', '<p style="margin:0 0 16px">' . self::NO_PLACE_LINK . ' na revíru <b>' . self::esc($revir['name']) . '</b> je pro vás rezervované. Místenku vystavíme hned po připsání platby a pošleme vám ji e-mailem.</p>
       ' . self::highlight('K úhradě', $amount, 'VS ' . $t['variable_symbol']) . self::table($rows) . self::button($x['links']['payment'], 'Zobrazit QR platbu') . '
       ' . self::note('Nejrychlejší je zaplatit načtením QR kódu v bankovní aplikaci – údaje se vyplní samy. Při ručním převodu nezapomeňte variabilní symbol.'), '', "Zaplaťte {$amount} do " . self::czDateTime($t['reserved_until']) . ", VS {$t['variable_symbol']}"),
             self::text(array_merge(['Dokončete platbu místenky.', "Částka: {$amount}"], self::rowsText($rows), ["QR platba: {$x['links']['payment']}"]))
@@ -261,7 +263,7 @@ final class Emails
         $t = $x['ticket'];
         $revir = $x['revir'];
         $rows = [['Kód místenky', $t['code']], ['Revír', $revir['name']], ['Datum lovu', self::czDate($t['fishing_date'])], ['Zadrženo', self::czDateTime($t['seized_at'])], ['Důvod', $t['seized_reason']]];
-        if (!empty($t['seized_place'])) $rows[] = ['Místo', $t['seized_place']];
+        if (!empty($t['seized_place'])) $rows[] = [self::NO_PLACE_LINK, $t['seized_place']];
         $deadline = self::czDateTime($x['deadline']);
         return self::mail(
             "Místenka {$t['code']} byla zadržena rybářskou stráží",
@@ -275,7 +277,7 @@ final class Emails
         $t = $x['ticket'];
         $revir = $x['revir'];
         $rows = [['Kód místenky', $t['code']], ['Revír', $revir['name']], ['Datum lovu', self::czDate($t['fishing_date'])], ['Držitel', "{$t['first_name']} {$t['last_name']}"], ['Č. legitimace', $t['member_id']], ['Porybný', $x['wardenName']], ['Zadrženo', self::czDateTime($t['seized_at'])], ['Důvod', $t['seized_reason']]];
-        if (!empty($t['seized_place'])) $rows[] = ['Místo', $t['seized_place']];
+        if (!empty($t['seized_place'])) $rows[] = [self::NO_PLACE_LINK, $t['seized_place']];
         return self::mail(
             "Zadržená místenka {$t['code']} – {$t['first_name']} {$t['last_name']}",
             self::layout($config, 'warning', 'Porybný zadržel místenku', '<p>Pro informaci: místenka byla zadržena. Zadržení není potřeba potvrzovat.</p>' . self::table($rows) . self::button($x['links']['status'], 'Stav místenky')),

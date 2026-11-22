@@ -14,6 +14,8 @@ const czDateTime = (iso) => new Date(iso).toLocaleString("cs-CZ", { timeZone: "E
 
 // ---------- vzhled e-mailů ----------
 // Tabulkové rozvržení a inline styly – spolehlivé v Gmailu, Outlooku i mobilních klientech. Barvy jako aplikace.
+// „Místo“ s neviditelným znakem (U+200C): Gmail jinak slovo považuje za obec Místo a udělá z něj odkaz na Google Mapy.
+const NO_PLACE_LINK = "Mí‌sto";
 const C = { brand: "#0075de", brandDark: "#005bab", ink: "#252321", muted: "#6d6862", line: "#e6e4e0", soft: "#f6f5f4", okBg: "#eef8f1", ok: "#17803f", warnBg: "#fff6e5", warn: "#8a5a00" };
 const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 // Barva hlavičky podle typu zprávy: info modrá, success zelená (vystaveno, uloženo),
@@ -61,7 +63,7 @@ const checklist = (items) => `<table role="presentation" width="100%" cellpaddin
 // Místo lovu (podrevír místenky, jinak celý revír) zvýrazněné s GPS a odkazem na interaktivní mapu
 // (mapa jen jako odkaz – podklad Mapy.com se do e-mailu vkládat nesmí).
 const placeBlock = (place, links) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px"><tr><td style="background:#eef6fe;border:2px solid ${C.brand};border-radius:10px;padding:14px 18px">
-  <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:${C.muted}">Místo lovu</div>
+  <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:${C.muted}">${NO_PLACE_LINK} lovu</div>
   <div style="font-size:20px;font-weight:700;color:${C.brandDark};margin-top:4px">${esc(place.title)}</div>
   ${place.gps ? `<div style="font-size:14px;margin-top:6px">GPS <a href="${esc(mapyUrl(place.gps))}" style="color:${C.brand};font-weight:600">${esc(gpsText(place.gps))}</a></div>` : ""}
   ${links.map ? `<div style="font-size:14px;margin-top:6px"><a href="${esc(links.map)}" style="color:${C.brand};font-weight:600">Interaktivní mapa revíru →</a> <span style="color:${C.muted}">hranice podrevírů, parkování, WC</span></div>` : ""}
@@ -82,7 +84,7 @@ function paymentInstructions(config, { ticket, revir, links }) {
   const rows = [["Revír", revir.name], ...(sub ? [[sub.title, sub.label]] : []), ["Datum lovu", `${weekday(ticket.fishing_date)} ${czDate(ticket.fishing_date)}`], ["Číslo účtu", `${config.payment.accountNumber}/${config.payment.bankCode}`], ["Variabilní symbol", ticket.variable_symbol], ["Zaplaťte do", czDateTime(ticket.reserved_until)]];
   return {
     subject: `Místenka ${ticket.code} – pokyny k platbě`,
-    html: layout(config, "info", "Dokončete platbu místenky", `<p style="margin:0 0 16px">Místo na revíru <b>${esc(revir.name)}</b> je pro vás rezervované. Místenku vystavíme hned po připsání platby a pošleme vám ji e-mailem.</p>
+    html: layout(config, "info", "Dokončete platbu místenky", `<p style="margin:0 0 16px">${NO_PLACE_LINK} na revíru <b>${esc(revir.name)}</b> je pro vás rezervované. Místenku vystavíme hned po připsání platby a pošleme vám ji e-mailem.</p>
       ${highlight("K úhradě", czk(ticket.amount_due_halere), `VS ${ticket.variable_symbol}`)}${table(rows)}${button(links.payment, "Zobrazit QR platbu")}
       ${noteBox("Nejrychlejší je zaplatit načtením QR kódu v bankovní aplikaci – údaje se vyplní samy. Při ručním převodu nezapomeňte variabilní symbol.")}`, "", { preheader: `Zaplaťte ${czk(ticket.amount_due_halere)} do ${czDateTime(ticket.reserved_until)}, VS ${ticket.variable_symbol}` }),
     text: textBlock(["Dokončete platbu místenky.", `Částka: ${czk(ticket.amount_due_halere)}`, ...rows.map(([k, v]) => `${k}: ${v}`), `QR platba: ${links.payment}`])
@@ -127,7 +129,7 @@ function ticketClosed(config, { ticket, revir }) {
 
 // ---------- zadržení místenky (B2) ----------
 function ticketSeized(config, { ticket, revir, links, deadline }) {
-  const rows = [["Kód místenky", ticket.code], ["Revír", revir.name], ["Datum lovu", czDate(ticket.fishing_date)], ["Zadrženo", czDateTime(ticket.seized_at)], ["Důvod", ticket.seized_reason], ...(ticket.seized_place ? [["Místo", ticket.seized_place]] : [])];
+  const rows = [["Kód místenky", ticket.code], ["Revír", revir.name], ["Datum lovu", czDate(ticket.fishing_date)], ["Zadrženo", czDateTime(ticket.seized_at)], ["Důvod", ticket.seized_reason], ...(ticket.seized_place ? [[NO_PLACE_LINK, ticket.seized_place]] : [])];
   return {
     subject: `Místenka ${ticket.code} byla zadržena rybářskou stráží`,
     html: layout(config, "danger", "Místenka byla zadržena", `<p>Rybářská stráž zadržela vaši místenku. <b>Místenka od této chvíle neopravňuje k lovu.</b></p>${table(rows)}<p>Místenku musíte i tak odevzdat a zapsat všechny úlovky, nejpozději do <b>${esc(czDateTime(deadline))}</b>.</p>${button(links.return, "Odevzdat místenku")}`),
@@ -135,7 +137,7 @@ function ticketSeized(config, { ticket, revir, links, deadline }) {
   };
 }
 function seizureNotice(config, { ticket, revir, links, wardenName }) {
-  const rows = [["Kód místenky", ticket.code], ["Revír", revir.name], ["Datum lovu", czDate(ticket.fishing_date)], ["Držitel", `${ticket.first_name} ${ticket.last_name}`], ["Č. legitimace", ticket.member_id], ["Porybný", wardenName], ["Zadrženo", czDateTime(ticket.seized_at)], ["Důvod", ticket.seized_reason], ...(ticket.seized_place ? [["Místo", ticket.seized_place]] : [])];
+  const rows = [["Kód místenky", ticket.code], ["Revír", revir.name], ["Datum lovu", czDate(ticket.fishing_date)], ["Držitel", `${ticket.first_name} ${ticket.last_name}`], ["Č. legitimace", ticket.member_id], ["Porybný", wardenName], ["Zadrženo", czDateTime(ticket.seized_at)], ["Důvod", ticket.seized_reason], ...(ticket.seized_place ? [[NO_PLACE_LINK, ticket.seized_place]] : [])];
   return {
     subject: `Zadržená místenka ${ticket.code} – ${ticket.first_name} ${ticket.last_name}`,
     html: layout(config, "warning", "Porybný zadržel místenku", `<p>Pro informaci: místenka byla zadržena. Zadržení není potřeba potvrzovat.</p>${table(rows)}${button(links.status, "Stav místenky")}`),

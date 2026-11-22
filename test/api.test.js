@@ -1273,7 +1273,8 @@ test("mapy revírů: mapa ze souboru, uložení, kontrola, veřejné API a odkaz
   assert.ok(mail, "e-mail s místenkou");
   assert.match(mail.html, /map\.html\?revir=revir-a/);
   assert.match(mail.html, /Interaktivní mapa revíru/);
-  assert.match(mail.html, /Místo lovu/);
+  assert.match(mail.html, /Mí‌sto lovu/); // neviditelný znak: Gmail jinak „Místo“ odkáže na Google Mapy
+  assert.doesNotMatch(mail.html, /Místo/);
   assert.doesNotMatch(mail.html, /preview\.png|<img[^>]+Mapa revíru/);
   assert.match(mail.text, /Mapa revíru: \S*map\.html\?revir=revir-a/);
 
@@ -1716,7 +1717,7 @@ test("podrevíry: místenka na jeden podrevír s vlastní cenou a kapacitou; jed
   const gpsEmail = "gps-podrevir@example.cz";
   await paidTicket({ revirId: "revir-b", date, email: gpsEmail });
   const gpsMail = await lastEmail(gpsEmail, "ticket_issued");
-  assert.match(gpsMail.html, /Místo lovu/);
+  assert.match(gpsMail.html, /Mí‌sto lovu/);
   assert.match(gpsMail.html, /Podrevír 1 – Jediná nádrž/);
   assert.match(gpsMail.html, /mapy\.cz\/zakladni\?source=coor&(amp;)?id=18\.25%2C49\.5/);
   assert.match(gpsMail.text, /GPS: 49\.50000, 18\.25000/);
