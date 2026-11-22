@@ -162,7 +162,7 @@
       ${area("rPermit", "Upozornění před nákupem", d.permitNote, 2)}
       ${area("rRestrictions", "Omezení (v detailu revíru)", d.restrictions, 2)}
       <h3>Pravidla revíru <small class="muted-inline">(každý řádek = jedna odrážka)</small></h3>
-      <p class="field-help">Na stránce Pravidla revíru se před vaše oddíly automaticky přidá oddíl „Informace v RIS“: revír se vždy řídí přednostně informacemi v RIS, s odkazem z pole Karta revíru. Za první oddíl se automaticky vloží Doba lovu a na konec tabulka lovných měr a hájení – tyto oddíly sem nepište.</p>
+      <p class="field-help">Na stránce Pravidla revíru se před vaše oddíly automaticky přidá oddíl „Informace v RIS“: revír se vždy řídí přednostně informacemi v RIS, s odkazem z pole Karta revíru. Za první oddíl se automaticky vloží Doba lovu a na konec tabulka lovných měr a hájení (jen když jsou lovné míry nebo limity zapnuté v sekci Ryby a limity) – tyto oddíly sem nepište.</p>
       <div id="rulesSections">${(d.rules || []).map(ruleSection).join("")}</div>
       <button class="text-button" type="button" id="addRule">+ Oddíl pravidel</button>
       ${footer(`revir:${r.id}`, r)}</form>`;
@@ -208,16 +208,27 @@
     return `<form class="settings-form" data-scope="species:${esc(part.ref)}" novalidate>
       ${docs.length > 1 ? `<label class="field-label" for="speciesSelect">Pravidla</label><select id="speciesSelect">${docs.map((s) => `<option value="${esc(s.ref)}"${s.ref === speciesRef ? " selected" : ""}>${esc(s.data.name || s.ref)}</option>`).join("")}</select>` : ""}
       <h3>${esc(d.name || part.ref)}</h3><p class="field-help">Platí ${esc(d.validFrom || "?")} – ${esc(d.validTo || "?")}. Změny se uplatní hned při dalších odevzdáních; místenka si pamatuje verzi pravidel, podle které byla zkontrolována.</p>
-      <h3>Limity úlovků</h3>
-      <table class="data-table edit-table"><thead><tr><th>Druhy</th><th>Období</th><th>Max. ks</th><th>Zdroj</th></tr></thead><tbody>${limitRows(d.dailyLimits, "day")}${limitRows(d.periodLimits, "period")}</tbody></table>
-      <h3>Druhy ryb <small class="muted-inline">(prázdné = bez omezení)</small></h3>
-      <div class="table-scroll"><table class="data-table edit-table species-table"><thead><tr><th>Druh</th><th>Lovná míra (cm)</th><th>Vrátit od (cm)</th><th>Doba hájení</th><th>Koef. hmotnosti</th></tr></thead><tbody>${d.species.map((s, i) => `
+      ${toggleSection("spLimitsOn", "Limity úlovků", d.limitsEnabled === true, "Limity se nepočítají: odevzdání, kontrola porybným, místenka ani profil rybáře je neukazují a za překročení se neblokuje.", `
+      <table class="data-table edit-table"><thead><tr><th>Druhy</th><th>Období</th><th>Max. ks</th><th>Zdroj</th></tr></thead><tbody>${limitRows(d.dailyLimits, "day")}${limitRows(d.periodLimits, "period")}</tbody></table>`)}
+      ${toggleSection("spSizesOn", "Lovné míry", d.sizeRulesEnabled !== false, "Při odevzdání se nekontroluje lovná míra, doba hájení ani povinné vrácení a pravidla revíru tabulku měr neukazují. Seznam druhů a odhad hmotnosti zůstávají.", `
+      <p class="field-help">Prázdné pole = bez omezení. Koeficient hmotnosti se používá i při vypnutých lovných mírách – odhad hmotnosti úlovku se předvyplňuje vždy.</p>
+      <div class="table-scroll"><table class="data-table edit-table species-table"><thead><tr><th>Druh</th><th>Lovná míra (cm)</th><th>Vrátit od (cm)</th><th>Doba hájení</th><th>Koef. hmotnosti${infoTip("Odhad hmotnosti z délky: hmotnost (kg) ≈ koeficient × délka³ / 100 000 (délka v cm), např. kapr s koeficientem 2 a délkou 50 cm ≈ 2,5 kg. Rybáři se při odevzdání předvyplní orientační hmotnost, kterou může přepsat. Prázdné = bez odhadu.")}</th></tr></thead><tbody>${d.species.map((s, i) => `
         <tr data-index="${i}"><td><b>${esc(s.name)}</b>${s.invasive ? ' <small class="muted-inline">invazní</small>' : ""}</td><td><input class="sp-min" type="number" min="0" value="${esc(s.minLength ?? "")}" size="3"></td><td><input class="sp-release" type="number" min="0" value="${esc(s.releaseFromLength ?? "")}" size="3"></td>
-        <td><input class="sp-seasons" value="${esc(seasonsToText(s.closedSeasons))}" placeholder="1.1.–15.6."></td><td><input class="sp-factor" type="number" min="0" step="0.05" value="${esc(s.weightFactor ?? "")}" size="4"></td></tr>`).join("")}</tbody></table></div>
+        <td><input class="sp-seasons" value="${esc(seasonsToText(s.closedSeasons))}" placeholder="1.1.–15.6."></td><td><input class="sp-factor" type="number" min="0" step="0.05" value="${esc(s.weightFactor ?? "")}" size="4"></td></tr>`).join("")}</tbody></table></div>`)}
       ${footer(`species:${part.ref}`, part)}</form>`;
+  }
+  const infoTip = (text) => `<span class="info-tip" tabindex="0" role="img" aria-label="${esc(text)}" data-tip="${esc(text)}">i</span>`;
+  // Oddíl se zaškrtávátkem před názvem: zaškrtnuto = hlídá se (oddíl rozbalený), nezaškrtnuto = vypnuto a sbaleno.
+  function toggleSection(id, title, enabled, offText, body) {
+    return `<section class="toggle-section${enabled ? "" : " collapsed"}">
+      <h3><label class="toggle-heading"><input type="checkbox" class="section-toggle" id="${id}"${enabled ? " checked" : ""}> ${esc(title)}</label><small class="muted-inline toggle-off">vypnuto</small></h3>
+      <p class="field-help toggle-off">${esc(offText)}</p>
+      <div class="toggle-body">${body}</div></section>`;
   }
   function speciesData() {
     const d = structuredClone(view.species.find((s) => s.ref === speciesRef).data);
+    d.limitsEnabled = qs("#spLimitsOn").checked;
+    d.sizeRulesEnabled = qs("#spSizesOn").checked;
     const optionalNumber = (input, label) => { const raw = input.value.trim().replace(",", "."); if (!raw) return undefined; const n = Number(raw); if (!(n >= 0)) throw new Error(`${label}: neplatné číslo.`); return n; };
     qsa(".species-table tbody tr").forEach((tr) => {
       const s = d.species[Number(tr.dataset.index)];
@@ -243,6 +254,9 @@
     qs("#addSub")?.addEventListener("click", () => qs("#subTable tbody").insertAdjacentHTML("beforeend", subRow()));
     qs("#addHours")?.addEventListener("click", () => qs("#hoursTable tbody").insertAdjacentHTML("beforeend", hoursRow()));
     qs("#addRule")?.addEventListener("click", () => qs("#rulesSections").insertAdjacentHTML("beforeend", ruleSection()));
+    form.addEventListener("change", (e) => {
+      if (e.target.classList.contains("section-toggle")) e.target.closest(".toggle-section").classList.toggle("collapsed", !e.target.checked);
+    });
     form.addEventListener("click", (e) => {
       if (e.target.classList.contains("remove-row")) e.target.closest("tr").remove();
       if (e.target.classList.contains("remove-section")) e.target.closest(".rule-section").remove();

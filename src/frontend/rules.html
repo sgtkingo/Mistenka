@@ -46,12 +46,16 @@
         sections.splice(2, 0, { title: "Doba lovu", items: hours });
         let html = sections.map((section) => `<div class="rules-section"><h2>${esc(section.title)}</h2><ul>${section.items.map((item) => `<li>${item.html ?? esc(item)}</li>`).join("")}</ul></div>`).join("");
         const fish = revir.fishRules;
-        if (fish) {
+        // Lovné míry a limity úlovků lze ve správě vypnout – vypnuté se rybářům neukazují.
+        const showSizes = fish && fish.sizeRulesEnabled !== false;
+        const showLimits = fish && fish.limitsEnabled === true && (fish.dailyLimits || []).length > 0;
+        if (showSizes || showLimits) {
           const { seasonText } = window.Mistenka;
-          const regulated = fish.species.filter((s) => s.minLength || s.releaseFromLength || s.closedSeasons?.length || s.note);
+          const regulated = showSizes ? fish.species.filter((s) => s.minLength || s.releaseFromLength || s.closedSeasons?.length || s.note) : [];
           const rows = regulated.map((s) => `<tr><td><b>${esc(s.name)}</b>${s.latin ? `<br><small>${esc(s.latin)}</small>` : ""}</td><td>${s.minLength ? `${esc(s.minLength)} cm` : "–"}${s.releaseFromLength ? `<br><small>od ${esc(s.releaseFromLength)} cm vrátit</small>` : ""}</td><td>${(s.closedSeasons || []).map((season) => esc(seasonText(season))).join(", ") || "–"}</td><td><small>${esc(s.note || "")}</small></td></tr>`).join("");
-          const limits = (fish.dailyLimits || []).map((l) => `<li>Nejvýše ${esc(l.maxCount)} ks denně: ${esc(l.label)}.</li>`).join("");
-          html += `<div class="rules-section"><h2>Nejmenší lovné míry a doby hájení</h2><div class="rules-table-wrap"><table class="rules-table"><thead><tr><th>Druh</th><th>Lovná míra</th><th>Hájení</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>${limits ? `<ul>${limits}</ul>` : ""}<p class="muted"><small>Zdroj: ${esc((fish.sources || []).join("; "))}. Platnost ${esc(fish.validFrom || "")} – ${esc(fish.validTo || "")}.</small></p></div>`;
+          const limits = showLimits ? fish.dailyLimits.map((l) => `<li>Nejvýše ${esc(l.maxCount)} ks denně: ${esc(l.label)}.</li>`).join("") : "";
+          const table = showSizes ? `<div class="rules-table-wrap"><table class="rules-table"><thead><tr><th>Druh</th><th>Lovná míra</th><th>Hájení</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : "";
+          html += `<div class="rules-section"><h2>${showSizes ? "Nejmenší lovné míry a doby hájení" : "Denní limity úlovků"}</h2>${table}${limits ? `<ul>${limits}</ul>` : ""}<p class="muted"><small>Zdroj: ${esc((fish.sources || []).join("; "))}. Platnost ${esc(fish.validFrom || "")} – ${esc(fish.validTo || "")}.</small></p></div>`;
         }
         qs("#rulesBody").innerHTML = html;
         const home = revirUrl("./", revir, config);

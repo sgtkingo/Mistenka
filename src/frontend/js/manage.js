@@ -109,6 +109,7 @@ qs("#userSearch").addEventListener("submit", (event) => {
 // ---------- limity a blokace (B3) ----------
 const PERIODS = { day: "den", week: "týden", month: "měsíc" };
 // Pravidla následků (uložená v nastavení organizace: limitPolicy + penaltyPolicy).
+const LIMITS_TIP = "Platí jen při zapnutém hlídání limitů v Nastavení → Ryby a limity. Když jsou limity vypnuté, překročení se nezaznamenává a toto pravidlo nic nedělá.";
 let penaltyOrg = null;
 async function loadPenaltyRules() {
   const box = qs("#penaltyRules");
@@ -128,7 +129,7 @@ async function loadPenaltyRules() {
       <td data-label="Blokace"><div class="input-suffix"><input class="penalty-input" id="${key}Days" type="number" min="1" max="3650" value="${esc(days ?? "")}" placeholder="do konce roku"${on ? "" : " disabled"}><span>dní</span></div></td></tr>`;
     };
     box.innerHTML = `<table class="data-table penalty-table"><thead><tr><th>Porušení</th><th>Pravidlo</th><th>Blokovat po (za rok)</th><th>Délka blokace</th></tr></thead><tbody>
-      ${row("limits", "Překročení limitů úlovků", "místenky s překročeným denním, týdenním nebo měsíčním limitem", lp.violationsBeforeBlock, lp.blockDays)}
+      ${row("limits", `Překročení limitů úlovků <span class="info-tip" tabindex="0" role="img" aria-label="${LIMITS_TIP}" data-tip="${LIMITS_TIP}">i</span>`, "místenky s překročeným denním, týdenním nebo měsíčním limitem", lp.violationsBeforeBlock, lp.blockDays)}
       ${row("late", "Pozdní odevzdání", "odevzdání po skončení dne lovu", late.count, late.blockDays, `<label class="checkbox-label penalty-check"><input type="checkbox" id="lateUnreturned"${late.includeUnreturned !== false ? " checked" : ""}> <span>počítat i neodevzdané (uzavřené po lhůtě)</span></label>`)}
       ${row("seizure", "Zadržení porybným", "místenka zadržená rybářskou stráží", seizure.count, seizure.blockDays)}
       </tbody></table>
@@ -289,7 +290,7 @@ async function openTicket(code) {
     const d = await api(`/manage/tickets/${encodeURIComponent(code)}`);
     const t = d.ticket;
     const state = ticketState(t);
-    const catches = t.catches.length ? t.catches.map((c) => `${esc(c.species)} ${esc(c.length)} cm${c.weight ? ` · ${esc(c.weight)} kg${c.weightEstimated ? " (odhad)" : ""}` : ""}`).join("<br>") : t.noCatch ? "bez úlovku" : "—";
+    const catches = t.catches.length ? t.catches.map((c) => `${esc(c.species)} ${esc(c.length)} cm${c.weight ? ` · ${esc(c.weight)} kg${c.weightEstimated ? " (odhad)" : ""}` : ""}${c.warning ? ` <span class="catch-warn-inline">⚠ ${esc(c.warning)}</span>` : ""}`).join("<br>") : t.noCatch ? "bez úlovku" : "—";
     body.innerHTML = `
       <div class="dialog-head"><div><span class="section-kicker">Místenka</span><h2>${esc(t.code)} <span class="badge badge-${esc(state.tone)}">${esc(state.label)}</span></h2></div><button class="text-button" type="button" id="closeDialog">Zavřít ✕</button></div>
       <dl class="summary-list">

@@ -370,11 +370,6 @@ test("odevzdání: validace úlovků, míry, hájení, povinné vrácení, úsp�
   assert.equal((await call("POST", `/tickets/${code}/return`, { body: { noCatch: true } })).status, 403);
   assert.equal((await ret({ catches: [] })).data.code, "catches_required");
   assert.equal((await ret({ noCatch: true, catches: [{ species: "kapr", length: 50 }] })).data.code, "invalid_catches");
-  assert.equal((await ret({ catches: [{ species: "lín", length: 28 }] })).data.code, "undersized", "revír B má zpřísněnou míru lína 30 cm");
-  assert.equal((await ret({ catches: [{ species: "kapr", length: 39 }] })).data.code, "undersized");
-  assert.equal((await ret({ catches: [{ species: "kapr", length: 72 }] })).data.code, "must_release", "kapr od 70 cm se vrací");
-  assert.equal((await ret({ catches: [{ species: "štika obecná", length: 80 }] })).data.code, "closed_season", "štika hájena do 15. 6.");
-  assert.equal((await ret({ catches: [{ species: "lipan", length: 40 }] })).data.code, "closed_season", "lipan celoročně hájen");
   assert.equal((await ret({ catches: [{ species: "", length: 40 }] })).data.code, "invalid_catches");
   const ok = await ret({ catches: [{ species: "Kapr", length: 52, weight: 2.1, weightEstimated: true }, { species: "plotice", length: 20 }] });
   assert.equal(ok.status, 200, JSON.stringify(ok.data));
@@ -382,7 +377,25 @@ test("odevzdání: validace úlovků, míry, hájení, povinné vrácení, úsp�
   assert.equal(ok.data.late, false);
   assert.deepEqual(ok.data.catches.map((c) => c.species), ["kapr obecný", "plotice obecná"], "druh se zapíše v kanonickém tvaru");
   assert.equal(ok.data.catches[0].weightEstimated, true);
+  assert.deepEqual(ok.data.catches.map((c) => c.warning), [null, null]);
   assert.equal((await ret({ noCatch: true })).data.code, "already_returned");
+
+  // Míra, hájení a povinné vrácení odevzdání nebrání (rozhodují pravidla v RIS) – úlovek dostane upozornění.
+  const second = await paidTicket({ date: "2026-06-11" });
+  await setClock("2026-06-11T08:00:00Z");
+  const warned = await call("POST", `/tickets/${second.code}/return`, { token: second.token, body: { catches: [
+    { species: "lín", length: 22 }, { species: "kapr", length: 39 }, { species: "kapr", length: 72 }, { species: "štika obecná", length: 80 }, { species: "lipan", length: 40 }, { species: "plotice", length: 20 }] } });
+  assert.equal(warned.status, 200, JSON.stringify(warned.data));
+  const w = warned.data.catches.map((c) => c.warning);
+  assert.match(w[0], /lovnou mírou \(25 cm\)/);
+  assert.match(w[1], /lovnou mírou \(40 cm\)/);
+  assert.match(w[2], /od 70 cm se musí vrátit/, "kapr od 70 cm se vrací");
+  assert.match(w[3], /době hájení/, "štika hájena do 15. 6.");
+  assert.match(w[4], /celoročně hájen/, "lipan celoročně hájen");
+  assert.equal(w[5], null);
+  const warden = await wardenAccount();
+  const checked = (await call("GET", `/warden/tickets/${second.code}`, { session: warden.session })).data;
+  assert.equal(checked.catches.filter((c) => c.warning).length, 5, "porybný vidí upozornění");
 });
 
 test("odevzdání: před dnem lovu nelze, opožděně do 7 dnů lze, pak se místenka uzavře jako neodevzdaná", async () => {
@@ -728,7 +741,18 @@ test("zadržená neodevzdaná místenka dostane připomínku a po lhůtě se uza
 // ---------- limity úlovků (B3) ----------
 const limitOf = (ticket, id) => ticket.limits.find((l) => l.id === id);
 
+// Hlídání limitů je ve výchozím stavu vypnuté – testy limitů ho zapnou v nastavení pravidel ryb.
+const SPECIES_REF = "../../config/species/crs-smas-mp-2026-2027.json";
+async function enableLimits() {
+  const { session } = await managerAccount();
+  const doc = (await call("GET", "/manage/settings", { session })).data.species.find((s) => s.ref === SPECIES_REF).data;
+  if (doc.limitsEnabled === true) return;
+  const saved = await call("PUT", "/manage/settings/species", { body: { ref: SPECIES_REF, data: { ...doc, limitsEnabled: true } }, session });
+  assert.equal(saved.status, 200, JSON.stringify(saved.data));
+}
+
 test("limity: denní limit jen upozorní, odevzdání projde a správce dostane e-mail", async () => {
+  await enableLimits();
   await setClock("2026-06-10T08:00:00Z");
   const { token, code } = await paidTicket({ revirId: "revir-b", memberId: "72000001" });
   const three = [{ species: "kapr", length: 50 }, { species: "lín", length: 35 }, { species: "amur", length: 65 }];
@@ -745,6 +769,7 @@ test("limity: denní limit jen upozorní, odevzdání projde a správce dostane 
 });
 
 test("limity: týdenní limit se počítá ze všech místenek člena (i bez účtu), kapr 2 ks týdně do 5 ha", async () => {
+  await enableLimits();
   await setClock("2026-06-10T08:00:00Z");
   const memberId = "72000002";
   const ret = async (catches, overrides = {}) => {
@@ -771,6 +796,7 @@ test("limity: týdenní limit se počítá ze všech místenek člena (i bez ú�
 });
 
 test("limity: po 2 porušeních automatická blokace nákupu; správce ji vidí a zruší, může blokovat ručně", async () => {
+  await enableLimits();
   await setClock("2026-06-10T08:00:00Z");
   const memberId = "72000003";
   const over = [{ species: "lín", length: 35 }, { species: "lín", length: 36 }, { species: "lín", length: 37 }];
@@ -806,6 +832,7 @@ test("limity: po 2 porušeních automatická blokace nákupu; správce ji vidí 
 });
 
 test("limity: porybný je vidí při kontrole, přihlášený člen v účtu", async () => {
+  await enableLimits();
   await setClock("2026-06-10T08:00:00Z");
   const account = await verifiedAccount();
   const t = await call("POST", "/orders", { body: orderBody({ memberId: account.memberId, email: account.email }), session: account.session });
@@ -819,6 +846,38 @@ test("limity: porybný je vidí při kontrole, přihlášený člen v účtu", a
   const view = (await call("GET", `/warden/tickets/${t.data.ticket.code}`, { session: warden.session })).data;
   assert.equal(view.limits.find((l) => l.id === "vyznamne-tyden").count, 1);
   assert.equal(view.blocked, null);
+});
+
+test("osobní statistika rybáře v účtu", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const account = await verifiedAccount();
+  const empty = (await call("GET", "/me/stats", { session: account.session })).data;
+  assert.equal(empty.visits, 0);
+  assert.equal(empty.biggest, null);
+  const buy = async (date, catches) => {
+    const t = await call("POST", "/orders", { body: orderBody({ memberId: account.memberId, email: account.email, date }), session: account.session });
+    assert.equal(t.status, 201, JSON.stringify(t.data));
+    await pay({ code: t.data.ticket.code });
+    return t.data.ticket.code;
+  };
+  const first = await buy("2026-06-10");
+  await call("POST", `/tickets/${first}/return`, { body: { catches: [{ species: "kapr", length: 55, weight: 3 }, { species: "lín", length: 35 }] }, session: account.session });
+  await buy("2026-06-12");
+  await setClock("2026-06-12T08:00:00Z");
+  const stats = (await call("GET", "/me/stats", { session: account.session })).data;
+  assert.equal(stats.visits, 2);
+  assert.equal(stats.returned, 1);
+  assert.equal(stats.catches, 2);
+  assert.equal(stats.totalWeight, 3);
+  assert.equal(stats.successRate, 100);
+  assert.equal(stats.biggest.species, "kapr obecný");
+  assert.equal(stats.biggest.length, 55);
+  assert.equal(stats.biggest.date, "2026-06-10");
+  assert.equal(stats.heaviest.weight, 3);
+  assert.equal(stats.bestTrip.catches, 2);
+  assert.deepEqual(stats.species.map((x) => x.count), [1, 1]);
+  assert.deepEqual(stats.years, [{ year: "2026", visits: 2, catches: 2 }]);
+  assert.equal((await call("GET", "/me/stats")).status, 401);
 });
 
 // ---------- provoz: důležité zprávy, sezony, uzavření (B4) ----------
@@ -1100,10 +1159,35 @@ test("nastavení organizace a pravidel ryb; verze pravidel se uloží k odevzdan
   const savedRules = await call("PUT", "/manage/settings/species", { body: { ref, data: doc, note: "Zpřísnění lína" }, session });
   assert.equal(savedRules.status, 200, JSON.stringify(savedRules.data));
   const ticket = await paidTicket();
-  assert.equal((await call("POST", `/tickets/${ticket.code}/return`, { body: { catches: [{ species: "lín", length: 27 }] }, token: ticket.token })).data.code, "undersized", "nová míra platí hned");
-  assert.equal((await call("POST", `/tickets/${ticket.code}/return`, { body: { catches: [{ species: "lín", length: 31 }] }, token: ticket.token })).status, 200);
+  const linReturn = await call("POST", `/tickets/${ticket.code}/return`, { body: { catches: [{ species: "lín", length: 27 }, { species: "lín", length: 31 }] }, token: ticket.token });
+  assert.equal(linReturn.status, 200, JSON.stringify(linReturn.data));
+  assert.match(linReturn.data.catches[0].warning, /\(30 cm\)/, "nová míra platí hned");
+  assert.equal(linReturn.data.catches[1].warning, null);
   const detail = (await call("GET", `/manage/tickets/${ticket.code}`, { session })).data;
   assert.match(detail.ticket.rulesVersion, /^crs-smas-mp-2026-2027@v\d+$/, "verze pravidel u místenky");
+
+  await call("POST", "/manage/settings/reset", { body: { scope: `species:${ref}` }, session });
+  const defaults = (await call("GET", "/config")).data.reviry[0].fishRules;
+  assert.equal(defaults.limitsEnabled, false, "limity jsou ve výchozím stavu vypnuté");
+  assert.equal(defaults.sizeRulesEnabled, true, "lovné míry ve výchozím stavu zapnuté");
+  // Vypnuté hlídání: lovné míry se nekontrolují, limity se nepočítají (odevzdání, kontrola, účet).
+  const off = { ...structuredClone(species.data), limitsEnabled: false, sizeRulesEnabled: false };
+  assert.equal((await call("PUT", "/manage/settings/species", { body: { ref, data: off }, session })).status, 200);
+  const cfgOff = (await call("GET", "/config")).data.reviry[0].fishRules;
+  assert.equal(cfgOff.limitsEnabled, false);
+  assert.equal(cfgOff.sizeRulesEnabled, false);
+  const free = await paidTicket();
+  const many = Array.from({ length: 6 }, () => ({ species: "lín", length: 20 }));
+  const freeReturn = await call("POST", `/tickets/${free.code}/return`, { body: { catches: many }, token: free.token });
+  assert.equal(freeReturn.status, 200, JSON.stringify(freeReturn.data));
+  assert.deepEqual(freeReturn.data.limits, [], "vypnuté limity se nepočítají");
+  assert.ok(freeReturn.data.catches.every((c) => c.warning === null), "vypnuté míry nevarují");
+  assert.equal((await call("PUT", "/manage/settings/species", { body: { ref, data: { ...off, limitsEnabled: "ne" } }, session })).data.code, "invalid_settings");
+  const onAgain = await call("PUT", "/manage/settings/species", { body: { ref, data: { ...off, limitsEnabled: true, sizeRulesEnabled: true } }, session });
+  assert.equal(onAgain.status, 200);
+  const strict = await paidTicket();
+  const strictReturn = await call("POST", `/tickets/${strict.code}/return`, { body: { catches: [{ species: "lín", length: 20 }] }, token: strict.token });
+  assert.match(strictReturn.data.catches[0].warning, /lovnou mírou/, "po zapnutí se míra kontroluje (upozorněním)");
   doc.dailyLimits[0].maxCount = 0;
   assert.equal((await call("PUT", "/manage/settings/species", { body: { ref, data: doc }, session })).data.code, "invalid_settings");
   await call("POST", "/manage/settings/reset", { body: { scope: `species:${ref}` }, session });

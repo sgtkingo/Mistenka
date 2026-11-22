@@ -77,6 +77,8 @@ Seznam druhů, lovné míry, doby hájení a denní limity jsou v samostatném s
 
 `periodLimits`: `[{ id, label, species: [id…], period: "week" | "month", maxCount, maxAreaHa?, source }]` – týdenní (kalendářní týden po–ne) a měsíční limity podle **všech vystavených místenek téhož čísla legitimace** v období dne lovu, i bez účtu. `maxAreaHa`: limit platí jen na místenkách, jejichž voda (největší z podrevírů místenky, jinak výměra revíru, údaj `area` „1,7 ha“) má nejvýš tuto výměru – např. kapr 2 ks týdně do 5 ha.
 
+`limitsEnabled` (výchozí false), `sizeRulesEnabled` (výchozí true): hlídání limitů úlovků a lovných měr (nejmenší míra, hájení, povinné vrácení). Odhad hmotnosti podle `weightFactor` funguje vždy. Vypnuté limity se nepočítají nikde (odevzdání, kontrola porybným, místenka, účet) a nevedou k blokaci; vypnuté míry se nekontrolují při odevzdání a pravidla revíru je neukazují. Ve správě Nastavení → Ryby a limity.
+
 **Překročení žádného limitu (denního, týdenního ani měsíčního) neblokuje odevzdání ani nákup.** Místenka vidí jen své místenky; limity svazu platí na všech revírech dohromady.
 
 ### Limity v odpovědích
@@ -158,12 +160,12 @@ Tělo: `{ noCatch: boolean, catches: [{ species, length, weight?, weightEstimate
 
 - `noCatch: true` ⇒ `catches` musí být prázdné; jinak alespoň jeden úlovek (`catches_required`).
 - `species` 1–60 znaků; známý druh (název nebo alias) se zapíše jako `name` z pravidel. Neznámý druh se přijme tak, jak je zadán. `length` 0–400 cm; `weight` volitelně 0–300 kg; `weightEstimated` = váha je odhad z délky.
-- Známý druh v době hájení (podle dne lovu) → `400 closed_season`; pod `minLength` → `400 undersized`; od `releaseFromLength` → `400 must_release`. Překročený limit (denní, týdenní, měsíční) odevzdání **neblokuje**: odpověď nese `limits` s `exceeded: true`, správce dostane e-mail.
+- Doba hájení (podle dne lovu), `minLength` a `releaseFromLength` odevzdání **neblokují** – rozhodují pravidla v RIS. Úlovek s možným porušením má v `catches[].warning` text upozornění (jinak `null`); stejně ho vidí porybný (`GET /warden/tickets/:code`) a správce v detailu místenky. Počítá se podle aktuálních pravidel revíru, při `sizeRulesEnabled: false` je vždy `null`. Překročený limit (denní, týdenní, měsíční) odevzdání **neblokuje**: odpověď nese `limits` s `exceeded: true`, správce dostane e-mail.
 - Odevzdat lze stav `active` a `expired_unreturned`, tj. do `returnDeadline` (= konec dne lovu + `lateReturnDays`). Odevzdání po konci dne lovu má `late: true`. Stav `closed_unreturned` → `409 return_closed`.
 
 | Chyba | `code` |
 | --- | --- |
-| 400 | `invalid_catches`, `catches_required`, `undersized`, `must_release`, `closed_season` |
+| 400 | `invalid_catches`, `catches_required` |
 | 409 | `not_issued`, `too_early`, `already_returned`, `return_closed` |
 
 Odpověď `200`: `<OwnerTicket>` se stavem `expired_returned`.
@@ -239,6 +241,7 @@ Dokud neexistuje žádný admin, server při startu vypíše do konzole jednorá
 | `GET /me/tickets` 👤 | – | `{ tickets: [<OwnerTicket>] }`, nejnovější den lovu první |
 | `POST /me/warden-request` 👤 | `{ note? }` | `{ user }` – žádost „Jsem porybný“ (viz Notifikace); `409 already_warden`, `request_pending` |
 | `GET /me/limits?revirId=` 👤 | – | `{ date, revirId, limits: [...], blocked }` – týdenní a měsíční limity člena k dnešku (bez čísla legitimace prázdné) |
+| `GET /me/stats` 👤 | – | `{ visits, returned, catches, totalWeight, successRate, biggest, heaviest, bestTrip, species: [{ species, count, maxLength }], years: [{ year, visits, catches }] }` – osobní statistika z vystavených místenek účtu, jejichž den lovu nastal. `biggest`/`heaviest`: `{ species, length, weight, date, revir, subdistrict }`; `bestTrip` (nejvíc úlovků): `{ date, revir, subdistrict, catches, weight }`; `successRate` = % odevzdaných místenek s úlovkem (null bez odevzdání) |
 | `POST /me/2fa/setup` 👤 | – | `{ secret, otpauthUrl }` (TOTP, SHA-1, 6 číslic, 30 s); `409 two_factor_enabled` |
 | `POST /me/2fa/enable` 👤 | `{ otp }` | `{ user }`; `400 invalid_otp`, `409 two_factor_not_setup` |
 | `POST /me/2fa/disable` 👤 | `{ otp }` | `{ user }`; admin → `409 two_factor_required` |

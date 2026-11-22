@@ -22,7 +22,7 @@ function addRow() {
   const renderSuggestions = () => {
     const query = fishInput.value.trim().toLowerCase();
     const matches = (rules?.species || []).filter((s) => !query || s.name.toLowerCase().includes(query) || (s.aliases || []).some((a) => a.toLowerCase().includes(query)));
-    suggestions.innerHTML = matches.map((s) => `<button type="button" role="option" data-name="${esc(s.name)}">${esc(s.name)}${s.minLength ? ` <small>min. ${esc(s.minLength)} cm</small>` : ""}</button>`).join("");
+    suggestions.innerHTML = matches.map((s) => `<button type="button" role="option" data-name="${esc(s.name)}">${esc(s.name)}${s.minLength && rules.sizeRulesEnabled !== false ? ` <small>min. ${esc(s.minLength)} cm</small>` : ""}</button>`).join("");
     suggestions.classList.toggle("visible", matches.length > 0);
     active = -1;
     suggestions.querySelectorAll("button").forEach((button) => button.addEventListener("mousedown", (event) => { event.preventDefault(); choose(button.dataset.name); }));
@@ -50,18 +50,22 @@ function addRow() {
   row.querySelector(".remove-catch").addEventListener("click", () => { if (qs("#catchRows").children.length > 1) row.remove(); });
 }
 
-// Míra, hájení v den lovu a povinné vrácení – stejná pravidla kontroluje i server.
+// Míra, hájení v den lovu a povinné vrácení: možné porušení jen vyznačí (červené pole + text), odevzdání nebrání –
+// rozhodují pravidla v RIS, údaje v Místence nemusí být aktuální. Vrací, zda je délka vyplněná.
 function validateLength(row) {
   const known = findSpecies(rules, row.querySelector(".fish-name").value);
   const input = row.querySelector(".fish-length");
   const error = row.querySelector(".length-error");
   const length = Number(input.value);
   error.textContent = "Vyplňte délku";
-  const problem = known && catchProblem(known, length, ticket.date);
-  if (problem && (length || problem.startsWith("Celoročně") || problem.startsWith("V době"))) {
+  // Lovné míry lze ve správě vypnout (sizeRulesEnabled) – pak se míra, hájení ani vrácení nekontroluje.
+  const problem = known && rules.sizeRulesEnabled !== false && catchProblem(known, length, ticket.date);
+  const warn = Boolean(problem && (length || problem.startsWith("Celoročně") || problem.startsWith("V době")));
+  row.classList.toggle("catch-warning", warn);
+  if (warn) {
     input.classList.add("invalid");
-    error.textContent = problem;
-    return false;
+    error.textContent = `Možné porušení pravidel: ${problem}`;
+    return Boolean(length);
   }
   input.classList.remove("invalid");
   return Boolean(length);
@@ -129,7 +133,6 @@ qs("#submitReturn").addEventListener("click", async () => {
   let catches = [];
   if (!noCatch) {
     let valid = true;
-    let undersized = false;
     catches = qsa(".catch-row").map((row) => {
       const name = row.querySelector(".fish-name").value.trim();
       const length = Number(row.querySelector(".fish-length").value);
@@ -137,12 +140,11 @@ qs("#submitReturn").addEventListener("click", async () => {
       if (!name || !length) {
         row.querySelector(".fish-length").classList.add("invalid");
         valid = false;
-      } else if (!validateLength(row)) {
-        undersized = true;
+      } else {
+        validateLength(row);
       }
       return { species: name, length, weight: weight || null, weightEstimated: Boolean(weight) && row.dataset.estimated === "true" };
     });
-    if (undersized) return showToast("Některou rybu je nutné vrátit (míra nebo hájení) – takový úlovek nelze zapsat.", "warning");
     if (!valid) return showToast("Doplňte druh a délku u každého úlovku, nebo zvolte „Bez úlovku“.", "warning");
   }
   if (!qs("#returnDeclaration").checked) return showToast("Potvrďte úplnost údajů.", "warning");
@@ -154,7 +156,9 @@ qs("#submitReturn").addEventListener("click", async () => {
       ? "Místenka je odevzdaná. Odevzdání proběhlo po skončení dne lovu, a je proto označeno jako opožděné."
       : "Děkujeme za vyplnění sumáře úlovků. Místenka je nyní označena jako odevzdaná.";
     // Překročený limit odevzdání neblokuje – rybář dostane upozornění (správce e-mail).
-    qs("#returnedLimits").innerHTML = limitsHtml(ticket.limits, { title: "Upozornění na limity úlovků" });
+    const warned = (ticket.catches || []).filter((c) => c.warning);
+    qs("#returnedLimits").innerHTML = (warned.length ? `<div class="status-error catch-warning-box"><b>Možné porušení pravidel u ${warned.length === 1 ? "úlovku" : "úlovků"}</b><ul>${warned.map((c) => `<li>${esc(c.species)} ${esc(c.length)} cm: ${esc(c.warning)}</li>`).join("")}</ul><small>Místenka je odevzdaná. Rozhodují pravidla v RIS – údaje v Místence nemusí být aktuální. Porybný i správce upozornění uvidí.</small></div>` : "")
+      + limitsHtml(ticket.limits, { title: "Upozornění na limity úlovků" });
     qs("#ticketSummary").classList.add("hidden");
     show("returnedState");
   } catch (error) {

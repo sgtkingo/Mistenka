@@ -141,7 +141,10 @@ function validateSpeciesRules(rules, file) {
     if (!(Number.isInteger(limit.maxCount) && limit.maxCount > 0)) fail(`${file}: limit ${limit.id} musí mít maxCount > 0`);
     for (const id of limit.species) if (!ids.has(id)) fail(`${file}: limit ${limit.id} odkazuje na neznámý druh ${id}`);
   }
-  return { id: rules.id, name: rules.name, validFrom: rules.validFrom, validTo: rules.validTo, sources: rules.sources || [], dailyLimits: rules.dailyLimits || [], periodLimits: rules.periodLimits || [], species: rules.species };
+  // Hlídání limitů úlovků (výchozí vypnuto) a lovných měr – míra, hájení, povinné vrácení (výchozí zapnuto); přepíná se ve správě.
+  for (const key of ["limitsEnabled", "sizeRulesEnabled"]) if (rules[key] !== undefined && typeof rules[key] !== "boolean") fail(`${file}: ${key} musí být true/false`);
+  return { id: rules.id, name: rules.name, validFrom: rules.validFrom, validTo: rules.validTo, sources: rules.sources || [], dailyLimits: rules.dailyLimits || [], periodLimits: rules.periodLimits || [], species: rules.species,
+    limitsEnabled: rules.limitsEnabled === true, sizeRulesEnabled: rules.sizeRulesEnabled !== false };
 }
 
 // Úpravy pro konkrétní revír ("na vybraných revírech je zvýšena lovná míra …").

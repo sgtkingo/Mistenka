@@ -169,8 +169,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
   function ownerTicket(ticket, { withLimits = true } = {}) {
     const base = publicTicket(ticket);
     const w = windowOf(ticket);
-    const catches = db.prepare("SELECT species, length_cm, weight_kg, weight_estimated FROM catches WHERE ticket_id = ? ORDER BY id").all(ticket.id)
-      .map((c) => ({ species: c.species, length: c.length_cm, weight: c.weight_kg, weightEstimated: Boolean(c.weight_estimated) }));
+    const catches = catchesOf(ticket);
     const out = {
       ...base,
       holder: undefined,
@@ -323,9 +322,9 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       if (!name || name.length > 60) throw new ApiError(400, "invalid_catches", `${row}: vyplňte druh ryby.`);
       if (!(length > 0 && length <= 400)) throw new ApiError(400, "invalid_catches", `${row}: vyplňte délku v cm.`);
       if (weight !== null && !(weight > 0 && weight <= 300)) throw new ApiError(400, "invalid_catches", `${row}: neplatná hmotnost.`);
+      // Míra, hájení a povinné vrácení odevzdání nebrání – rozhodují pravidla v RIS; možné porušení se jen
+      // vyznačí u úlovku (catches[].warning) rybáři, porybnému i správci.
       const known = findSpecies(rules, name);
-      const problem = known && catchProblem(known, length, ticket.fishing_date);
-      if (problem) throw new ApiError(400, problem.code, `${row}: ${problem.message}`);
       return { species: known ? known.name : name, speciesId: known?.id || null, length, weight, weightEstimated: weight !== null && item.weightEstimated === true };
     });
     return transaction(db, () => {
@@ -371,7 +370,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
   function limitsFor(ticket) {
     const revir = revirOf(ticket);
     const rules = revirRules(revir);
-    if (!rules) return [];
+    if (!rules || !rules.limitsEnabled) return [];
     const speciesIdOf = (name) => findSpecies(rules, name)?.id || null;
     const own = db.prepare("SELECT species FROM catches WHERE ticket_id = ?").all(ticket.id).map((c) => speciesIdOf(c.species));
     const out = [];
@@ -487,9 +486,61 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     return { date, revirId: revir.id, limits, blocked: block ? blockShape(block) : null };
   }
 
+  // Osobní statistika rybáře z místenek jeho účtu (vystavené, den lovu už nastal).
+  // Docházka = místenka; úspěšnost = podíl odevzdaných místenek s alespoň jedním úlovkem.
+  function statsForUser(user) {
+    const tickets = db.prepare("SELECT id, fishing_date, revir_id, subdistrict, returned_at FROM tickets WHERE user_id = ? AND status = 'issued' AND fishing_date <= ? ORDER BY fishing_date, id").all(user.id, time.pragueToday());
+    const round = (n) => Math.round(n * 100) / 100;
+    const where = (t) => { const revir = revirOf(t); return { date: t.fishing_date, revir: revir.name, subdistrict: subdistrictName(revir, t.subdistrict) }; };
+    const out = { visits: tickets.length, returned: 0, catches: 0, totalWeight: 0, successRate: null, biggest: null, heaviest: null, bestTrip: null, species: [], years: [] };
+    const species = new Map();
+    const years = new Map();
+    let successful = 0;
+    for (const t of tickets) {
+      const catches = db.prepare("SELECT species, length_cm, weight_kg FROM catches WHERE ticket_id = ? ORDER BY id").all(t.id);
+      const year = t.fishing_date.slice(0, 4);
+      const y = years.get(year) || { year, visits: 0, catches: 0 };
+      y.visits += 1;
+      y.catches += catches.length;
+      years.set(year, y);
+      if (t.returned_at) { out.returned += 1; if (catches.length) successful += 1; }
+      let weight = 0;
+      for (const c of catches) {
+        out.catches += 1;
+        weight += c.weight_kg || 0;
+        const item = { species: c.species, length: c.length_cm, weight: c.weight_kg, ...where(t) };
+        if (!out.biggest || c.length_cm > out.biggest.length || (c.length_cm === out.biggest.length && (c.weight_kg || 0) > (out.biggest.weight || 0))) out.biggest = item;
+        if (c.weight_kg && (!out.heaviest || c.weight_kg > out.heaviest.weight)) out.heaviest = item;
+        const s = species.get(c.species) || { species: c.species, count: 0, maxLength: 0 };
+        s.count += 1;
+        s.maxLength = Math.max(s.maxLength, c.length_cm);
+        species.set(c.species, s);
+      }
+      out.totalWeight += weight;
+      if (catches.length && (!out.bestTrip || catches.length > out.bestTrip.catches || (catches.length === out.bestTrip.catches && weight > out.bestTrip.weight))) {
+        out.bestTrip = { ...where(t), catches: catches.length, weight: round(weight) };
+      }
+    }
+    out.totalWeight = round(out.totalWeight);
+    out.successRate = out.returned ? Math.round((successful / out.returned) * 100) : null;
+    out.species = [...species.values()].sort((a, b) => b.count - a.count || b.maxLength - a.maxLength).slice(0, 5);
+    out.years = [...years.values()].sort((a, b) => b.year.localeCompare(a.year));
+    return out;
+  }
+
   // ---------- porybný (B2) ----------
-  const catchesOf = (ticketId) => db.prepare("SELECT species, length_cm, weight_kg, weight_estimated FROM catches WHERE ticket_id = ? ORDER BY id").all(ticketId)
-    .map((c) => ({ species: c.species, length: c.length_cm, weight: c.weight_kg, weightEstimated: Boolean(c.weight_estimated) }));
+  // Možné porušení pravidel u úlovku (míra, hájení, povinné vrácení) podle aktuálních pravidel revíru – jen upozornění.
+  function catchWarning(ticket, species, length) {
+    const rules = revirRules(revirOf(ticket));
+    if (!rules || rules.sizeRulesEnabled === false) return null;
+    const known = findSpecies(rules, species);
+    const problem = known && catchProblem(known, length, ticket.fishing_date);
+    return problem ? problem.message : null;
+  }
+  function catchesOf(ticket) {
+    return db.prepare("SELECT species, length_cm, weight_kg, weight_estimated FROM catches WHERE ticket_id = ? ORDER BY id").all(ticket.id)
+      .map((c) => ({ species: c.species, length: c.length_cm, weight: c.weight_kg, weightEstimated: Boolean(c.weight_estimated), warning: catchWarning(ticket, c.species, c.length_cm) }));
+  }
   // Plné údaje pro porybného + místenky téhož člena v týdnu a měsíci dne lovu (podklad pro limity, B3).
   function wardenView(ticket) {
     const base = publicTicket(ticket);
@@ -501,7 +552,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       .map((t) => ({
         code: t.code, date: t.fishing_date, revir: revirOf(t).name, status: stateOf(t), current: t.id === ticket.id,
         inWeek: t.fishing_date >= week.from && t.fishing_date <= week.to, inMonth: t.fishing_date >= month.from && t.fishing_date <= month.to,
-        noCatch: Boolean(t.no_catch), catches: catchesOf(t.id)
+        noCatch: Boolean(t.no_catch), catches: catchesOf(t)
       }));
     const checks = db.prepare("SELECT warden_name, at, status FROM ticket_checks WHERE ticket_id = ? ORDER BY at DESC LIMIT 20").all(ticket.id)
       .map((c) => ({ wardenName: c.warden_name, at: c.at, status: c.status }));
@@ -514,7 +565,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       ...base,
       holder: undefined,
       firstName: ticket.first_name, lastName: ticket.last_name, birthDate: ticket.birth_date, memberId: ticket.member_id,
-      returnedAt: ticket.returned_at, noCatch: Boolean(ticket.no_catch), catches: catchesOf(ticket.id),
+      returnedAt: ticket.returned_at, noCatch: Boolean(ticket.no_catch), catches: catchesOf(ticket),
       seizable: stateOf(ticket) === "active",
       memberRoles: memberRolesOf(ticket),
       seizure, checks, memberHistory: { week, month, tickets: history },
@@ -889,7 +940,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     return { result: report.payments?.results?.[0] || null };
   }
 
-  return { availability, createOrder, getPublicTicket, getOwnerTicket, ticketsForUser, wardenCheck, seizeTicket, listTickets, ticketsCsv, ticketDetail, cancelByManager, listPayments, resolvePayment, listVouchers, generateVouchers, voidVoucher, listViolations, listBlocks, createBlock, liftBlock, limitsForMember, cancelOrder, submitReturn, checkVoucher, createVoucher, runJobs, addJob, simulatePayment, processTransaction, stateOf };
+  return { availability, createOrder, getPublicTicket, getOwnerTicket, ticketsForUser, wardenCheck, seizeTicket, listTickets, ticketsCsv, ticketDetail, cancelByManager, listPayments, resolvePayment, listVouchers, generateVouchers, voidVoucher, listViolations, listBlocks, createBlock, liftBlock, limitsForMember, statsForUser, cancelOrder, submitReturn, checkVoucher, createVoucher, runJobs, addJob, simulatePayment, processTransaction, stateOf };
 }
 
 module.exports = { createService, ApiError };

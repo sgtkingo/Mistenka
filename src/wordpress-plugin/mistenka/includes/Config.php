@@ -181,9 +181,14 @@ final class Config
             if (!(Js::isInteger($limit['maxCount'] ?? null) && $limit['maxCount'] > 0)) self::fail("{$file}: limit {$limit['id']} musí mít maxCount > 0");
             foreach ($limit['species'] ?? [] as $id) if (!isset($ids[$id])) self::fail("{$file}: limit {$limit['id']} odkazuje na neznámý druh {$id}");
         }
+        // Hlídání limitů úlovků (výchozí vypnuto) a lovných měr – míra, hájení, povinné vrácení (výchozí zapnuto); přepíná se ve správě.
+        foreach (['limitsEnabled', 'sizeRulesEnabled'] as $key) {
+            if (array_key_exists($key, $rules) && !is_bool($rules[$key])) self::fail("{$file}: {$key} musí být true/false");
+        }
         return [
             'id' => $rules['id'] ?? null, 'name' => $rules['name'] ?? null, 'validFrom' => $rules['validFrom'] ?? null, 'validTo' => $rules['validTo'] ?? null,
             'sources' => $rules['sources'] ?? [], 'dailyLimits' => $rules['dailyLimits'] ?? [], 'periodLimits' => $rules['periodLimits'] ?? [], 'species' => $rules['species'],
+            'limitsEnabled' => ($rules['limitsEnabled'] ?? false) === true, 'sizeRulesEnabled' => ($rules['sizeRulesEnabled'] ?? true) !== false,
         ];
     }
 

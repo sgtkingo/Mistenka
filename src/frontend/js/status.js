@@ -50,7 +50,12 @@ async function loadStatus() {
 }
 
 // ---------- porybný: plná kontrola a zadržení (B2) ----------
-const catchText = (t) => (t.catches.length ? t.catches.map((c) => `${c.species} ${c.length} cm`).join(", ") : t.noCatch ? "bez úlovku" : "—");
+const catchText = (t) => (t.catches.length ? t.catches.map((c) => `${c.species} ${c.length} cm${c.warning ? " ⚠" : ""}`).join(", ") : t.noCatch ? "bez úlovku" : "—");
+// Úlovky s možným porušením pravidel (míra, hájení, povinné vrácení) – porybný je má zkontrolovat podle RIS.
+const catchWarningsHtml = (catches) => {
+  const warned = (catches || []).filter((c) => c.warning);
+  return warned.length ? `<div class="status-error catch-warning-box"><b>⚠ Možné porušení pravidel – zkontrolujte</b><ul>${warned.map((c) => `<li>${esc(c.species)} ${esc(c.length)} cm: ${esc(c.warning)}</li>`).join("")}</ul><small>Podle údajů v Místence; rozhodují pravidla v RIS.</small></div>` : "";
+};
 async function loadWarden() {
   const panel = qs("#wardenPanel");
   try {
@@ -79,6 +84,8 @@ function renderWarden(view) {
       ${view.returnedAt ? `<div><dt>Úlovky na této místence</dt><dd>${esc(catchText(view))}</dd></div>` : ""}
     </dl>
     ${seizure}
+    ${catchWarningsHtml(view.catches)}
+    ${history.some((t) => !t.current && t.catches.some((c) => c.warning)) ? `<p class="field-help">⚠ = možné porušení pravidel u úlovku na jiné místence člena.</p>` : ""}
     ${view.blocked ? `<div class="status-error">Člen má pozastavený nákup místenek ${view.blocked.until ? `do ${esc(czDate(view.blocked.until))}` : "do odvolání"}: ${esc(view.blocked.reason)}</div>` : ""}
     ${limitsHtml(view.limits, { mode: "all", title: "Limity úlovků člena" })}
     <h3>Místenky člena</h3>

@@ -264,10 +264,21 @@ final class Service
         ];
     }
 
-    private function catchesOf(int $ticketId): array
+    // Možné porušení pravidel u úlovku (míra, hájení, povinné vrácení) podle aktuálních pravidel revíru – jen upozornění.
+    private function catchWarning(array $ticket, string $species, float $length): ?string
     {
-        return array_map(fn($c) => ['species' => $c['species'], 'length' => $c['length_cm'], 'weight' => $c['weight_kg'], 'weightEstimated' => (bool) $c['weight_estimated']],
-            Db::all('SELECT species, length_cm, weight_kg, weight_estimated FROM {p}catches WHERE ticket_id = ? ORDER BY id', $ticketId));
+        $rules = $this->revirOf($ticket)['fishRules'] ?? null;
+        if (!$rules || ($rules['sizeRulesEnabled'] ?? true) === false) return null;
+        $known = self::findSpecies($rules, $species);
+        $problem = $known ? self::catchProblem($known, $length, $ticket['fishing_date']) : null;
+        return $problem ? $problem['message'] : null;
+    }
+
+    private function catchesOf(array $ticket): array
+    {
+        return array_map(fn($c) => ['species' => $c['species'], 'length' => $c['length_cm'], 'weight' => $c['weight_kg'], 'weightEstimated' => (bool) $c['weight_estimated'],
+            'warning' => $this->catchWarning($ticket, $c['species'], Js::number($c['length_cm']))],
+            Db::all('SELECT species, length_cm, weight_kg, weight_estimated FROM {p}catches WHERE ticket_id = ? ORDER BY id', $ticket['id']));
     }
 
     private function ownerTicket(array $ticket, bool $withLimits = true): array
@@ -281,7 +292,7 @@ final class Service
             'createdAt' => $ticket['created_at'], 'issuedAt' => $ticket['issued_at'], 'returnedAt' => $ticket['returned_at'], 'noCatch' => (bool) $ticket['no_catch'],
             'returnable' => $this->isReturnable($ticket), 'returnDeadline' => Time::iso(Time::fromMs($w['deadline'])), 'closedAt' => $ticket['closed_at'],
             'seizure' => $ticket['seized_at'] ? ['at' => $ticket['seized_at'], 'reason' => $ticket['seized_reason'], 'place' => $ticket['seized_place'] ?? ''] : null,
-            'catches' => $this->catchesOf($ticket['id']),
+            'catches' => $this->catchesOf($ticket),
             'payment' => $base['status'] === 'pending_payment' ? $this->paymentInfo($ticket) : null,
         ]);
         if ($withLimits && $ticket['status'] !== 'cancelled') $out['limits'] = $this->limitsFor($ticket);
@@ -428,9 +439,9 @@ final class Service
             if ($name === '' || Js::len($name) > 60) throw new ApiError(400, 'invalid_catches', "{$row}: vyplňte druh ryby.");
             if (!array_key_exists('length', $item) || !($length > 0 && $length <= 400)) throw new ApiError(400, 'invalid_catches', "{$row}: vyplňte délku v cm.");
             if ($weight !== null && !($weight > 0 && $weight <= 300)) throw new ApiError(400, 'invalid_catches', "{$row}: neplatná hmotnost.");
+            // Míra, hájení a povinné vrácení odevzdání nebrání – rozhodují pravidla v RIS; možné porušení se jen
+            // vyznačí u úlovku (catches[].warning) rybáři, porybnému i správci.
             $known = self::findSpecies($rules, $name);
-            $problem = $known ? self::catchProblem($known, $length, $ticket['fishing_date']) : null;
-            if ($problem) throw new ApiError(400, $problem['code'], "{$row}: {$problem['message']}");
             $catches[] = ['species' => $known ? $known['name'] : $name, 'length' => $length, 'weight' => $weight, 'weightEstimated' => $weight !== null && ($item['weightEstimated'] ?? null) === true];
         }
         return Db::transaction(function () use ($ticket, $catches, $noCatch) {
@@ -496,7 +507,7 @@ final class Service
     {
         $revir = $this->revirOf($ticket);
         $rules = $revir['fishRules'] ?? null;
-        if (!$rules) return [];
+        if (!$rules || empty($rules['limitsEnabled'])) return [];
         $speciesIdOf = fn($name) => self::findSpecies($rules, $name)['id'] ?? null;
         $own = array_map(fn($c) => $speciesIdOf($c['species']), Db::all('SELECT species FROM {p}catches WHERE ticket_id = ?', (int) $ticket['id']));
         $out = [];
@@ -642,6 +653,55 @@ final class Service
         return ['date' => $date, 'revirId' => $revir['id'], 'limits' => $limits, 'blocked' => $block ? $this->blockShape($block) : null];
     }
 
+    // Osobní statistika rybáře z místenek jeho účtu (vystavené, den lovu už nastal).
+    // Docházka = místenka; úspěšnost = podíl odevzdaných místenek s alespoň jedním úlovkem.
+    public function statsForUser(array $user): array
+    {
+        $tickets = Db::all("SELECT id, fishing_date, revir_id, subdistrict, returned_at FROM {p}tickets WHERE user_id = ? AND status = 'issued' AND fishing_date <= ? ORDER BY fishing_date, id", $user['id'], Time::pragueToday());
+        $round = fn($n) => round($n * 100) / 100;
+        $where = function (array $t) { $revir = $this->revirOf($t); return ['date' => $t['fishing_date'], 'revir' => $revir['name'], 'subdistrict' => Config::subdistrictName($revir, $t['subdistrict'])]; };
+        $out = ['visits' => count($tickets), 'returned' => 0, 'catches' => 0, 'totalWeight' => 0, 'successRate' => null, 'biggest' => null, 'heaviest' => null, 'bestTrip' => null, 'species' => [], 'years' => []];
+        $species = [];
+        $years = [];
+        $successful = 0;
+        foreach ($tickets as $t) {
+            $catches = Db::all('SELECT species, length_cm, weight_kg FROM {p}catches WHERE ticket_id = ? ORDER BY id', $t['id']);
+            $year = substr($t['fishing_date'], 0, 4);
+            $years[$year] = $years[$year] ?? ['year' => $year, 'visits' => 0, 'catches' => 0];
+            $years[$year]['visits']++;
+            $years[$year]['catches'] += count($catches);
+            if ($t['returned_at']) { $out['returned']++; if ($catches) $successful++; }
+            $weight = 0;
+            foreach ($catches as $c) {
+                $length = Js::number($c['length_cm']);
+                $w = $c['weight_kg'] === null ? null : Js::number($c['weight_kg']);
+                $out['catches']++;
+                $weight += $w ?? 0;
+                $item = array_merge(['species' => $c['species'], 'length' => $length, 'weight' => $w], $where($t));
+                $big = $out['biggest'];
+                if (!$big || $length > $big['length'] || ($length == $big['length'] && ($w ?? 0) > ($big['weight'] ?? 0))) $out['biggest'] = $item;
+                if ($w && (!$out['heaviest'] || $w > $out['heaviest']['weight'])) $out['heaviest'] = $item;
+                $s = $species[$c['species']] ?? ['species' => $c['species'], 'count' => 0, 'maxLength' => 0];
+                $s['count']++;
+                $s['maxLength'] = max($s['maxLength'], $length);
+                $species[$c['species']] = $s;
+            }
+            $out['totalWeight'] += $weight;
+            $best = $out['bestTrip'];
+            if ($catches && (!$best || count($catches) > $best['catches'] || (count($catches) === $best['catches'] && $weight > $best['weight']))) {
+                $out['bestTrip'] = array_merge($where($t), ['catches' => count($catches), 'weight' => $round($weight)]);
+            }
+        }
+        $out['totalWeight'] = $round($out['totalWeight']);
+        $out['successRate'] = $out['returned'] ? (int) round($successful / $out['returned'] * 100) : null;
+        $species = array_values($species);
+        usort($species, fn($a, $b) => ($b['count'] <=> $a['count']) ?: ($b['maxLength'] <=> $a['maxLength']));
+        $out['species'] = array_slice($species, 0, 5);
+        krsort($years, SORT_STRING);
+        $out['years'] = array_values($years);
+        return $out;
+    }
+
     // ---------- porybný (B2) ----------
     private function wardenView(array $ticket): array
     {
@@ -655,7 +715,7 @@ final class Service
         $history = array_map(fn($t) => [
             'code' => $t['code'], 'date' => $t['fishing_date'], 'revir' => $this->revirOf($t)['name'], 'status' => $this->stateOf($t), 'current' => $t['id'] === $ticket['id'],
             'inWeek' => $t['fishing_date'] >= $week['from'] && $t['fishing_date'] <= $week['to'], 'inMonth' => $t['fishing_date'] >= $month['from'] && $t['fishing_date'] <= $month['to'],
-            'noCatch' => (bool) $t['no_catch'], 'catches' => $this->catchesOf($t['id']),
+            'noCatch' => (bool) $t['no_catch'], 'catches' => $this->catchesOf($t),
         ], Db::all("SELECT * FROM {p}tickets WHERE member_id = ? AND status = 'issued' AND fishing_date BETWEEN ? AND ? ORDER BY fishing_date, id", $ticket['member_id'], $from, $to));
         $checks = array_map(fn($c) => ['wardenName' => $c['warden_name'], 'at' => $c['at'], 'status' => $c['status']], Db::all('SELECT warden_name, at, status FROM {p}ticket_checks WHERE ticket_id = ? ORDER BY at DESC LIMIT 20', $ticket['id']));
         $seizure = null;
@@ -666,7 +726,7 @@ final class Service
         $block = $this->activeBlock($ticket['member_id']);
         return array_merge($base, [
             'firstName' => $ticket['first_name'], 'lastName' => $ticket['last_name'], 'birthDate' => $ticket['birth_date'], 'memberId' => $ticket['member_id'],
-            'returnedAt' => $ticket['returned_at'], 'noCatch' => (bool) $ticket['no_catch'], 'catches' => $this->catchesOf($ticket['id']),
+            'returnedAt' => $ticket['returned_at'], 'noCatch' => (bool) $ticket['no_catch'], 'catches' => $this->catchesOf($ticket),
             'seizable' => $this->stateOf($ticket) === 'active', 'memberRoles' => $this->memberRolesOf($ticket), 'seizure' => $seizure, 'checks' => $checks,
             'memberHistory' => ['week' => $week, 'month' => $month, 'tickets' => $history],
             'limits' => $this->limitsFor($ticket), 'blocked' => $block ? $this->blockShape($block) : null,
