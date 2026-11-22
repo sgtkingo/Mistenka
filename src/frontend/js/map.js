@@ -83,6 +83,10 @@
   // ---------- Leaflet ----------
   const MAPY_BASES = { outdoor: "Turistická", aerial: "Letecká", basic: "Základní", winter: "Zimní" };
   // Podkladové vrstvy: Mapy.com (s API klíčem, logo a copyright povinné), jinak OpenStreetMap.
+  // Stránky mají Referrer-Policy: no-referrer, ale dlaždice potřebují Referer: OpenStreetMap bez něj vrací
+  // „Access blocked“ a klíč Mapy.com omezený na doménu ho ověřuje. Dlaždicím se proto pošle jen původ webu
+  // (https://domena/, bez cesty a parametrů).
+  const TILE_REFERRER = "strict-origin";
   function baseLayers(mapTiles = {}) {
     const L = window.L;
     if (mapTiles.provider === "mapy" && mapTiles.apiKey) {
@@ -90,10 +94,10 @@
       const retina = window.devicePixelRatio > 1;
       return Object.fromEntries(Object.entries(MAPY_BASES).map(([id, label]) => {
         const size = retina && (id === "outdoor" || id === "basic") ? "256@2x" : "256";
-        return [id, { label, layer: L.tileLayer(`https://api.mapy.com/v1/maptiles/${id}/${size}/{z}/{x}/{y}?apikey=${encodeURIComponent(mapTiles.apiKey)}`, { minZoom: 3, maxZoom: id === "aerial" ? 20 : 19, attribution }) }];
+        return [id, { label, layer: L.tileLayer(`https://api.mapy.com/v1/maptiles/${id}/${size}/{z}/{x}/{y}?apikey=${encodeURIComponent(mapTiles.apiKey)}`, { minZoom: 3, maxZoom: id === "aerial" ? 20 : 19, attribution, referrerPolicy: TILE_REFERRER }) }];
       }));
     }
-    return { osm: { label: "OpenStreetMap", layer: L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { minZoom: 3, maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>' }) } };
+    return { osm: { label: "OpenStreetMap", layer: L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { minZoom: 3, maxZoom: 19, referrerPolicy: TILE_REFERRER, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>' }) } };
   }
   // Mapa s podkladem, přepínačem podkladu (switcher) a (u Mapy.com) povinným logem.
   function createMap(element, mapTiles, { base = "outdoor", switcher = true, ...options } = {}) {
