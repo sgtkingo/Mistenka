@@ -425,8 +425,8 @@ th .info-tip::after{bottom:auto;top:calc(100% + 8px);left:auto;right:-6px;transf
 /* GPS a místo lovu */
 .gps-line{display:block}
 .gps-closed{color:#c8302a;font-weight:600}
-.summary-place{background:#eef6fe;border-left:3px solid var(--blue);border-radius:6px;padding-left:10px!important;padding-right:10px!important}
-.summary-place dd{font-weight:700;color:#005bab}
+/* místo lovu v rekapitulaci: jen zelená ikona prutu s plovákem před podrevírem (nebo revírem) */
+.summary-place dd>span:first-child::before{content:"";display:inline-block;width:18px;height:18px;margin-right:6px;vertical-align:-3px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2315803d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 21 16 3'/%3E%3Cpath d='M16 3c2 3 3 6 3 9'/%3E%3Cellipse cx='19' cy='15' rx='2' ry='3'/%3E%3Cpath d='M11 21c1.3-1 2.7-1 4 0s2.7 1 4 0'/%3E%3C/svg%3E") no-repeat center/contain}
 .place-gps{display:block;font-size:12.5px;font-weight:500;color:var(--muted)}
 .place-gps:empty{display:none}
 .place-gps a{color:var(--blue)}
