@@ -63,6 +63,7 @@ final class Admin
                 $fio = $app && $app->config['payment']['provider'] === 'fio';
                 // Falešná banka mimo vývojový režim = kdokoli může „zaplatit“ místenku přes /dev/payments.
                 echo self::row('Platby', $app ? esc_html($fio ? 'Fio API' . (Env::fioToken() ? '' : ' – chybí MISTENKA_FIO_TOKEN') : 'falešná banka – jen pro vývoj, platby jde simulovat!') : '—', $app ? ($fio ? Env::fioToken() !== '' : Env::dev()) : null);
+                echo self::row('Podklad mapy revíru', Env::mapyApiKey() !== '' ? 'Mapy.com (MISTENKA_MAPY_API_KEY)' : 'OpenStreetMap – pro Mapy.com doplňte konstantu <code>MISTENKA_MAPY_API_KEY</code> ve wp-config.php', Env::mapyApiKey() !== '' ? true : null);
                 echo self::row('Klíč pro cron', Env::cronKey() !== '' ? 'nastaven' : 'chybí konstanta <code>MISTENKA_CRON_KEY</code> ve wp-config.php', Env::cronKey() !== '');
                 $missing = Mailer::missing();
                 echo self::row('Odesílání e-mailů', esc_html((Env::mailTransport() === 'file' ? 'jen do datové složky (MISTENKA_MAIL_TRANSPORT = file)' : 'vlastní SMTP klient přes účty z portálu (Admin → Emailoví klienti)') . ($missing ? ' – nenastaveno: chybí odesílatelé nebo příjemci upozornění' : ' – nastaveno')), !$missing);

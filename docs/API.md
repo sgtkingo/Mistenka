@@ -44,7 +44,7 @@ Překročení → `429 rate_limited`. Ve vývojovém režimu lze limity vypnout 
 
 ## Konfigurace MO a revírů
 
-Všechno, co se liší mezi organizacemi a revíry, je v konfiguraci (Node: `config/organization.json`, jiný soubor přes `MISTENKA_CONFIG`; WordPress: nastavení pluginu). Jedna instalace = jedna MO s jedním nebo více revíry. Struktura viz `config/organization.json`; klíčové položky revíru:
+Všechno, co se liší mezi organizacemi a revíry, je v konfiguraci (Node: `config/organization.json`, jiný soubor přes `MISTENKA_CONFIG`; WordPress: nastavení pluginu). Jedna instalace = jedna MO s jedním nebo více revíry. Struktura je **organizace → revír → mapa**: `reviry` je seznam odkazů na soubory revírů (`"reviry/<id>.json"`) nebo přímo objektů revíru, revír může odkazovat na mapu (`"map": "maps/<id>.json"`; bez odkazu se použije `maps/<id>.json`, pokud existuje). Odkazy jsou relativní ke složce `organization.json`. Vzor celé struktury je v `config/example/`; klíčové položky revíru:
 
 | Položka | Význam |
 | --- | --- |
@@ -126,6 +126,22 @@ Není součástí API. Frontend ji načítá přímo z [Open-Meteo](https://open
 
 ### `GET /config`
 Veřejná konfigurace: `organization` (`name`, `shortName`, `web`, `privacyUrl`, `contact`), `payment` (`mode`: `fake` | `fio`, `reservationMinutes`), `reviry[]` (včetně `species`), `today` (Praha), `now`, `devMode`, `service: { launched, seasonOpen }` (viz Spuštění služby; `seasonOpen` = dnes je otevřená některá sezona). Nikdy neobsahuje číslo účtu, IBAN ani tokeny.
+
+Revír má v `GET /config` navíc `map: { features, preview } | null` – počet zakreslených prvků mapy a otisk náhledu (`null` bez náhledu); konfigurace má `mapTiles: { provider: "mapy", apiKey } | { provider: "osm" }` (podklad interaktivní mapy, klíč Mapy.com z `MISTENKA_MAPY_API_KEY`).
+
+### `GET /maps/{revirId}`
+Mapa revíru pro interaktivní mapu: `{ revirId, map, preview }`. `map` je GeoJSON `FeatureCollection` (souřadnice `[lon, lat]`) bez náhledu, nebo `null` (mapa není zakreslena); `view: { center: [lat, lon], zoom, base }` je volitelný výchozí pohled. `preview` je otisk náhledu PNG, nebo `null`. Neznámý revír `404 unknown_revir`.
+
+| Druh (`properties.kind`) | Geometrie | Význam |
+| --- | --- | --- |
+| `revir`, `subdistrict`, `restricted` | `Polygon` | hranice revíru, podrevír (`number`, `name`), zákaz lovu |
+| `path`, `restricted` | `LineString` | cesta, úsek se zákazem lovu |
+| `parking`, `wc`, `entrance`, `info`, `danger`, `other` | `Point` | parkoviště, WC, vstup k vodě, informace, pozor, jiné místo |
+
+Vlastnosti prvku: `kind` (povinné), `name` (do 80 znaků), `note` (do 300), `number` (podrevír). Nejvýš 300 prvků a 10 000 bodů, plochy uzavřené.
+
+### `GET /maps/{revirId}/preview.png`
+Schematický náhled mapy (PNG, kreslený jen ze zakreslených dat, bez podkladu mapy) pro e-mail a kartu na úvodu; adresa obsahuje `?v=<otisk>`, odpověď se smí cachovat. Bez náhledu `404 not_found`. E-mail `ticket_issued` u revíru se zakreslenou mapou obsahuje náhled a odkaz na `map.html?revir=<id>`; PDF místenky má mapu jako druhou stránku.
 
 ### `GET /reviry/{id}/availability`
 `{ revirId, today, days: [{ date, capacity, taken, available, subdistricts: [{ number, name, priceCzk, capacity, taken, available }], closed, closedReason, closedCode }] }` pro dnešek až `bookingDaysAhead`. U revíru s podrevíry v prodeji jsou místa po podrevírech a `capacity` / `taken` / `available` dne jsou jejich součty; jinak je `subdistricts` prázdné. Uzavřený den (mimo sezonu nebo mimořádně uzavřený, viz Provoz) má `closed: true`, `available: 0`, důvod a kód (`out_of_season` | `revir_closed`); otevřený den má `closedReason` i `closedCode` `null`. Když jsou všechny dny `out_of_season`, úvodní stránka ukáže „sezona je uzavřená“. Neznámý revír → `404 unknown_revir`.
@@ -404,20 +420,22 @@ Konfigurace = soubor (`config/organization.json` + pravidla druhů, ve WordPress
 | `payment` | `{ accountNumber, bankCode, recipientName, reservationMinutes, messagePrefix }` – po změně dostanou všichni admini e-mail `payment_settings_changed`; v portálu **Admin → Bankovní spojení** (podsekce Platební brána je zatím jen připravená, nepodporováno) | **jen admin** |
 | `revir:<id>` | revír bez `id` a odvozených `fishRules` (cena, kapacita, podrevíry, doba lovu, texty, pravidla, `speciesOverrides`, …) | správce, admin |
 | `species:<odkaz>` | dokument pravidel druhů (druhy, míry, hájení, `dailyLimits`, `periodLimits`) | správce, admin |
+| `map:<id revíru>` | mapa revíru: GeoJSON `FeatureCollection` + `view` + `preview` (data URL PNG do 1,5 MB, kreslí ji editor v portálu – Revíry → Mapy revírů); výchozí hodnoty ze souboru mapy revíru | správce, admin |
 
 | Endpoint 🛠 | Tělo | Odpověď / chyby |
 | --- | --- | --- |
-| `GET /manage/settings` | – | `{ organization: { data, version, source: "file" \| "database", updatedAt, updatedBy }, payment: { data, iban, provider, … }, reviry: [{ id, data, … }], species: [{ ref, data, … }], canEditPayment }` |
+| `GET /manage/settings` | – | `{ organization: { data, version, source: "file" \| "database", updatedAt, updatedBy }, payment: { data, iban, provider, … }, reviry: [{ id, data, … }], species: [{ ref, data, … }], maps: [{ revirId, data (bez náhledu), preview, hasFile, … }], canEditPayment }` |
 | `PUT /manage/settings/organization` | `{ data, note? }` | `{ scope, version, settings }`; `400 invalid_settings` (zpráva říká co je špatně) |
 | `PUT /manage/settings/payment` | `{ data, note? }` | totéž; `403 forbidden_role` pro správce |
 | `POST /manage/settings/reviry` | `{ id, data, note? }` | `201`; nový revír (id `a-z0-9-`, nelze změnit); `409 revir_exists` |
 | `PUT /manage/settings/reviry/{id}` | `{ data, note? }` | `200`; `404` |
 | `PUT /manage/settings/species` | `{ ref, data, note? }` | `200`; `404` |
+| `PUT /manage/settings/maps/{revirId}` | `{ data, note? }` (do 3 MB) | `200`; `404` neznámý revír; `400 invalid_settings` (neplatný GeoJSON, druh, souřadnice, náhled) |
 | `GET /manage/settings/history?scope=` | – | `{ scope, versions: [{ version, note, createdAt, createdBy }], hasFile }` |
 | `GET /manage/settings/versions/{id}` | – | `{ scope, version, data, createdAt }` |
 | `POST /manage/settings/versions/{id}/restore` | – | jako uložení |
 | `POST /manage/settings/reset` | `{ scope }` | výchozí hodnoty ze souboru jako nová verze |
-| `GET /manage/settings/export` (jen admin) | – | `{ organization, species, exportedAt }` – platná konfigurace ve tvaru souborů (záloha, převod do WordPressu) |
+| `GET /manage/settings/export` (jen admin) | – | `{ organization, species, maps, exportedAt }` – platná konfigurace ve tvaru souborů (záloha, převod do WordPressu) |
 
 Odevzdaná místenka si ukládá verzi pravidel, podle které byla zkontrolována (`rulesVersion`, např. `crs-smas-mp-2026-2027@v12` nebo `…@soubor`; vidí ji správce v detailu místenky). Cena se ukládá k objednávce, změna ceny platí jen pro nové objednávky.
 

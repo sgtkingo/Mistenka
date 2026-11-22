@@ -1,0 +1,220 @@
+{
+  "type": "FeatureCollection",
+  "view": {
+    "center": [
+      49.9,
+      18.5004
+    ],
+    "zoom": 16,
+    "base": "outdoor"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "kind": "revir",
+        "name": "Příkladová nádrž 1"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              18.4958,
+              49.8984
+            ],
+            [
+              18.5046,
+              49.8982
+            ],
+            [
+              18.505,
+              49.9014
+            ],
+            [
+              18.496,
+              49.9017
+            ],
+            [
+              18.4958,
+              49.8984
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "kind": "subdistrict",
+        "number": 1,
+        "name": "Horní nádrž"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              18.4964,
+              49.8989
+            ],
+            [
+              18.4996,
+              49.8988
+            ],
+            [
+              18.4997,
+              49.901
+            ],
+            [
+              18.4966,
+              49.9012
+            ],
+            [
+              18.4964,
+              49.8989
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "kind": "subdistrict",
+        "number": 2,
+        "name": "Dolní nádrž"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              18.5005,
+              49.8988
+            ],
+            [
+              18.5041,
+              49.8987
+            ],
+            [
+              18.5044,
+              49.9009
+            ],
+            [
+              18.5006,
+              49.901
+            ],
+            [
+              18.5005,
+              49.8988
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "kind": "restricted",
+        "name": "Hráz",
+        "note": "Z hráze mezi nádržemi je lov zakázán."
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            18.5001,
+            49.8987
+          ],
+          [
+            18.5001,
+            49.9011
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "kind": "path",
+        "name": "Přístupová cesta"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            18.4942,
+            49.8974
+          ],
+          [
+            18.4953,
+            49.8981
+          ],
+          [
+            18.4963,
+            49.8986
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "kind": "parking",
+        "name": "Parkoviště",
+        "note": "Vozidla nechávejte jen zde."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          18.4942,
+          49.8974
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "kind": "wc",
+        "name": "WC"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          18.495,
+          49.8978
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "kind": "entrance",
+        "name": "Vstup k vodě"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          18.4964,
+          49.8986
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "kind": "info",
+        "name": "Informační tabule",
+        "note": "Aktuální upozornění výboru MO."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          18.496,
+          49.899
+        ]
+      }
+    }
+  ]
+}

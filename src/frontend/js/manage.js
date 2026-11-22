@@ -24,6 +24,7 @@ qsa(".manage-nav-item").forEach((item) => item.addEventListener("click", () => {
   if (section === "settings") window.MistenkaSettings.load(decodeURIComponent(location.hash.split("/")[1] || ""), "settings");
   if (section === "species") window.MistenkaSettings.load("species", "species");
   if (section === "bank") window.MistenkaSettings.load(decodeURIComponent(location.hash.split("/")[1] || ""), "bank");
+  if (section === "maps") window.MistenkaMapEditor.load(decodeURIComponent(location.hash.split("/")[1] || ""));
   if (section === "reviry") window.MistenkaSettings.load(decodeURIComponent(location.hash.split("/")[1] || ""), "reviry");
   if (section === "payments") loadPayments();
   if (section === "vouchers") loadVouchers();

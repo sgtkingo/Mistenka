@@ -4,14 +4,15 @@
   python scripts/build-plugin.py --node                                      dist/mistenka-node.zip (Node verze)
   python scripts/build-plugin.py --release                                   obecné balíčky pro GitHub release
 
-Konfigurace MO (config/organization.json) je jen lokální – není v repu. Výchozí build ji zabalí
-(balíček pro vlastní MO); --example a --release použijí vzor config/organization.json.example
+Konfigurace MO (config/organization.json → revíry → mapy revírů) je jen lokální – není v repu. Výchozí build
+ji zabalí (balíček pro vlastní MO); --example a --release použijí vzor config/example/organization.json
 (obecný balíček pro libovolnou MO, údaje se doplní v portálu nebo v konfiguraci).
 
 Výchozí plugin je `mistenka`. Do archivu se kromě PHP převezme:
   - frontend (src/frontend → mistenka/frontend), js/env.js s prefixem API WordPressu,
-  - výchozí konfigurace MO (config → mistenka/config); ZIP je produkční balíček, proto má
-    organization.json vždy payment.provider = "fio" (repo nechává "fake" pro lokální Node;
+  - výchozí konfigurace MO v jednotném tvaru: config/organization.json, config/reviry/<id>.json,
+    config/maps/<id>.json a config/species/<soubor> (odkazy se přepíšou na tyto cesty). ZIP je produkční
+    balíček, proto má organization.json vždy payment.provider = "fio" (repo nechává "fake" pro lokální Node;
     falešnou banku, kde může platbu „zaplatit“ kdokoli, do ZIPu dá jen --fake-bank),
   - LICENSE.md a ochranné .htaccess (config a includes nejsou z webu dostupné).
 
@@ -69,7 +70,7 @@ def version(plugin_file):
 
 
 ORG_LOCAL = os.path.join(ROOT, "config", "organization.json")
-ORG_EXAMPLE = ORG_LOCAL + ".example"
+ORG_EXAMPLE = os.path.join(ROOT, "config", "example", "organization.json")
 
 
 def build_wp(fake_bank, listing=True, example=False):
@@ -78,8 +79,8 @@ def build_wp(fake_bank, listing=True, example=False):
         sys.exit(f"Plugin nenalezen: {src}")
     org_file = ORG_EXAMPLE if example else ORG_LOCAL
     if not os.path.exists(org_file):
-        sys.exit("Chybí config/organization.json (konfigurace MO je jen lokální). Zkopírujte config/organization.json.example "
-                 "a upravte, nebo sestavte obecný balíček se vzorem: --example")
+        sys.exit("Chybí config/organization.json (konfigurace MO je jen lokální). Zkopírujte vzor z config/example "
+                 "(organization.json, reviry/, maps/) a upravte, nebo sestavte obecný balíček se vzorem: --example")
     # Testovací balíček s falešnou bankou má jiný název souboru, aby se nezaměnil s produkčním.
     out = os.path.join(out_dir, f"{name}-fake-bank.zip" if fake_bank else f"{name}.zip")
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
@@ -93,7 +94,7 @@ def build_wp(fake_bank, listing=True, example=False):
         print(f"OK {out} · verze {version(plugin_file) if os.path.exists(plugin_file) else '?'} · {len(names)} souborů")
         if name == "mistenka":
             print(f"  platby: {'fake (POZOR: jen pro test, platby jde simulovat)' if fake_bank else 'fio (nutný MISTENKA_FIO_TOKEN ve wp-config.php)'}")
-            print(f"  konfigurace: {'vzor organization.json.example (obecný balíček)' if example else 'lokální organization.json'}")
+            print(f"  konfigurace: {'vzor config/example (obecný balíček)' if example else 'lokální config/organization.json'}")
         if listing:
             for n in names:
                 print("  " + n)
@@ -114,6 +115,61 @@ def build_node():
         print("  spuštění: rozbalit, npm run seed && npm start (Node >= 22.13, bez závislostí)")
 
 
+def bundle_config(z, org_file, fake_bank):
+    """Konfigurace MO do ZIPu v jednotném tvaru (organizace → revíry → mapy, pravidla druhů ryb).
+    Odkazy ve zdroji jsou relativní ke složce organization.json; revír může být i přímo objekt v seznamu
+    a mapa bez odkazu se hledá v maps/<id>.json (stejně jako při načítání v Node/PHP)."""
+    base = os.path.dirname(org_file)
+    dump = lambda data: json.dumps(data, ensure_ascii=False, indent=2) + chr(10)
+
+    def read(rel, what):
+        path = os.path.normpath(os.path.join(base, rel))
+        try:
+            with open(path, encoding="utf8") as fh:
+                return json.load(fh)
+        except (OSError, ValueError) as error:
+            sys.exit(f"Nelze načíst {what} ({path}): {error}")
+
+    species_written = {}
+
+    def species_ref(ref):
+        target = "species/" + os.path.basename(ref)
+        source = os.path.normpath(os.path.join(base, ref))
+        if species_written.get(target, source) != source:
+            sys.exit(f"Dvě různá pravidla druhů se stejným názvem souboru: {target}")
+        if target not in species_written:
+            if not os.path.exists(source):
+                sys.exit(f"Chybí pravidla druhů ryb: {source}")
+            z.write(source, f"{name}/config/{target}")
+            species_written[target] = source
+        return target
+
+    with open(org_file, encoding="utf8") as fh:
+        org = json.load(fh)
+    if org.get("speciesRules"):
+        org["speciesRules"] = species_ref(org["speciesRules"])
+    entries = []
+    for entry in org.get("reviry", []):
+        revir = read(entry, f"revír {entry}") if isinstance(entry, str) else dict(entry)
+        rid = revir.get("id")
+        if not rid:
+            sys.exit(f"Revír bez id v konfiguraci: {entry}")
+        map_ref = revir.pop("map", None)
+        if map_ref is None and os.path.exists(os.path.join(base, "maps", f"{rid}.json")):
+            map_ref = f"maps/{rid}.json"
+        if map_ref:
+            map_doc = map_ref if isinstance(map_ref, dict) else read(map_ref, f"mapa revíru {rid}")
+            z.writestr(f"{name}/config/maps/{rid}.json", dump(map_doc))
+            revir["map"] = f"maps/{rid}.json"
+        if revir.get("speciesRules"):
+            revir["speciesRules"] = species_ref(revir["speciesRules"])
+        z.writestr(f"{name}/config/reviry/{rid}.json", dump(revir))
+        entries.append(f"reviry/{rid}.json")
+    org["reviry"] = entries
+    org["payment"]["provider"] = "fake" if fake_bank else "fio"
+    z.writestr(f"{name}/config/organization.json", dump(org))
+
+
 def write_wp(z, src, fake_bank, org_file):
     for path, rel in walk(src):
         z.write(path, f"{name}/{rel}")
@@ -124,14 +180,7 @@ def write_wp(z, src, fake_bank, org_file):
             else:
                 z.write(path, f"{name}/frontend/{rel}")
         z.writestr(f"{name}/frontend/.htaccess", FRONTEND_HTACCESS)
-        for path, rel in walk(os.path.join(ROOT, "config")):
-            if rel in ("organization.json", "organization.json.example"):
-                continue  # konfigurace MO se zapíše zvlášť (lokální, nebo vzor)
-            z.write(path, f"{name}/config/{rel}")
-        with open(org_file, encoding="utf8") as fh:
-            org = json.load(fh)
-        org["payment"]["provider"] = "fake" if fake_bank else "fio"
-        z.writestr(f"{name}/config/organization.json", json.dumps(org, ensure_ascii=False, indent=2) + chr(10))
+        bundle_config(z, org_file, fake_bank)
         z.writestr(f"{name}/config/.htaccess", DENY)
         z.writestr(f"{name}/includes/.htaccess", DENY)
         z.write(os.path.join(ROOT, "LICENSE.md"), f"{name}/LICENSE.md")

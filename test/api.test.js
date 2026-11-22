@@ -1216,6 +1216,91 @@ test("nastavení organizace a pravidel ryb; verze pravidel se uloží k odevzdan
   assert.equal((await call("GET", "/config")).data.reviry[0].fishRules.species.find((s) => s.id === "lin-obecny").minLength, 25);
 });
 
+// ---------- mapy revírů ----------
+const PNG_1PX = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+const square = (lon, lat, d = 0.001) => [[[lon, lat], [lon + d, lat], [lon + d, lat + d], [lon, lat + d], [lon, lat]]];
+test("mapy revírů: mapa ze souboru, uložení s náhledem, kontrola, veřejné API a e-mail s mapou", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  // Revír B je ve vlastním souboru (reviry/revir-b.json), mapa revíru A v maps/revir-a.json.
+  const cfg = (await call("GET", "/config")).data;
+  assert.deepEqual(cfg.reviry.map((r) => r.id), ["revir-a", "revir-b"]);
+  assert.equal(cfg.reviry[1].name, "Malý revír B", "revír ze samostatného souboru");
+  assert.deepEqual(cfg.reviry[0].map, { features: 7, preview: null });
+  assert.equal(cfg.reviry[1].map, null);
+  assert.equal(cfg.mapTiles.provider, "osm", "bez klíče Mapy.com podklad OpenStreetMap");
+  const fileMap = (await call("GET", "/maps/revir-a")).data;
+  assert.equal(fileMap.map.features.length, 7);
+  assert.equal(fileMap.map.view.zoom, 16);
+  assert.equal(fileMap.preview, null);
+  assert.equal((await call("GET", "/maps/revir-b")).data.map, null);
+  assert.equal((await call("GET", "/maps/neexistuje")).status, 404);
+  assert.equal((await fetch(url("/maps/revir-a/preview.png"))).status, 404, "mapa ze souboru bez náhledu");
+
+  // Uložení mapy revíru B ve správě (GeoJSON + náhled PNG), nejdřív kontroly.
+  const manager = await managerAccount();
+  const member = await verifiedAccount();
+  const doc = { type: "FeatureCollection", view: { center: [49.91, 18.55], zoom: 15, base: "aerial" }, preview: PNG_1PX, features: [
+    { type: "Feature", properties: { kind: "revir", name: "Revír B" }, geometry: { type: "Polygon", coordinates: square(18.55, 49.91, 0.004) } },
+    { type: "Feature", properties: { kind: "subdistrict", number: 1, name: "Petr 1" }, geometry: { type: "Polygon", coordinates: square(18.551, 49.911) } },
+    { type: "Feature", properties: { kind: "parking", name: "Parkoviště", note: "U hráze" }, geometry: { type: "Point", coordinates: [18.549, 49.909] } }
+  ] };
+  const put = (data, session = manager.session, revirId = "revir-b") => call("PUT", `/manage/settings/maps/${revirId}`, { body: { data, note: "Mapa revíru" }, session });
+  assert.equal((await put(doc, member.session)).status, 403, "mapy upravuje jen správa");
+  assert.equal((await put(doc, manager.session, "neexistuje")).status, 404);
+  const bad = async (patch, why) => assert.equal((await put({ ...doc, ...patch })).data.code, "invalid_settings", why);
+  await bad({ type: "Feature" }, "musí být FeatureCollection");
+  await bad({ features: [{ ...doc.features[2], properties: { kind: "hrad" } }] }, "neznámý druh bodu");
+  await bad({ features: [{ ...doc.features[0], properties: { kind: "parking" } }] }, "plocha nemůže být parkoviště");
+  await bad({ features: [{ ...doc.features[0], geometry: { type: "Polygon", coordinates: [[[18.55, 49.91], [18.56, 49.91], [18.56, 49.92], [18.551, 49.92]]] } }] }, "neuzavřená plocha");
+  await bad({ features: [{ ...doc.features[2], geometry: { type: "Point", coordinates: [200, 49.9] } }] }, "souřadnice mimo rozsah");
+  await bad({ preview: "data:image/jpeg;base64,AAAA" }, "náhled jen PNG");
+  await bad({ view: { center: [49.91, 18.55], zoom: 40 } }, "neplatné přiblížení");
+  const saved = await put(doc);
+  assert.equal(saved.status, 200, JSON.stringify(saved.data));
+  const viewMap = saved.data.settings.maps.find((m) => m.revirId === "revir-b");
+  assert.equal(viewMap.data.features.length, 3);
+  assert.ok(!("preview" in viewMap.data), "nastavení vrací mapu bez náhledu");
+  assert.match(viewMap.preview, /^[0-9a-f]{12}$/);
+  assert.equal(viewMap.hasFile, false);
+
+  // Veřejné API: mapa bez náhledu + otisk, náhled jako obrázek PNG.
+  const pub = (await call("GET", "/maps/revir-b")).data;
+  assert.equal(pub.map.features.length, 3);
+  assert.ok(!("preview" in pub.map));
+  assert.equal(pub.preview, viewMap.preview);
+  assert.equal((await call("GET", "/config")).data.reviry[1].map.preview, viewMap.preview);
+  const png = await fetch(url("/maps/revir-b/preview.png"));
+  assert.equal(png.status, 200);
+  assert.equal(png.headers.get("content-type"), "image/png");
+  const bytes = new Uint8Array(await png.arrayBuffer());
+  assert.deepEqual([...bytes.slice(1, 4)].map((b) => String.fromCharCode(b)).join(""), "PNG");
+
+  // Místenka na revír s mapou (revír A, mapa s náhledem): e-mail obsahuje odkaz na interaktivní mapu a náhled.
+  const withPreview = await put({ ...fileMap.map, preview: PNG_1PX }, manager.session, "revir-a");
+  assert.equal(withPreview.status, 200, JSON.stringify(withPreview.data));
+  const hashA = withPreview.data.settings.maps.find((m) => m.revirId === "revir-a").preview;
+  const email = "mapa-revir-a@example.cz";
+  await paidTicket({ date: "2026-06-11", email });
+  const mail = await lastEmail(email, "ticket_issued");
+  assert.ok(mail, "e-mail s místenkou");
+  assert.match(mail.html, /map\.html\?revir=revir-a/);
+  assert.match(mail.html, new RegExp(`maps/revir-a/preview\\.png(\\?|&amp;)v=${hashA}`)); // ve WordPressu &amp; (prefix /?rest_route=)
+  assert.match(mail.text, /map\.html\?revir=revir-a/);
+
+  // Historie a obnovení: mapa A má výchozí hodnoty v souboru, mapa B ne.
+  const history = (await call("GET", "/manage/settings/history?scope=map:revir-b", { session: manager.session })).data;
+  assert.ok(history.versions.length >= 1);
+  assert.equal(history.hasFile, false);
+  assert.equal((await call("GET", "/manage/settings/history?scope=map:revir-a", { session: manager.session })).data.hasFile, true);
+  assert.equal((await call("POST", "/manage/settings/reset", { body: { scope: "map:revir-a" }, session: manager.session })).status, 200);
+  const resetA = (await call("GET", "/maps/revir-a")).data;
+  assert.equal(resetA.map.features.length, 7, "obnoveno ze souboru");
+  assert.equal(resetA.preview, null);
+  // Smazání mapy B = prázdná mapa; e-mail už mapu nepřikládá.
+  assert.equal((await put({ type: "FeatureCollection", features: [] })).status, 200);
+  assert.deepEqual((await call("GET", "/config")).data.reviry[1].map, { features: 0, preview: null });
+});
+
 test("platební údaje mění jen admin; změnu dostanou e-mailem všichni admini; nový revír", async () => {
   await setClock("2026-06-10T08:00:00Z");
   const manager = await managerAccount();

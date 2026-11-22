@@ -39,7 +39,9 @@
         // Položky jsou text (escapuje se), jen odkaz na kartu revíru v RIS je hotové HTML ({ html }).
         const risLink = revir.cardUrl ? { html: `<a href="${esc(revir.cardUrl)}" target="_blank" rel="noreferrer">Karta revíru <span aria-hidden="true">↗</span></a>` } : null;
         const risText = "Revír se vždy řídí přednostně informacemi v RIS (Rybářský informační systém ČRS).";
-        const sections = [{ title: "Informace v RIS", items: [risText, risLink].filter(Boolean) }, ...(revir.rules || [])];
+        // Interaktivní mapa revíru (hranice, podrevíry, parkování, WC) – když je zakreslená, nebo má revír GPS.
+        const mapLink = revir.map?.features || revir.gps ? { html: `<a href="map.html?revir=${encodeURIComponent(revir.id)}">Interaktivní mapa revíru <span aria-hidden="true">→</span></a>${revir.map?.features ? " – hranice revíru a podrevírů, parkování, WC a další místa" : ""}` } : null;
+        const sections = [{ title: "Informace v RIS", items: [risText, risLink, mapLink].filter(Boolean) }, ...(revir.rules || [])];
         const hours = revir.fishingHours?.length
           ? revir.fishingHours.map((h) => `${h.label || h.months.join(", ")}: ${h.from}–${h.to}`)
           : ["Doba lovu není v Místence nastavena – platí údaje v RIS.", risLink].filter(Boolean);

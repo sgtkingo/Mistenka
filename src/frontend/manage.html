@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>Místenka · Správa</title>
+  <link rel="stylesheet" href="leaflet.css">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body class="manage-body">
@@ -29,6 +30,7 @@
         <button class="manage-nav-item" type="button" data-section="limits">Limity a blokace</button>
         <span class="manage-nav-group">Revíry</span>
         <button class="manage-nav-item" type="button" data-section="reviry">Revíry</button>
+        <button class="manage-nav-item" type="button" data-section="maps">Mapy revírů</button>
         <button class="manage-nav-item" type="button" data-section="pricing">Ceny a místa</button>
         <button class="manage-nav-item" type="button" data-section="seasons">Sezona a uzavření</button>
         <button class="manage-nav-item" type="button" data-section="announcements">Vývěska</button>
@@ -196,6 +198,13 @@
         </form>
       </section>
 
+      <section class="panel-card manage-section hidden" id="section-maps">
+        <div class="panel-heading"><div><span class="section-kicker">Revíry</span><h1>Mapy revírů</h1></div></div>
+        <p class="panel-intro">Zakreslete hranice revíru a podrevírů, úseky se zákazem lovu, cesty a důležitá místa (parkoviště, WC, vstup k vodě …). Rybáři mapu uvidí na webu (Interaktivní mapa), k místence v e-mailu a PDF se přiloží jako schéma s odkazem. Každé uložení vytvoří novou verzi.</p>
+        <div class="tabs settings-tabs" id="mapTabs" role="tablist"></div>
+        <div id="mapEditor"><p class="muted">Načítám…</p></div>
+      </section>
+
       <section class="panel-card manage-section hidden" id="section-reviry">
         <div class="panel-heading"><div><span class="section-kicker">Organizace</span><h1>Revíry</h1></div></div>
         <p class="panel-intro">Údaje revírů: název, podrevíry, doba lovu, texty a pravidla (ceny a místa mají vlastní sekci). Každé uložení vytvoří novou verzi s vaším jménem; starší verzi lze obnovit.</p>
@@ -266,5 +275,8 @@
   <script src="js/charts.js"></script>
   <script src="js/manage-settings.js"></script>
   <script src="js/manage-reports.js"></script>
+  <script src="vendor/leaflet.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/manage-maps.js"></script>
 </body>
 </html>

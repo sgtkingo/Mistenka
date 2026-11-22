@@ -9,8 +9,10 @@ Webová aplikace pro online prodej, kontrolu a odevzdání rybářských místen
 | `src/frontend/` | uživatelské rozhraní (HTML, JS, CSS) – **jediná kopie**, sdílená oběma servery |
 | `src/node/` | Node.js server se SQLite pro lokální vývoj |
 | `src/wordpress-plugin/` | PHP plugin pro WordPress – produkční nasazení ([návod](src/wordpress-plugin/README.md)) |
-| `config/organization.json` | konfigurace vaší MO: kontakty, účet, revíry (cena, kapacita, pravidla) – **jen lokálně, není v repu** (`.gitignore`) |
-| `config/organization.json.example` | vzor konfigurace pro novou MO (všechny klíče, revír se dvěma podrevíry s vlastní cenou a kapacitou); bez `organization.json` ho Node verze použije sama |
+| `config/organization.json` | konfigurace vaší MO: kontakty, účet, odkazy na revíry – **jen lokálně, není v repu** (`.gitignore`) |
+| `config/reviry/<id>.json` | revír (cena, kapacita, podrevíry, pravidla, odkaz na mapu) – jen lokálně |
+| `config/maps/<id>.json` | mapa revíru (GeoJSON se zakreslenými plochami a místy, z editoru map v portálu – Exportovat JSON) – jen lokálně |
+| `config/example/` | vzor celé konfigurace pro novou MO (organizace, revír se dvěma podrevíry a ukázková mapa); bez `organization.json` ho Node verze použije sama |
 | `config/species/` | pravidla druhů ryb organizace: seznam druhů, lovné míry, hájení, denní limity |
 | `test/` | sdílené testy API pro Node i PHP |
 | `dev/wordpress/` | Docker: WordPress 7.1.4 + PHP 8.3 pro vývoj a testy pluginu |
@@ -49,7 +51,7 @@ npm run user -- roles vas@email.cz admin  # ruční přidělení role
 
 ## Nastavení v portálu
 
-Organizaci, revíry (cena, kapacita, podrevíry, doba lovu, pravidla), ryby a limity mění správce v manažerském portálu (Nastavení), platební údaje jen admin. Změny se ukládají jako verze do databáze a mají přednost před konfiguračním souborem, který zůstává výchozími hodnotami. Admin si může platnou konfiguraci stáhnout (export JSON).
+Organizaci, revíry (cena, kapacita, podrevíry, doba lovu, pravidla), mapy revírů, ryby a limity mění správce v manažerském portálu, platební údaje jen admin. Změny se ukládají jako verze do databáze a mají přednost před konfiguračním souborem, který zůstává výchozími hodnotami. Admin si může platnou konfiguraci stáhnout (export JSON).
 
 ## Zálohy
 
@@ -65,12 +67,21 @@ Scénář pro vyzkoušení celé aplikace: [docs/TEST_NODE.md](docs/TEST_NODE.md
 
 ## Jiná MO nebo jiný revír
 
-1. Zkopírujte `config/organization.json.example` jako `config/organization.json` a upravte `organization`, `payment` a seznam `reviry`. E-maily se nenastavují v souboru, ale v portálu (Emailoví klienti).
-   Pravidla druhů ryb: odkaz `speciesRules` na soubor v `config/species/` (míry a hájení podle BPVRP svazu); zpřísnění pro jednotlivý revír přes `speciesOverrides`.
+1. Zkopírujte vzor `config/example/` do `config/` (`organization.json`, `reviry/`, `maps/`) a upravte `organization`, `payment` a revíry. E-maily se nenastavují v souboru, ale v portálu (Emailoví klienti).
+   - Struktura je organizace → revír → mapa: `organization.json` má `"reviry": ["reviry/<id>.json", …]` (revír může být i přímo objekt v seznamu), revír odkazuje na mapu `"map": "maps/<id>.json"` (bez odkazu se použije `maps/<id>.json`, pokud existuje). Všechny odkazy jsou relativní ke složce `organization.json`.
+   - Pravidla druhů ryb: odkaz `speciesRules` na soubor v `config/species/` (ve vzoru `../species/…`; míry a hájení podle BPVRP svazu); zpřísnění pro jednotlivý revír přes `speciesOverrides`.
+   - Mapu revíru nejsnáz nakreslíte v portálu (Revíry → Mapy revírů) a tlačítkem **Exportovat JSON** ji uložíte do `config/maps/<id>.json`.
 2. Spusťte s vlastním souborem: `MISTENKA_CONFIG=cesta/k/konfiguraci.json npm start`.
 3. Jeden revír → aplikace ho rovnou zobrazí; více revírů → úvodní stránka nabídne výběr (`?revir=<id>`).
 
 Identifikátor revíru (`id`) se ukládá k místenkám, po spuštění ho neměňte.
+
+## Mapy revírů
+
+Správce v portálu (Revíry → Mapy revírů) zakreslí nad mapou hranice revíru a podrevírů, úseky se zákazem lovu, cesty a místa (parkoviště, WC, vstup k vodě, informace, pozor). Rybáři mapu uvidí na stránce `map.html?revir=<id>` (odkaz v kartě Interaktivní mapa na úvodu, v pravidlech revíru a na místence). E-mail s místenkou a PDF obsahují schéma revíru s odkazem na interaktivní mapu.
+
+- Podklad mapy: [Mapy.com](https://developer.mapy.com/) s API klíčem v proměnné `MISTENKA_MAPY_API_KEY` (WordPress: konstanta ve `wp-config.php`), jinak OpenStreetMap. Klíč se používá v prohlížeči – v účtu Mapy.com ho omezte na doménu aplikace (HTTP referer). Bezplatný tarif má 250 000 dlaždic měsíčně.
+- Schéma v e-mailu a PDF se kreslí jen ze zakreslených dat, bez podkladu (dlaždice Mapy.com se podle podmínek nesmí ukládat).
 
 ## Platby
 

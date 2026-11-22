@@ -1,0 +1,187 @@
+{
+  "type": "FeatureCollection",
+  "view": {
+    "center": [
+      49.9137911,
+      18.5586933
+    ],
+    "zoom": 16,
+    "base": "outdoor"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "kind": "revir",
+        "name": "Testovací revír A"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              18.554693,
+              49.912291
+            ],
+            [
+              18.562693,
+              49.912291
+            ],
+            [
+              18.562693,
+              49.915291
+            ],
+            [
+              18.554693,
+              49.915291
+            ],
+            [
+              18.554693,
+              49.912291
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "kind": "subdistrict",
+        "number": 1,
+        "name": "Horní nádrž"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              18.555193,
+              49.912791
+            ],
+            [
+              18.558393,
+              49.912791
+            ],
+            [
+              18.558393,
+              49.914791
+            ],
+            [
+              18.555193,
+              49.914791
+            ],
+            [
+              18.555193,
+              49.912791
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "kind": "subdistrict",
+        "number": 2,
+        "name": "Dolní nádrž"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              18.558993,
+              49.912791
+            ],
+            [
+              18.562193,
+              49.912791
+            ],
+            [
+              18.562193,
+              49.914791
+            ],
+            [
+              18.558993,
+              49.914791
+            ],
+            [
+              18.558993,
+              49.912791
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "kind": "restricted",
+        "name": "Hráz",
+        "note": "Z hráze je lov zakázán."
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            18.558693,
+            49.912591
+          ],
+          [
+            18.558693,
+            49.914991
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "kind": "path",
+        "name": "Přístupová cesta"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            18.553693,
+            49.911791
+          ],
+          [
+            18.555093,
+            49.912591
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "kind": "parking",
+        "name": "Parkoviště",
+        "note": "Parkujte jen zde."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          18.553693,
+          49.911791
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "kind": "wc",
+        "name": "WC"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          18.554493,
+          49.911991
+        ]
+      }
+    }
+  ]
+}

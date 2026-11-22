@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Interaktivní mapa revíru: hranice revíru a podrevírů, parkování, WC a další důležitá místa.">
+  <title>Mapa revíru</title>
+  <link rel="stylesheet" href="leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="Místenka, domů"><span class="brand-mark" aria-hidden="true">⌁</span><span>Místenka</span></a>
+    <nav class="main-nav" aria-label="Hlavní navigace"><a href="./">Revír</a><a href="./#jak-to-funguje">Jak to funguje</a><a href="./#kontakt">Kontakt</a></nav>
+    <a class="login-button" id="homeLink" href="./">Zpět na revír <span aria-hidden="true">↗</span></a>
+  </header>
+  <main class="rules-page map-page">
+    <section class="panel-card rules-shell map-shell">
+      <div class="panel-heading">
+        <div><span class="section-kicker">Interaktivní mapa</span><h1 id="mapTitle">Mapa revíru</h1><p class="muted map-subtitle" id="mapSubtitle"></p></div>
+        <span class="step-badge">Mapa</span>
+      </div>
+      <div class="map-facts" id="mapFacts"></div>
+      <div class="revir-map" id="revirMap" role="region" aria-label="Interaktivní mapa revíru"><p class="status-loading">Načítám mapu…</p></div>
+      <div class="map-legend" id="mapLegend" aria-label="Legenda"></div>
+      <p class="field-help map-note" id="mapNote"></p>
+      <a class="back-button rules-back" id="backLink" href="./">← Zpět na revír</a>
+    </section>
+  </main>
+  <script src="js/env.js"></script>
+  <script src="js/common.js"></script>
+  <script src="vendor/leaflet.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/map-page.js"></script>
+</body>
+</html>

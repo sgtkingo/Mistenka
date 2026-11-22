@@ -18,5 +18,7 @@ Thumbs.db
 # Built plugin archives
 dist/
 
-# Konfigurace konkrétní MO – jen lokálně (v repu je vzor config/organization.json.example)
+# Konfigurace konkrétní MO – jen lokálně (v repu je vzor config/example: organization.json, reviry/, maps/)
 config/organization.json
+config/reviry/
+config/maps/

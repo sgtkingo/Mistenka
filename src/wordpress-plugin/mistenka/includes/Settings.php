@@ -1,7 +1,7 @@
 <?php
 // Nastavení organizace v databázi (src/node/lib/settings.js). Soubor konfigurace zůstává výchozími hodnotami;
 // každá změna z manažerského portálu se uloží jako nová verze celé části (scope) s autorem.
-// Části: organization | payment | revir:<id> | species:<odkaz na soubor pravidel>
+// Části: organization | payment | revir:<id> | species:<odkaz na soubor pravidel> | map:<id revíru>
 namespace Mistenka;
 
 defined('ABSPATH') || exit;
@@ -30,7 +30,7 @@ final class Settings
                 throw new \RuntimeException('Uložené nastavení není platné (' . $e->getMessage() . '). Opravte ho, nebo smažte poslední verzi v tabulce settings_versions.');
             }
         }
-        return Config::build($this->source['raw'], $this->source['species']);
+        return Config::build($this->source['raw'], $this->source['species'], $this->source['maps'] ?? []);
     }
 
     private static function pick($object, array $keys): array
@@ -66,6 +66,7 @@ final class Settings
             return null;
         }
         if (str_starts_with($scope, 'species:')) return $this->source['species'][substr($scope, 8)] ?? null;
+        if (str_starts_with($scope, 'map:')) return $this->source['maps'][substr($scope, 4)] ?? null;
         return null;
     }
 
@@ -87,14 +88,16 @@ final class Settings
         }
         $species = $this->source['species'];
         foreach ($docs as $scope => $data) if (str_starts_with($scope, 'species:')) $species[substr($scope, 8)] = $data;
-        return ['raw' => $raw, 'species' => $species];
+        $maps = $this->source['maps'] ?? [];
+        foreach ($docs as $scope => $data) if (str_starts_with($scope, 'map:')) $maps[substr($scope, 4)] = $data;
+        return ['raw' => $raw, 'species' => $species, 'maps' => $maps];
     }
 
     private function build(array $overrides = []): array
     {
         $e = $this->effective($overrides);
         try {
-            return Config::build($e['raw'], $e['species']);
+            return Config::build($e['raw'], $e['species'], $e['maps']);
         } catch (ConfigError $error) {
             throw new ApiError(400, 'invalid_settings', preg_replace('/^Chybná konfigurace: /u', '', $error->getMessage()));
         }
@@ -126,11 +129,18 @@ final class Settings
         }
         $speciesList = [];
         foreach ($species as $ref => $doc) $speciesList[] = array_merge(['ref' => $ref, 'data' => $doc], $this->versionMeta('species:' . $ref));
+        // Mapy revírů bez náhledu PNG (editor si ho při uložení vykreslí znovu).
+        $maps = [];
+        foreach ($config['reviry'] as $revir) {
+            $map = $config['maps'][$revir['id']] ?? null;
+            $maps[] = array_merge(['revirId' => $revir['id'], 'data' => Config::mapWithoutPreview($map), 'preview' => Config::mapPreviewHash($map), 'hasFile' => !empty($this->source['maps'][$revir['id']])], $this->versionMeta('map:' . $revir['id']));
+        }
         return [
             'organization' => array_merge(['data' => Js::obj(self::pick($config, self::ORG_KEYS))], $this->versionMeta('organization')),
             'payment' => array_merge(['data' => Js::obj(self::pick($config['payment'], self::PAYMENT_KEYS)), 'iban' => $config['iban'], 'provider' => $config['payment']['provider']], $this->versionMeta('payment')),
             'reviry' => $reviry,
             'species' => $speciesList,
+            'maps' => $maps,
             'canEditPayment' => in_array('admin', self::rolesOf($actor), true),
         ];
     }
@@ -155,6 +165,10 @@ final class Settings
             if (empty($this->effective()['species'][substr($scope, 8)])) throw new ApiError(404, 'not_found', 'Pravidla druhů neexistují.');
             return;
         }
+        if (str_starts_with($scope, 'map:')) {
+            if (!Config::getRevir($this->app->config, substr($scope, 4))) throw new ApiError(404, 'not_found', 'Revír neexistuje.');
+            return;
+        }
         throw new ApiError(400, 'invalid_scope', 'Neznámá část nastavení.');
     }
 
@@ -164,7 +178,7 @@ final class Settings
         if ($scope === 'organization') return self::pick($data, self::ORG_KEYS);
         if ($scope === 'payment') return self::pick($data, self::PAYMENT_KEYS);
         if (str_starts_with($scope, 'revir:')) {
-            unset($data['id'], $data['fishRules']);
+            unset($data['id'], $data['fishRules'], $data['map']);
             return $data;
         }
         return $data;
@@ -230,7 +244,7 @@ final class Settings
     public function exportAll(): array
     {
         $e = $this->effective();
-        return ['organization' => $e['raw'], 'species' => Js::obj($e['species']), 'exportedAt' => Time::nowIso()];
+        return ['organization' => $e['raw'], 'species' => Js::obj($e['species']), 'maps' => Js::obj($e['maps']), 'exportedAt' => Time::nowIso()];
     }
 
     // Verze pravidel druhů pro revír – ukládá se k odevzdané místence.
@@ -246,6 +260,6 @@ final class Settings
     // Po obnově databáze: nastavení se znovu sestaví z obnovených verzí.
     public function reload(): void
     {
-        $this->app->config = $this->latestRows() ? $this->build() : Config::build($this->source['raw'], $this->source['species']);
+        $this->app->config = $this->latestRows() ? $this->build() : Config::build($this->source['raw'], $this->source['species'], $this->source['maps'] ?? []);
     }
 }

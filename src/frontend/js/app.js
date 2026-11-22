@@ -1,4 +1,4 @@
-const { icon, qs, qsa, esc, api, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, plural, subdistrictLabel, subdistrictTitle, normalizeMemberId, isMemberId, saveToken, rememberMemberId, showToast, applyBranding, initUserMenu, ticketState, parseCzDate, formatCzDate } = window.Mistenka;
+const { icon, qs, qsa, esc, api, apiUrl, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, plural, subdistrictLabel, subdistrictTitle, normalizeMemberId, isMemberId, saveToken, rememberMemberId, showToast, applyBranding, initUserMenu, ticketState, parseCzDate, formatCzDate } = window.Mistenka;
 
 const panels = { buy: qs("#buyPanel"), person: qs("#personPanel"), return: qs("#returnPanel"), check: qs("#checkPanel"), payment: qs("#paymentPanel") };
 let config = null;
@@ -73,12 +73,32 @@ function renderRevir() {
   qs("#revirSubtitle").textContent = [revir.number, revir.union, revir.kind].filter(Boolean).join(" · ");
   const details = [];
   if (revir.subdistricts) details.push(["⌖", "Podrevíry", esc(revir.subdistricts)]);
-  if (revir.gps) details.push(["◷", "GPS", `<a href="https://mapy.cz/zakladni?x=${encodeURIComponent(revir.gps.lon)}&y=${encodeURIComponent(revir.gps.lat)}&z=16" target="_blank" rel="noreferrer">${esc(revir.gps.label || `${revir.gps.lat}, ${revir.gps.lon}`)} ↗</a>`]);
+  if (revir.gps && !showMapCard()) details.push(["◷", "GPS", `<a href="https://mapy.cz/zakladni?x=${encodeURIComponent(revir.gps.lon)}&y=${encodeURIComponent(revir.gps.lat)}&z=16" target="_blank" rel="noreferrer">${esc(revir.gps.label || `${revir.gps.lat}, ${revir.gps.lon}`)} ↗</a>`]);
   if (revir.restrictions) details.push(["!", "Omezení", esc(revir.restrictions)]);
   qs("#revirDetails").innerHTML = details.map(([icon, title, body]) => `<div><span class="detail-icon">${icon}</span><span><b>${title}</b><br>${body}</span></div>`).join("");
   const rulesHref = revirUrl("rules.html", revir, config);
   qsa(".rules-link").forEach((link) => { link.href = rulesHref; });
+  renderMapCard();
   qs("#revirLinks").innerHTML = [revir.cardUrl && `<a class="map-link" href="${esc(revir.cardUrl)}" target="_blank" rel="noreferrer">Otevřít kartu revíru <span>↗</span></a>`, `<a class="map-link" href="${esc(rulesHref)}">${icon("doc")}Pravidla revíru <span>→</span></a>`].filter(Boolean).join("");
+}
+
+// ---------- interaktivní mapa revíru (karta pod „O revíru“) ----------
+// Karta je vidět, když má revír zakreslenou mapu nebo GPS; GPS se pak ukazuje jen v ní.
+const showMapCard = () => Boolean(revir && (revir.map?.features || revir.gps));
+function renderMapCard() {
+  const card = qs("#mapCard");
+  card.classList.toggle("hidden", !showMapCard());
+  if (!showMapCard()) return;
+  const href = `map.html?revir=${encodeURIComponent(revir.id)}`;
+  qs("#mapCardLink").href = href;
+  qs("#mapCardPreview").href = href;
+  const preview = revir.map?.preview;
+  qs("#mapCardPreview").classList.toggle("hidden", !preview);
+  if (preview) qs("#mapCardImg").src = apiUrl(`/maps/${encodeURIComponent(revir.id)}/preview.png`, { v: preview });
+  qs("#mapCardText").textContent = revir.map?.features ? "Hranice revíru a podrevírů, parkování, WC a další důležitá místa." : "Poloha revíru na mapě.";
+  qs("#mapCardGps").innerHTML = revir.gps
+    ? `<div><span class="detail-icon">◷</span><span><b>GPS</b><br><a href="${esc(`https://mapy.cz/zakladni?source=coor&id=${encodeURIComponent(revir.gps.lon)}%2C${encodeURIComponent(revir.gps.lat)}&x=${encodeURIComponent(revir.gps.lon)}&y=${encodeURIComponent(revir.gps.lat)}&z=16`)}" target="_blank" rel="noreferrer">${esc(revir.gps.label || `${revir.gps.lat}, ${revir.gps.lon}`)} ↗</a></span></div>`
+    : "";
 }
 
 // ---------- důležité zprávy (nejvýš 3, přepínání tečkami) ----------

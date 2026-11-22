@@ -112,10 +112,16 @@ final class Plugin
         self::sendStatic(isset(self::STATIC_TYPES[$ext]) ? $ext : 'txt', (string) file_get_contents($full));
     }
 
+    // Prefix API vůči adrese aplikace (podle trvalých odkazů WordPressu).
+    public static function apiPath(): string
+    {
+        return get_option('permalink_structure') ? '/wp-json/' . App::NS : '/?rest_route=/' . App::NS;
+    }
+
     // Jediný rozdíl frontendu mezi prostředími: prefix API (web nemá „hezké“ trvalé odkazy).
     public static function envJs(): string
     {
-        $api = get_option('permalink_structure') ? '/wp-json/' . App::NS : '/?rest_route=/' . App::NS;
+        $api = self::apiPath();
         return "// Vygenerováno pluginem Místenka.\nwindow.MISTENKA_ENV = { apiBase: " . wp_json_encode($api) . " };\n";
     }
 

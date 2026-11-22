@@ -48,6 +48,12 @@ final class Env
         return self::constant('MISTENKA_MAIL_TRANSPORT', 'smtp') === 'file' ? 'file' : 'smtp';
     }
 
+    // Klíč Mapy.com pro podklad interaktivní mapy (používá se v prohlížeči; bez něj OpenStreetMap).
+    public static function mapyApiKey(): string
+    {
+        return (string) self::constant('MISTENKA_MAPY_API_KEY', '');
+    }
+
     public static function configFile(): string
     {
         return (string) self::constant('MISTENKA_CONFIG', MISTENKA_DIR . 'config/organization.json');

@@ -25,15 +25,44 @@ final class Config
         return $data;
     }
 
-    // Zdroj: soubor MO + soubory pravidel druhů ryb, na které odkazuje (speciesRules).
+    // Zdroj: soubor MO + soubory, na které odkazuje (relativně ke složce organization.json, viz src/node/lib/config.js):
+    //   reviry: ["reviry/<id>.json", …] (nebo objekty), revír.map: "maps/<id>.json" (jinak maps/<id>.json, pokud existuje),
+    //   speciesRules: pravidla druhů ryb.
     public static function readSource(?string $file = null): array
     {
         $file = $file ?: Env::configFile();
         $raw = self::readJson($file);
         $baseDir = dirname($file);
+        $reviry = [];
+        foreach (is_array($raw['reviry'] ?? null) ? $raw['reviry'] : [] as $entry) {
+            if (is_string($entry)) {
+                try {
+                    $entry = self::readJson($baseDir . '/' . $entry);
+                } catch (ConfigError $e) {
+                    self::fail("nelze načíst revír {$entry}");
+                }
+            }
+            $reviry[] = $entry;
+        }
+        $maps = [];
+        foreach ($reviry as $i => $revir) {
+            if (!is_array($revir)) continue;
+            $id = is_string($revir['id'] ?? null) ? $revir['id'] : '';
+            $ref = $revir['map'] ?? null;
+            if (!$ref && $id !== '' && is_file($baseDir . '/maps/' . $id . '.json')) $ref = 'maps/' . $id . '.json';
+            unset($reviry[$i]['map']);
+            if (!$ref || $id === '') continue;
+            if (is_array($ref)) { $maps[$id] = $ref; continue; }
+            try {
+                $maps[$id] = self::readJson($baseDir . '/' . $ref);
+            } catch (ConfigError $e) {
+                self::fail("nelze načíst mapu revíru {$id} ({$ref})");
+            }
+        }
+        $raw['reviry'] = array_values($reviry);
         $refs = [];
         if (!empty($raw['speciesRules'])) $refs[] = $raw['speciesRules'];
-        foreach ($raw['reviry'] ?? [] as $revir) if (!empty($revir['speciesRules'])) $refs[] = $revir['speciesRules'];
+        foreach ($raw['reviry'] as $revir) if (!empty($revir['speciesRules'])) $refs[] = $revir['speciesRules'];
         $species = [];
         foreach (array_unique($refs) as $ref) {
             $path = $baseDir . '/' . $ref;
@@ -43,7 +72,7 @@ final class Config
                 self::fail("nelze načíst pravidla {$ref}");
             }
         }
-        return ['file' => $file, 'raw' => $raw, 'species' => $species];
+        return ['file' => $file, 'raw' => $raw, 'species' => $species, 'maps' => $maps];
     }
 
     private static function emailOk($value): bool
@@ -57,7 +86,7 @@ final class Config
     }
 
     // Sestaví a zkontroluje konfiguraci z dat MO (tvar organization.json) a pravidel druhů (ref → dokument).
-    public static function build(array $raw, array $speciesDocs): array
+    public static function build(array $raw, array $speciesDocs, array $mapDocs = []): array
     {
         $config = $raw;
         if (empty($config['organization']['shortName'])) self::fail('chybí organization.shortName');
@@ -142,7 +171,11 @@ final class Config
                 if (array_key_exists('dailyCapacity', $s) && $s['dailyCapacity'] !== null && !(Js::isInteger($s['dailyCapacity']) && $s['dailyCapacity'] >= 1)) self::fail("revír {$r['id']}, podrevír {$n}: počet míst musí být kladné celé číslo");
             }
             $config['reviry'][$i]['saleSubdistricts'] = self::saleSubdistricts($r);
+            unset($config['reviry'][$i]['map']); // mapa revíru je samostatná část (config.maps), ne údaj revíru
         }
+        // Mapy revírů (GeoJSON se zakreslenými plochami a body); mapa revíru, který v konfiguraci není, se ignoruje.
+        $config['maps'] = [];
+        foreach ($mapDocs as $mapId => $doc) if (isset($ids[(string) $mapId])) $config['maps'][(string) $mapId] = self::validateMap($doc, (string) $mapId);
         $orgRules = self::speciesRulesFor($speciesDocs, $config['speciesRules'] ?? null, 'organizace');
         foreach ($config['reviry'] as $i => $revir) {
             $rules = !empty($revir['speciesRules']) ? self::speciesRulesFor($speciesDocs, $revir['speciesRules'], 'revír ' . $revir['id']) : $orgRules;
@@ -150,6 +183,93 @@ final class Config
         }
         $config['iban'] = self::czIban(Js::str($config['payment']['accountNumber']), Js::str($config['payment']['bankCode']));
         return $config;
+    }
+
+    // ---------- mapy revírů (src/node/lib/config.js) ----------
+    public const MAP_KINDS = ['Polygon' => ['revir', 'subdistrict', 'restricted'], 'LineString' => ['path', 'restricted'], 'Point' => ['parking', 'wc', 'entrance', 'info', 'danger', 'other']];
+    private const MAP_BASES = ['outdoor', 'basic', 'aerial', 'winter'];
+    private const MAP_PREVIEW_MAX = 2000000;
+    private const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+    private static function position($p): bool
+    {
+        return is_array($p) && count($p) >= 2 && isset($p[0], $p[1]) && Js::isNumber($p[0]) && Js::isNumber($p[1]) && is_finite((float) $p[0]) && is_finite((float) $p[1])
+            && $p[0] >= -180 && $p[0] <= 180 && $p[1] >= -85 && $p[1] <= 85;
+    }
+
+    public static function validateMap($doc, string $id): array
+    {
+        $where = "mapa revíru {$id}";
+        if (!is_array($doc) || !Js::isAssoc($doc) || ($doc['type'] ?? null) !== 'FeatureCollection' || !is_array($doc['features'] ?? null) || !array_is_list($doc['features'])) self::fail("{$where}: musí být GeoJSON FeatureCollection");
+        if (count($doc['features']) > 300) self::fail("{$where}: nejvýš 300 prvků");
+        $total = 0;
+        foreach ($doc['features'] as $index => $feature) {
+            $label = "{$where}, prvek " . ($index + 1);
+            if (!is_array($feature) || ($feature['type'] ?? null) !== 'Feature' || !is_array($feature['geometry'] ?? null)) self::fail("{$label}: neplatný prvek");
+            $type = $feature['geometry']['type'] ?? null;
+            $coordinates = $feature['geometry']['coordinates'] ?? null;
+            if (!is_string($type) || !isset(self::MAP_KINDS[$type])) self::fail("{$label}: nepodporovaný typ geometrie " . Js::str($type));
+            $points = 0;
+            if ($type === 'Point') {
+                if (!self::position($coordinates)) self::fail("{$label}: neplatné souřadnice");
+                $points = 1;
+            } elseif ($type === 'LineString') {
+                if (!is_array($coordinates) || count($coordinates) < 2) self::fail("{$label}: čára potřebuje alespoň 2 platné body");
+                foreach ($coordinates as $p) if (!self::position($p)) self::fail("{$label}: čára potřebuje alespoň 2 platné body");
+                $points = count($coordinates);
+            } else {
+                if (!is_array($coordinates) || count($coordinates) < 1 || count($coordinates) > 10) self::fail("{$label}: neplatná plocha");
+                foreach ($coordinates as $ring) {
+                    if (!is_array($ring) || count($ring) < 4) self::fail("{$label}: plocha potřebuje alespoň 3 platné body");
+                    foreach ($ring as $p) if (!self::position($p)) self::fail("{$label}: plocha potřebuje alespoň 3 platné body");
+                    $first = $ring[0];
+                    $last = $ring[count($ring) - 1];
+                    if ($first[0] != $last[0] || $first[1] != $last[1]) self::fail("{$label}: plocha musí být uzavřená");
+                    $points += count($ring);
+                }
+            }
+            $total += $points;
+            if ($points > 2000 || $total > 10000) self::fail("{$where}: příliš mnoho bodů");
+            $props = $feature['properties'] ?? null;
+            if (!is_array($props) || ($props && !Js::isAssoc($props))) self::fail("{$label}: chybí vlastnosti (properties)");
+            if (!in_array($props['kind'] ?? null, self::MAP_KINDS[$type], true)) self::fail("{$label}: neznámý druh " . Js::str($props['kind'] ?? null));
+            foreach (['name' => 80, 'note' => 300] as $key => $max) {
+                if (array_key_exists($key, $props) && $props[$key] !== null && !(is_string($props[$key]) && Js::len($props[$key]) <= $max)) self::fail("{$label}: {$key} musí být text do {$max} znaků");
+            }
+            if (array_key_exists('number', $props) && $props['number'] !== null && !(Js::isInteger($props['number']) || (is_string($props['number']) && Js::len($props['number']) <= 10))) self::fail("{$label}: neplatné číslo podrevíru");
+        }
+        $view = $doc['view'] ?? null;
+        if ($view !== null) {
+            $center = is_array($view) ? ($view['center'] ?? null) : null;
+            if (!is_array($view) || !Js::isAssoc($view) || !is_array($center) || count($center) < 2 || !self::position([$center[1] ?? null, $center[0] ?? null])
+                || !Js::isInteger($view['zoom'] ?? null) || $view['zoom'] < 3 || $view['zoom'] > 20 || (array_key_exists('base', $view) && !in_array($view['base'], self::MAP_BASES, true))) self::fail("{$where}: neplatný výchozí pohled (view)");
+        }
+        $preview = $doc['preview'] ?? null;
+        if ($preview !== null) {
+            $prefix = 'data:image/png;base64,';
+            $data = is_string($preview) && str_starts_with($preview, $prefix) ? rtrim(substr($preview, strlen($prefix)), '=') : null;
+            $padding = is_string($preview) ? strlen($preview) - strlen(rtrim($preview, '=')) : 0;
+            if ($data === null || $data === '' || strlen($preview) > self::MAP_PREVIEW_MAX || $padding > 2 || strspn($data, self::BASE64_CHARS) !== strlen($data)) self::fail("{$where}: náhled musí být obrázek PNG (nejvýš 1,5 MB)");
+        }
+        return $doc;
+    }
+
+    // Mapa bez náhledu (veřejné API, editor) a krátký otisk náhledu (adresa obrázku se mění s každým uložením).
+    public static function mapWithoutPreview(?array $map)
+    {
+        if (!$map) return null;
+        unset($map['preview']);
+        return $map;
+    }
+
+    public static function mapPreviewHash(?array $map): ?string
+    {
+        return !empty($map['preview']) ? substr(sha1($map['preview']), 0, 12) : null;
+    }
+
+    public static function mapSummary(?array $map): ?array
+    {
+        return $map ? ['features' => count($map['features']), 'preview' => self::mapPreviewHash($map)] : null;
     }
 
     private static function speciesRulesFor(array $docs, $ref, string $owner): array
@@ -261,6 +381,7 @@ final class Config
         $reviry = [];
         foreach ($config['reviry'] as $revir) {
             unset($revir['speciesRules'], $revir['speciesOverrides']);
+            $revir['map'] = self::mapSummary($config['maps'][$revir['id']] ?? null);
             $reviry[] = $revir;
         }
         return array_merge([
@@ -271,6 +392,8 @@ final class Config
             'privacy' => $config['privacy'],
             'payment' => ['mode' => $config['payment']['provider'], 'reservationMinutes' => $config['payment']['reservationMinutes']],
             'reviry' => $reviry,
+            // Podklad interaktivní mapy: Mapy.com s API klíčem (MISTENKA_MAPY_API_KEY ve wp-config.php), jinak OpenStreetMap.
+            'mapTiles' => Env::mapyApiKey() !== '' ? ['provider' => 'mapy', 'apiKey' => Env::mapyApiKey()] : ['provider' => 'osm'],
         ], $extra);
     }
 

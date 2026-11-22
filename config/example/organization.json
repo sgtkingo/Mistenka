@@ -1,0 +1,62 @@
+{
+  "organization": {
+    "id": "mo-crs-priklad",
+    "name": "Český rybářský svaz, z. s., místní organizace Příklad",
+    "shortName": "MO ČRS Příklad",
+    "web": "https://www.example.cz",
+    "appUrl": "https://mistenka.example.cz",
+    "privacyUrl": "",
+    "address": "Rybářská 1, 700 00 Příkladov",
+    "ico": "12345678",
+    "contact": {
+      "label": "MO ČRS Příklad",
+      "email": "info@example.cz",
+      "phone": "+420 600 000 000"
+    }
+  },
+  "payment": {
+    "provider": "fake",
+    "accountNumber": "1234567890",
+    "bankCode": "2010",
+    "recipientName": "MO CRS Priklad",
+    "reservationMinutes": 60,
+    "messagePrefix": "Mistenka"
+  },
+  "returnPolicy": {
+    "lateReturnDays": 7
+  },
+  "salesPolicy": {
+    "bookingDaysAhead": 3
+  },
+  "limitPolicy": {
+    "violationsBeforeBlock": 0,
+    "blockDays": null
+  },
+  "penaltyPolicy": {
+    "lateReturn": {
+      "count": 0,
+      "blockDays": null,
+      "includeUnreturned": true
+    },
+    "seizure": {
+      "count": 0,
+      "blockDays": null
+    }
+  },
+  "privacy": {
+    "contactEmail": "gdpr@example.cz",
+    "ticketYears": 3,
+    "accountingYears": 10,
+    "emailDays": 90,
+    "auditYears": 5,
+    "backupYears": 3
+  },
+  "publicCheck": {
+    "showFullName": true,
+    "memberIdVisibleChars": 4
+  },
+  "speciesRules": "../species/crs-smas-mp-2026-2027.json",
+  "reviry": [
+    "reviry/priklad-1.json"
+  ]
+}

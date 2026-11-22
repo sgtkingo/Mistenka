@@ -205,7 +205,19 @@ final class Service
             'ticket' => $ticketLink,
             'payment' => $ticketLink,
             'return' => $token ? "{$base}/return.html?code={$ticket['code']}#t={$token}" : "{$base}/return.html?code={$ticket['code']}",
-        ];
+        ] + $this->mapLinks($ticket['revir_id']);
+    }
+
+    // Interaktivní mapa revíru a její náhled (jen když je mapa zakreslená).
+    private function mapLinks(string $revirId): array
+    {
+        $map = $this->config()['maps'][$revirId] ?? null;
+        if (empty($map['features'])) return [];
+        $base = $this->app->appUrl;
+        $id = rawurlencode($revirId);
+        $api = Plugin::apiPath();
+        $image = !empty($map['preview']) ? $base . $api . "/maps/{$id}/preview.png" . (str_contains($api, '?') ? '&' : '?') . 'v=' . Config::mapPreviewHash($map) : null;
+        return ['map' => "{$base}/map.html?revir={$id}", 'mapImage' => $image];
     }
 
     private function enqueueEmail(array $ticket, string $kind, ?string $token, array $extra = []): void

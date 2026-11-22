@@ -1,15 +1,17 @@
 "use strict";
-// Načtení a kontrola konfigurace MO (config/organization.json).
+// Načtení a kontrola konfigurace MO (config/organization.json → revíry → mapy revírů).
 // Jiná MO = jiný konfigurační soubor (proměnná MISTENKA_CONFIG), kód zůstává stejný.
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 
-const DEFAULT_PATH = path.join(__dirname, "..", "..", "..", "config", "organization.json");
-// Konfigurace MO je jen lokální (není v repu); bez ní se použije vzor, aby šel balíček rovnou spustit.
-const EXAMPLE_PATH = `${DEFAULT_PATH}.example`;
+const CONFIG_DIR = path.join(__dirname, "..", "..", "..", "config");
+const DEFAULT_PATH = path.join(CONFIG_DIR, "organization.json");
+// Konfigurace MO je jen lokální (není v repu); bez ní se použije vzor config/example, aby šel balíček rovnou spustit.
+const EXAMPLE_PATH = path.join(CONFIG_DIR, "example", "organization.json");
 function defaultPath() {
   if (fs.existsSync(DEFAULT_PATH) || !fs.existsSync(EXAMPLE_PATH)) return DEFAULT_PATH;
-  console.warn("Konfigurace config/organization.json chybí – používám vzor config/organization.json.example (zkopírujte ho a upravte pro svou MO).");
+  console.warn("Konfigurace config/organization.json chybí – používám vzor config/example (zkopírujte ho a upravte pro svou MO).");
   return EXAMPLE_PATH;
 }
 
@@ -17,28 +19,42 @@ function fail(message) {
   throw new Error(`Chybná konfigurace: ${message}`);
 }
 
-// Zdroj konfigurace: soubor MO + soubory pravidel druhů ryb, na které odkazuje (speciesRules).
+function readJsonFile(file, what) {
+  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch (error) { fail(`nelze načíst ${what} (${error.message})`); }
+}
+
+// Zdroj konfigurace: soubor MO + soubory, na které odkazuje. Odkazy jsou relativní ke složce organization.json:
+//   reviry: ["reviry/petruvka-1a.json", …]   revír ve vlastním souboru (nebo přímo objekt v seznamu)
+//   revír.map: "maps/petruvka-1a.json"       mapa revíru (GeoJSON); bez odkazu se použije maps/<id>.json, pokud existuje
+//   speciesRules: "species/….json"            pravidla druhů ryb (u organizace nebo revíru)
 function readSource(file = process.env.MISTENKA_CONFIG || defaultPath()) {
-  const raw = JSON.parse(fs.readFileSync(file, "utf8"));
+  const raw = readJsonFile(file, file);
   const baseDir = path.dirname(file);
-  const species = {};
-  const refs = new Set([raw.speciesRules, ...(raw.reviry || []).map((r) => r.speciesRules)].filter(Boolean));
-  for (const ref of refs) {
-    try { species[ref] = JSON.parse(fs.readFileSync(path.resolve(baseDir, ref), "utf8")); } catch (error) { fail(`nelze načíst pravidla ${ref} (${error.message})`); }
+  raw.reviry = (Array.isArray(raw.reviry) ? raw.reviry : []).map((entry) => (typeof entry === "string" ? readJsonFile(path.resolve(baseDir, entry), `revír ${entry}`) : entry));
+  const maps = {};
+  for (const revir of raw.reviry) {
+    if (!revir || typeof revir !== "object") continue;
+    const ref = revir.map || (revir.id && fs.existsSync(path.join(baseDir, "maps", `${revir.id}.json`)) ? `maps/${revir.id}.json` : null);
+    delete revir.map;
+    if (!ref || !revir.id) continue;
+    maps[revir.id] = typeof ref === "object" ? ref : readJsonFile(path.resolve(baseDir, ref), `mapa revíru ${revir.id} (${ref})`);
   }
-  return { file, raw, species };
+  const species = {};
+  const refs = new Set([raw.speciesRules, ...raw.reviry.map((r) => r?.speciesRules)].filter(Boolean));
+  for (const ref of refs) species[ref] = readJsonFile(path.resolve(baseDir, ref), `pravidla ${ref}`);
+  return { file, raw, species, maps };
 }
 
 function loadConfig(file) {
   const source = readSource(file);
-  const config = buildConfig(source.raw, source.species);
+  const config = buildConfig(source.raw, source.species, source.maps);
   Object.defineProperty(config, "source", { value: source, enumerable: false });
   return config;
 }
 
 // Sestaví a zkontroluje konfiguraci z dat MO (tvar organization.json) a pravidel druhů (ref -> dokument).
 // Používá se pro soubor i pro nastavení uložené v databázi (B5); chyba = výjimka „Chybná konfigurace: …“.
-function buildConfig(rawInput, speciesDocs) {
+function buildConfig(rawInput, speciesDocs, mapDocs = {}) {
   const config = structuredClone(rawInput);
   if (!config.organization?.shortName) fail("chybí organization.shortName");
   if (!Array.isArray(config.reviry) || config.reviry.length === 0) fail("chybí seznam reviry");
@@ -78,7 +94,11 @@ function buildConfig(rawInput, speciesDocs) {
       if (s.dailyCapacity !== undefined && s.dailyCapacity !== null && !(Number.isInteger(s.dailyCapacity) && s.dailyCapacity >= 1)) fail(`revír ${revir.id}, podrevír ${s.number}: počet míst musí být kladné celé číslo`);
     }
     revir.saleSubdistricts = saleSubdistricts(revir);
+    delete revir.map; // mapa revíru je samostatná část (config.maps), ne údaj revíru
   }
+  // Mapy revírů (GeoJSON se zakreslenými plochami a body); mapa revíru, který v konfiguraci není, se ignoruje.
+  config.maps = {};
+  for (const [id, doc] of Object.entries(mapDocs || {})) if (ids.has(id)) config.maps[id] = validateMap(doc, id);
   config.payment.reservationMinutes ||= 60;
   if (!Number.isInteger(config.payment.reservationMinutes) || config.payment.reservationMinutes < 10 || config.payment.reservationMinutes > 24 * 60) fail("rezervace před platbou musí být 10–1440 minut");
   config.payment.provider ||= "fake";
@@ -119,6 +139,74 @@ function buildConfig(rawInput, speciesDocs) {
   }
   config.iban = czIban(config.payment.accountNumber, config.payment.bankCode);
   return config;
+}
+
+// ---------- mapy revírů ----------
+// GeoJSON FeatureCollection: plochy (revír, podrevír, zákaz lovu), čáry (cesta, zákaz lovu) a body (parkoviště, WC …).
+// Navíc view = výchozí pohled { center: [lat, lon], zoom, base } a preview = schematický náhled PNG (data URL)
+// pro e-mail a PDF – kreslí se jen ze zakreslených dat, bez podkladu mapy (dlaždice Mapy.com se nesmí ukládat).
+const MAP_KINDS = { Polygon: ["revir", "subdistrict", "restricted"], LineString: ["path", "restricted"], Point: ["parking", "wc", "entrance", "info", "danger", "other"] };
+const MAP_BASES = ["outdoor", "basic", "aerial", "winter"];
+const MAP_PREVIEW_MAX = 2000000;
+function validateMap(doc, id) {
+  const where = `mapa revíru ${id}`;
+  if (!doc || typeof doc !== "object" || Array.isArray(doc) || doc.type !== "FeatureCollection" || !Array.isArray(doc.features)) fail(`${where}: musí být GeoJSON FeatureCollection`);
+  if (doc.features.length > 300) fail(`${where}: nejvýš 300 prvků`);
+  const position = (p) => Array.isArray(p) && p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]) && p[0] >= -180 && p[0] <= 180 && p[1] >= -85 && p[1] <= 85;
+  let total = 0;
+  doc.features.forEach((feature, index) => {
+    const label = `${where}, prvek ${index + 1}`;
+    if (!feature || typeof feature !== "object" || feature.type !== "Feature" || !feature.geometry || typeof feature.geometry !== "object") fail(`${label}: neplatný prvek`);
+    const { type, coordinates } = feature.geometry;
+    if (!MAP_KINDS[type]) fail(`${label}: nepodporovaný typ geometrie ${type}`);
+    let points = 0;
+    if (type === "Point") {
+      if (!position(coordinates)) fail(`${label}: neplatné souřadnice`);
+      points = 1;
+    } else if (type === "LineString") {
+      if (!Array.isArray(coordinates) || coordinates.length < 2 || !coordinates.every(position)) fail(`${label}: čára potřebuje alespoň 2 platné body`);
+      points = coordinates.length;
+    } else {
+      if (!Array.isArray(coordinates) || coordinates.length < 1 || coordinates.length > 10) fail(`${label}: neplatná plocha`);
+      for (const ring of coordinates) {
+        if (!Array.isArray(ring) || ring.length < 4 || !ring.every(position)) fail(`${label}: plocha potřebuje alespoň 3 platné body`);
+        const [first, last] = [ring[0], ring[ring.length - 1]];
+        if (first[0] !== last[0] || first[1] !== last[1]) fail(`${label}: plocha musí být uzavřená`);
+        points += ring.length;
+      }
+    }
+    total += points;
+    if (points > 2000 || total > 10000) fail(`${where}: příliš mnoho bodů`);
+    const props = feature.properties;
+    if (!props || typeof props !== "object" || Array.isArray(props)) fail(`${label}: chybí vlastnosti (properties)`);
+    if (!MAP_KINDS[type].includes(props.kind)) fail(`${label}: neznámý druh ${props.kind}`);
+    for (const [key, max] of [["name", 80], ["note", 300]]) {
+      if (props[key] !== undefined && props[key] !== null && !(typeof props[key] === "string" && props[key].length <= max)) fail(`${label}: ${key} musí být text do ${max} znaků`);
+    }
+    if (props.number !== undefined && props.number !== null && !(Number.isInteger(props.number) || (typeof props.number === "string" && props.number.length <= 10))) fail(`${label}: neplatné číslo podrevíru`);
+  });
+  const view = doc.view;
+  if (view !== undefined && view !== null) {
+    if (typeof view !== "object" || Array.isArray(view) || !Array.isArray(view.center) || !position([view.center[1], view.center[0]]) || !Number.isInteger(view.zoom) || view.zoom < 3 || view.zoom > 20 || (view.base !== undefined && !MAP_BASES.includes(view.base))) fail(`${where}: neplatný výchozí pohled (view)`);
+  }
+  const preview = doc.preview;
+  if (preview !== undefined && preview !== null && !(typeof preview === "string" && preview.length <= MAP_PREVIEW_MAX && /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(preview))) fail(`${where}: náhled musí být obrázek PNG (nejvýš 1,5 MB)`);
+  return doc;
+}
+// Mapa bez náhledu (veřejné API, editor) a krátký otisk náhledu (adresa obrázku se mění s každým uložením).
+function mapWithoutPreview(map) {
+  if (!map) return null;
+  const { preview, ...rest } = map;
+  return rest;
+}
+const previewHashes = new WeakMap();
+function mapPreviewHash(map) {
+  if (!map?.preview) return null;
+  if (!previewHashes.has(map)) previewHashes.set(map, crypto.createHash("sha1").update(map.preview).digest("hex").slice(0, 12));
+  return previewHashes.get(map);
+}
+function mapSummary(map) {
+  return map ? { features: map.features.length, preview: mapPreviewHash(map) } : null;
 }
 
 // Pravidla druhů ryb (míry, hájení, limity), např. config/species/crs-smas-mp-2026-2027.json.
@@ -215,8 +303,11 @@ function publicConfig(config, extra = {}) {
     payment: { mode: config.payment.provider, reservationMinutes: config.payment.reservationMinutes },
     reviry: config.reviry.map((revir) => {
       const { fishRules, speciesRules, speciesOverrides, ...rest } = revir;
-      return { ...rest, fishRules };
+      return { ...rest, fishRules, map: mapSummary(config.maps?.[revir.id]) };
     }),
+    // Podklad interaktivní mapy: Mapy.com s API klíčem (MISTENKA_MAPY_API_KEY), jinak OpenStreetMap.
+    // Klíč se používá v prohlížeči (dlaždice); omezte ho na doménu v účtu developer.mapy.com.
+    mapTiles: process.env.MISTENKA_MAPY_API_KEY ? { provider: "mapy", apiKey: process.env.MISTENKA_MAPY_API_KEY } : { provider: "osm" },
     ...extra
   };
 }
@@ -232,4 +323,4 @@ function czIban(accountNumber, bankCode) {
   return `CZ${String(98 - remainder).padStart(2, "0")}${bban}`;
 }
 
-module.exports = { loadConfig, readSource, buildConfig, getRevir, revirRules, ticketSubdistrictLabel, saleSubdistricts, subdistrictName, publicConfig, czIban };
+module.exports = { loadConfig, readSource, buildConfig, getRevir, revirRules, ticketSubdistrictLabel, saleSubdistricts, subdistrictName, publicConfig, czIban, validateMap, mapWithoutPreview, mapPreviewHash, mapSummary, MAP_KINDS };

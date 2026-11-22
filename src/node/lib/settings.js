@@ -3,11 +3,11 @@
 // hodnotami; každá změna z manažerského portálu se uloží jako nová verze celé části (scope) s autorem.
 // Platná konfigurace = soubor + poslední verze každé části. Změna se projeví hned (objekt config se přepíše).
 //
-// Části (scope): organization | payment | revir:<id> | species:<odkaz na soubor pravidel>
+// Části (scope): organization | payment | revir:<id> | species:<odkaz na soubor pravidel> | map:<id revíru>
 const { transaction } = require("./db");
 const time = require("./time");
 const emails = require("./emails");
-const { buildConfig } = require("./config");
+const { buildConfig, mapWithoutPreview, mapPreviewHash } = require("./config");
 const { ApiError } = require("./validate");
 
 const ORG_KEYS = ["organization", "returnPolicy", "salesPolicy", "publicCheck", "statsPolicy", "limitPolicy", "penaltyPolicy", "privacy"];
@@ -33,6 +33,7 @@ function createSettings({ db, config }) {
       return rest;
     }
     if (scope.startsWith("species:")) return source.species[scope.slice(8)] || null;
+    if (scope.startsWith("map:")) return source.maps?.[scope.slice(4)] || null;
     return null;
   }
 
@@ -52,11 +53,13 @@ function createSettings({ db, config }) {
     }
     const species = { ...source.species };
     for (const [scope, data] of Object.entries(docs)) if (scope.startsWith("species:")) species[scope.slice(8)] = data;
-    return { raw, species };
+    const maps = { ...(source.maps || {}) };
+    for (const [scope, data] of Object.entries(docs)) if (scope.startsWith("map:")) maps[scope.slice(4)] = data;
+    return { raw, species, maps };
   }
   function build(overrides) {
-    const { raw, species } = effective(overrides);
-    try { return buildConfig(raw, species); } catch (error) { throw new ApiError(400, "invalid_settings", error.message.replace(/^Chybná konfigurace: /, "")); }
+    const { raw, species, maps } = effective(overrides);
+    try { return buildConfig(raw, species, maps); } catch (error) { throw new ApiError(400, "invalid_settings", error.message.replace(/^Chybná konfigurace: /, "")); }
   }
   // Přepíše sdílený objekt config na místě – všechny moduly ho drží odkazem.
   function apply(next) {
@@ -82,6 +85,8 @@ function createSettings({ db, config }) {
       payment: { data: pick(config.payment, PAYMENT_KEYS), iban: config.iban, provider: config.payment.provider, ...versionMeta("payment") },
       reviry: config.reviry.map((revir) => ({ id: revir.id, data: (({ id, ...rest }) => rest)(stripRevir(revir)), ...versionMeta(`revir:${revir.id}`) })),
       species: Object.entries(species).map(([ref, doc]) => ({ ref, data: doc, ...versionMeta(`species:${ref}`) })),
+      // Mapy revírů bez náhledu PNG (editor si ho při uložení vykreslí znovu).
+      maps: config.reviry.map((revir) => ({ revirId: revir.id, data: mapWithoutPreview(config.maps?.[revir.id]), preview: mapPreviewHash(config.maps?.[revir.id]), hasFile: Boolean(source.maps?.[revir.id]), ...versionMeta(`map:${revir.id}`) })),
       canEditPayment: rolesOf(actor).includes("admin")
     };
   }
@@ -106,13 +111,17 @@ function createSettings({ db, config }) {
       if (!effective().species[scope.slice(8)]) throw new ApiError(404, "not_found", "Pravidla druhů neexistují.");
       return;
     }
+    if (scope.startsWith("map:")) {
+      if (!config.reviry.some((r) => r.id === scope.slice(4))) throw new ApiError(404, "not_found", "Revír neexistuje.");
+      return;
+    }
     throw new ApiError(400, "invalid_scope", "Neznámá část nastavení.");
   }
   function normalize(scope, data) {
     if (!data || typeof data !== "object" || Array.isArray(data)) throw new ApiError(400, "invalid_settings", "Nastavení musí být objekt.");
     if (scope === "organization") return pick(data, ORG_KEYS);
     if (scope === "payment") return pick(data, PAYMENT_KEYS);
-    if (scope.startsWith("revir:")) { const { id, fishRules, ...rest } = data; return rest; }
+    if (scope.startsWith("revir:")) { const { id, fishRules, map, ...rest } = data; return rest; }
     return data;
   }
   function save(actor, scope, data, { note = "", creating = false } = {}) {
@@ -158,8 +167,8 @@ function createSettings({ db, config }) {
   }
   // Export platné konfigurace ve tvaru souborů (záloha, převod do WordPressu).
   function exportAll() {
-    const { raw, species } = effective();
-    return { organization: raw, species, exportedAt: iso(time.now()) };
+    const { raw, species, maps } = effective();
+    return { organization: raw, species, maps, exportedAt: iso(time.now()) };
   }
   // Verze pravidel druhů pro revír – ukládá se k odevzdané místence.
   function rulesVersion(revirId) {
@@ -171,7 +180,7 @@ function createSettings({ db, config }) {
 
   // Po obnově databáze: nastavení se znovu sestaví z obnovených verzí.
   function reload() {
-    apply(latestRows().length ? build() : buildConfig(structuredClone(source.raw), { ...source.species }));
+    apply(latestRows().length ? build() : buildConfig(structuredClone(source.raw), { ...source.species }, { ...(source.maps || {}) }));
   }
 
   return { view, save, history, versionData, restore, resetToFile, exportAll, rulesVersion, reload };

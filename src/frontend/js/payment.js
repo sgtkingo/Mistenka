@@ -68,6 +68,8 @@ function renderIssued() {
   if (hours) rules.push(`Doba lovu v tento den: <b>${esc(hours)}</b>.`);
   (revir.fishingHours || []).forEach((rule) => rules.push(`${esc(rule.label || rule.months.join(", "))}: ${esc(rule.from)}–${esc(rule.to)}`));
   rules.push("Mějte u sebe platný rybářský lístek a povolenku.", "Každou ponechanou rybu je nutné ihned zapsat do povolenky.", `Místenku odevzdejte ihned po ukončení lovu v daný den. Pozdější odevzdání je možné nejpozději do ${esc(revir.lateReturnDays)} ${plural(revir.lateReturnDays, "dne", "dnů", "dnů")} a bude označeno jako opožděné; pak se místenka automaticky uzavře jako neodevzdaná.`);
+  // Interaktivní mapa revíru (parkování, WC, hranice podrevírů) – když je zakreslená.
+  if (revir.map?.features) rules.push(`<a class="text-link" href="map.html?revir=${encodeURIComponent(revir.id)}">Interaktivní mapa revíru →</a> – parkování, WC a hranice podrevírů.`);
   qs("#ticketRules").innerHTML = rules.map((rule) => `<li>${rule}</li>`).join("");
   qs("#emailNote").textContent = `Potvrzení jsme poslali na ${ticket.email}. Najdete v něm i odkaz pro odevzdání místenky po skončení lovu.`;
   show("successState");
@@ -122,9 +124,17 @@ qs("#cancelPayment").addEventListener("click", async () => {
     render();
   } catch (error) { showToast(error.message, "error"); }
 });
-qs("#downloadTicket").addEventListener("click", () => {
+qs("#downloadTicket").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
   const revir = revirOf(ticket);
-  window.MistenkaPdf.download({ ticket, revir, organization: config.organization, checkUrl: ticketCheckUrl(ticket.code), hours: fishingHours(revir, ticket.date), testMode: config.payment.mode === "fake" });
+  button.disabled = true;
+  try {
+    // Má-li revír zakreslenou mapu, přidá se do PDF jako druhá stránka s odkazem na interaktivní mapu.
+    let map = null;
+    if (revir.map?.features) map = (await api(`/maps/${encodeURIComponent(revir.id)}`).catch(() => ({ map: null }))).map;
+    const mapUrl = new URL(`map.html?revir=${encodeURIComponent(revir.id)}`, location.href).href;
+    await window.MistenkaPdf.download({ ticket, revir, organization: config.organization, checkUrl: ticketCheckUrl(ticket.code), hours: fishingHours(revir, ticket.date), testMode: config.payment.mode === "fake", map, mapUrl });
+  } catch (error) { showToast(error.message, "error"); } finally { button.disabled = false; }
 });
 qs("#printTicket").addEventListener("click", () => window.print());
 

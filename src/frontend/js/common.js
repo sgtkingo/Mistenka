@@ -86,6 +86,11 @@
   }
 
   // Výběr revíru: ?revir=<id>, jinak jediný revír v konfiguraci.
+  // Absolutní adresa API (např. obrázek náhledu mapy); prefix WordPressu už obsahuje „?“.
+  function apiUrl(path, query = {}) {
+    const params = new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== "")).toString();
+    return API_BASE + path + (params ? (API_BASE.includes("?") ? "&" : "?") + params : "");
+  }
   function selectedRevir(config) {
     const id = new URLSearchParams(location.search).get("revir");
     if (id) return config.reviry.find((revir) => revir.id === id) || null;
@@ -726,7 +731,7 @@
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", addBugButton); else addBugButton();
 
-  window.Mistenka = { infoTip, icon, openBugReport, logEvent, qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest, attachQrScanner, attachMemberIdScanner, codeFromQr, memberIdFromBarcode, roleBadge, roleBadges };
+  window.Mistenka = { infoTip, apiUrl, icon, openBugReport, logEvent, qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest, attachQrScanner, attachMemberIdScanner, codeFromQr, memberIdFromBarcode, roleBadge, roleBadges };
 })();
 
 // Pole s číslem členské legitimace (max. 8 znaků): ponechá jen číslice, aby vložené „1234 5678“ nepřišlo o číslici.

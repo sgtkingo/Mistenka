@@ -32,6 +32,7 @@ Produkční implementace Místenky. Chování je stejné jako u Node verze v `sr
    // define('MISTENKA_APP_URL', 'https://mistenka.rybarikarvina.cz');
    // define('MISTENKA_GITHUB_TOKEN', '…');  // hlášení chyb → GitHub issues (s MISTENKA_GITHUB_REPO)
    // define('MISTENKA_GITHUB_REPO', 'vlastnik/repozitar');
+   // define('MISTENKA_MAPY_API_KEY', '…');  // podklad interaktivní mapy revíru z Mapy.com (jinak OpenStreetMap); omezte klíč na doménu
    // define('MISTENKA_DATA_DIR', '/cesta/mimo/web/mistenka-data');  // výchozí wp-content/mistenka-data (+ .htaccess deny)
    ```
 

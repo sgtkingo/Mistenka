@@ -6,7 +6,8 @@
 //   PORT=3000                 port serveru
 //   DATA_DIR=data             databáze a odeslané e-maily (outbox)
 //   APP_URL=http://localhost:3000   základ odkazů v e-mailech
-//   MISTENKA_CONFIG=config/organization.json   konfigurace MO a revírů
+//   MISTENKA_CONFIG=config/organization.json   konfigurace MO a revírů (bez souboru vzor config/example)
+//   MISTENKA_MAPY_API_KEY=...  podklad interaktivní mapy revíru z Mapy.com (jinak OpenStreetMap)
 //   MISTENKA_DEV=1            zapne vývojové endpointy (posun času pro testy)
 //   MISTENKA_CRON_KEY=...     povolí POST /api/jobs/run s hlavičkou X-Mistenka-Cron-Key
 //   MISTENKA_JOBS_INTERVAL_MS interval plánovaných úloh (0 = vypnuto)
@@ -17,7 +18,7 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
-const { loadConfig, publicConfig } = require("./lib/config");
+const { loadConfig, publicConfig, getRevir, mapWithoutPreview, mapPreviewHash } = require("./lib/config");
 const { openDatabase, serviceLaunched, seasonOpen } = require("./lib/db");
 const { createProvider } = require("./lib/payments");
 const { createFileMailer } = require("./lib/emails");
@@ -143,6 +144,19 @@ async function handleApi(req, res, url, ip) {
 
   if (pathname === "/api/config" && method === "GET") {
     return send(res, 200, publicConfig(config, { today: time.pragueToday(), now: time.now().toISOString(), devMode: DEV, service: { launched: serviceLaunched(db), seasonOpen: seasonOpen(db, time.pragueToday()) } }));
+  }
+  // Mapa revíru (veřejná): zakreslené plochy a body + otisk náhledu; náhled PNG pro e-mail a PDF zvlášť.
+  if ((m = pathname.match(/^\/api\/maps\/([a-z0-9-]+)$/)) && method === "GET") {
+    if (!getRevir(config, m[1])) throw new ApiError(404, "unknown_revir", "Revír neexistuje.");
+    const map = config.maps?.[m[1]] || null;
+    return send(res, 200, { revirId: m[1], map: mapWithoutPreview(map), preview: mapPreviewHash(map) });
+  }
+  if ((m = pathname.match(/^\/api\/maps\/([a-z0-9-]+)\/preview\.png$/)) && method === "GET") {
+    const preview = config.maps?.[m[1]]?.preview;
+    if (!preview) throw new ApiError(404, "not_found", "Náhled mapy neexistuje.");
+    const png = Buffer.from(preview.slice(preview.indexOf(",") + 1), "base64");
+    res.writeHead(200, { "Content-Type": "image/png", "Content-Length": png.length, "Cache-Control": "public, max-age=86400", "X-Content-Type-Options": "nosniff" });
+    return res.end(png);
   }
   if ((m = pathname.match(/^\/api\/reviry\/([a-z0-9-]+)\/availability$/)) && method === "GET") {
     return send(res, 200, service.availability(m[1]));
@@ -272,6 +286,8 @@ async function handleApi(req, res, url, ip) {
     if (sub === "/reviry" && method === "POST") { const b = await readBody(req); return send(res, 201, settings.save(actor, `revir:${String(b.id || "")}`, b.data, { note: b.note, creating: true })); }
     if ((m = sub.match(/^\/reviry\/([a-z0-9-]+)$/)) && method === "PUT") { const b = await readBody(req); return send(res, 200, settings.save(actor, `revir:${m[1]}`, b.data, { note: b.note })); }
     if (sub === "/species" && method === "PUT") { const b = await readBody(req); return send(res, 200, settings.save(actor, `species:${String(b.ref || "")}`, b.data, { note: b.note })); }
+    // Mapa revíru (GeoJSON + náhled PNG) – větší tělo požadavku.
+    if ((m = sub.match(/^\/maps\/([a-z0-9-]+)$/)) && method === "PUT") { const b = await readBody(req, 3 * 1024 * 1024); return send(res, 200, settings.save(actor, `map:${m[1]}`, b.data, { note: b.note })); }
     if (sub === "/history" && method === "GET") return send(res, 200, settings.history(url.searchParams.get("scope") || ""));
     if ((m = sub.match(/^\/versions\/(\d+)$/)) && method === "GET") return send(res, 200, settings.versionData(m[1]));
     if ((m = sub.match(/^\/versions\/(\d+)\/restore$/)) && method === "POST") return send(res, 200, settings.restore(actor, m[1]));
@@ -386,8 +402,8 @@ async function handleApi(req, res, url, ip) {
   }
   if (pathname === "/api/dev/outbox" && method === "GET" && DEV) {
     const to = String(url.searchParams.get("to") || "").toLowerCase();
-    const rows = db.prepare("SELECT kind, to_email, subject, body_text, created_at FROM email_outbox WHERE lower(to_email) = ? ORDER BY id DESC LIMIT 20").all(to);
-    return send(res, 200, { emails: rows.map((r) => ({ kind: r.kind, to: r.to_email, subject: r.subject, text: r.body_text, createdAt: r.created_at })) });
+    const rows = db.prepare("SELECT kind, to_email, subject, body_text, body_html, created_at FROM email_outbox WHERE lower(to_email) = ? ORDER BY id DESC LIMIT 20").all(to);
+    return send(res, 200, { emails: rows.map((r) => ({ kind: r.kind, to: r.to_email, subject: r.subject, text: r.body_text, html: r.body_html, createdAt: r.created_at })) });
   }
   if (pathname === "/api/dev/jobs" && method === "POST" && DEV) {
     return send(res, 200, await service.runJobs({ force: true }));

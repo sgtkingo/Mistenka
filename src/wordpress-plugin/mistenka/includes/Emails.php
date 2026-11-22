@@ -103,6 +103,15 @@ final class Emails
         return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 18px;font-size:14px">' . $out . '</table>';
     }
 
+    // Mapa revíru (jen když je zakreslená): schematický náhled s odkazem na interaktivní mapu.
+    private static function mapBlock(array $links): string
+    {
+        if (empty($links['map'])) return '';
+        $c = self::C;
+        $img = !empty($links['mapImage']) ? '<a href="' . self::esc($links['map']) . '" style="display:block;margin:0 0 6px;text-decoration:none"><img src="' . self::esc($links['mapImage']) . '" width="536" alt="Mapa revíru – otevřete interaktivní mapu" style="display:block;width:100%;max-width:536px;height:auto;border:1px solid ' . $c['line'] . ';border-radius:8px"></a>' : '';
+        return '<p style="margin:0 0 8px;font-weight:600">Mapa revíru</p>' . $img . '<p style="margin:0 0 4px;font-size:13px;color:' . $c['muted'] . '">Hranice revíru a podrevírů, parkování, WC a další místa.</p>' . self::button($links['map'], 'Otevřít interaktivní mapu', true);
+    }
+
     private static function button(string $href, string $label, bool $secondary = false): string
     {
         $c = self::C;
@@ -199,10 +208,10 @@ final class Emails
             "Místenka {$t['code']} – {$revir['name']}, " . self::czDate($t['fishing_date']),
             self::layout($config, 'success', 'Vaše místenka je vystavena', self::highlight('Kód místenky', $t['code'], "{$day} · {$revir['name']}", 'ok') . self::table($rows) . '
       ' . self::button($x['links']['ticket'], 'Zobrazit místenku a QR kód') . '
-      <p style="margin:0 0 8px;font-weight:600">Než vyrazíte</p>' . self::checklist(['Platný rybářský lístek a povolenka – místenka je nenahrazuje.', 'Místenka v telefonu nebo vytištěná (QR kód pro kontrolu).', 'Každý úlovek ihned zapište do povolenky.']) . '
-      <p style="margin:0 0 8px;font-weight:600">Po skončení lovu</p><p style="margin:0 0 8px">Místenku odevzdejte ještě týž den a zapište ponechané ryby (nebo „žádná ponechaná ryba“). Opožděně ji lze odevzdat do ' . $late . ' dnů, pak se uzavře jako neodevzdaná.</p>
+      <p style="margin:0 0 8px;font-weight:600">Než vyrazíte</p>' . self::checklist(['Platný rybářský lístek a povolenka – místenka je nenahrazuje.', 'Místenka v telefonu nebo vytištěná (QR kód pro kontrolu).', 'Každou ponechanou rybu ihned zapište do povolenky.']) . '
+      ' . self::mapBlock($x['links']) . '<p style="margin:0 0 8px;font-weight:600">Po skončení lovu</p><p style="margin:0 0 8px">Místenku odevzdejte ještě týž den a zapište ponechané ryby (nebo „žádná ponechaná ryba“). Opožděně ji lze odevzdat do ' . $late . ' dnů, pak se uzavře jako neodevzdaná.</p>
       ' . self::button($x['links']['return'], 'Odevzdat místenku', true), '', "Kód {$t['code']} · {$day} · {$revir['name']}" . ($hours ? " · lov {$hours}" : '')),
-            self::text(array_merge(['Vaše místenka je vystavena.', "Kód místenky: {$t['code']}"], self::rowsText($rows), ['Místenka nenahrazuje rybářský lístek ani povolenku.', "Místenka: {$x['links']['ticket']}", "Odevzdání po lovu: {$x['links']['return']}"]))
+            self::text(array_merge(['Vaše místenka je vystavena.', "Kód místenky: {$t['code']}"], self::rowsText($rows), ['Místenka nenahrazuje rybářský lístek ani povolenku.', "Místenka: {$x['links']['ticket']}"], !empty($x['links']['map']) ? ["Mapa revíru: {$x['links']['map']}"] : [], ["Odevzdání po lovu: {$x['links']['return']}"]))
         );
     }
 

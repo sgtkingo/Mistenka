@@ -178,14 +178,26 @@ final class App
         header('Set-Cookie: ' . self::SESSION_COOKIE . '=; Max-Age=0; ' . $this->cookieAttrs(), false);
     }
 
-    private static function body(\WP_REST_Request $request): array
+    private static function body(\WP_REST_Request $request, int $maxBytes = 64 * 1024): array
     {
         $raw = (string) $request->get_body();
-        if (strlen($raw) > 64 * 1024) throw new ApiError(413, 'payload_too_large', 'Požadavek je příliš velký.');
+        if (strlen($raw) > $maxBytes) throw new ApiError(413, 'payload_too_large', 'Požadavek je příliš velký.');
         if (trim($raw) === '') return [];
         $data = json_decode($raw, true);
         if (json_last_error() !== JSON_ERROR_NONE) throw new ApiError(400, 'invalid_json', 'Neplatný formát požadavku.');
         return is_array($data) ? $data : [];
+    }
+
+    // Obrázek (náhled mapy revíru) – mimo JSON server WordPressu, lze ho cachovat (adresa obsahuje otisk).
+    private static function image(string $contentType, string $content): void
+    {
+        status_header(200);
+        header('Content-Type: ' . $contentType);
+        header('Content-Length: ' . strlen($content));
+        header('Cache-Control: public, max-age=86400');
+        header('X-Content-Type-Options: nosniff');
+        echo $content;
+        exit;
     }
 
     // Surová odpověď (CSV, soubor zálohy) – mimo JSON server WordPressu.
@@ -222,10 +234,21 @@ final class App
 
         if ($path === '/config' && $method === 'GET') return self::json(200, Config::publicConfig($this->config, ['today' => Time::pragueToday(), 'now' => Time::nowIso(), 'devMode' => Env::dev(), 'service' => ['launched' => Db::serviceLaunched(), 'seasonOpen' => Db::seasonOpen(Time::pragueToday())]]));
         if ($match('#^/reviry/([a-z0-9-]+)/availability$#') && $method === 'GET') return self::json(200, $svc->availability($m[1]));
+        // Mapa revíru (veřejná): zakreslené plochy a body + otisk náhledu; náhled PNG pro e-mail a PDF zvlášť.
+        if ($match('#^/maps/([a-z0-9-]+)$#') && $method === 'GET') {
+            if (!Config::getRevir($this->config, $m[1])) throw new ApiError(404, 'unknown_revir', 'Revír neexistuje.');
+            $map = $this->config['maps'][$m[1]] ?? null;
+            return self::json(200, ['revirId' => $m[1], 'map' => Config::mapWithoutPreview($map), 'preview' => Config::mapPreviewHash($map)]);
+        }
+        if ($match('#^/maps/([a-z0-9-]+)/preview\.png$#') && $method === 'GET') {
+            $preview = $this->config['maps'][$m[1]]['preview'] ?? null;
+            if (!$preview) throw new ApiError(404, 'not_found', 'Náhled mapy neexistuje.');
+            self::image('image/png', (string) base64_decode(substr($preview, strpos($preview, ',') + 1)));
+        }
         // Hlášení chyby (kdokoli; snímek obrazovky až ~1,5 MB).
         if ($path === '/bug-reports' && $method === 'POST') {
             if ($this->rateLimited($ip, 'bug_report', 5, 600000)) throw new ApiError(429, 'rate_limited', 'Příliš mnoho hlášení, zkuste to za chvíli.');
-            return self::json(201, $this->bugs->create(self::body($request), $user));
+            return self::json(201, $this->bugs->create(self::body($request, 3 * 1024 * 1024), $user)); // se snímkem obrazovky
         }
         if ($path === '/announcements' && $method === 'GET') return self::json(200, $this->operations->activeAnnouncements($q('revirId')));
         if ($path === '/orders' && $method === 'POST') {
@@ -348,6 +371,8 @@ final class App
             if ($sub === '/reviry' && $method === 'POST') { $b = self::body($request); return self::json(201, $st->save($actor, 'revir:' . Js::s($b['id'] ?? null), $b['data'] ?? null, Js::s($b['note'] ?? null), true)); }
             if (preg_match('#^/reviry/([a-z0-9-]+)$#', $sub, $rm) && $method === 'PUT') { $b = self::body($request); return self::json(200, $st->save($actor, 'revir:' . $rm[1], $b['data'] ?? null, Js::s($b['note'] ?? null))); }
             if ($sub === '/species' && $method === 'PUT') { $b = self::body($request); return self::json(200, $st->save($actor, 'species:' . Js::s($b['ref'] ?? null), $b['data'] ?? null, Js::s($b['note'] ?? null))); }
+            // Mapa revíru (GeoJSON + náhled PNG) – větší tělo požadavku.
+            if (preg_match('#^/maps/([a-z0-9-]+)$#', $sub, $mm) && $method === 'PUT') { $b = self::body($request, 3 * 1024 * 1024); return self::json(200, $st->save($actor, 'map:' . $mm[1], $b['data'] ?? null, Js::s($b['note'] ?? null))); }
             if ($sub === '/history' && $method === 'GET') return self::json(200, $st->history($q('scope')));
             if (preg_match('#^/versions/(\d+)$#', $sub, $vm) && $method === 'GET') return self::json(200, $st->versionData($vm[1]));
             if (preg_match('#^/versions/(\d+)/restore$#', $sub, $vm) && $method === 'POST') return self::json(200, $st->restore($actor, $vm[1]));
@@ -455,8 +480,8 @@ final class App
                 return self::json(200, ['token' => $setup['token']]);
             }
             if ($path === '/dev/outbox' && $method === 'GET') {
-                $rows = Db::all('SELECT kind, to_email, subject, body_text, created_at FROM {p}email_outbox WHERE LOWER(to_email) = ? ORDER BY id DESC LIMIT 20', Js::lower($q('to')));
-                return self::json(200, ['emails' => array_map(fn($r) => ['kind' => $r['kind'], 'to' => $r['to_email'], 'subject' => $r['subject'], 'text' => $r['body_text'], 'createdAt' => $r['created_at']], $rows)]);
+                $rows = Db::all('SELECT kind, to_email, subject, body_text, body_html, created_at FROM {p}email_outbox WHERE LOWER(to_email) = ? ORDER BY id DESC LIMIT 20', Js::lower($q('to')));
+                return self::json(200, ['emails' => array_map(fn($r) => ['kind' => $r['kind'], 'to' => $r['to_email'], 'subject' => $r['subject'], 'text' => $r['body_text'], 'html' => $r['body_html'], 'createdAt' => $r['created_at']], $rows)]);
             }
             if ($path === '/dev/jobs' && $method === 'POST') return self::json(200, $this->runJobs(true));
         }
