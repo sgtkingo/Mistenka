@@ -316,7 +316,7 @@ async function loadStats() {
     ].filter(Boolean);
     box.innerHTML = `<div class="kpi-grid">${tiles.map((t) => (typeof t === "string" ? t : tileHtml(t))).join("")}</div>
       ${records.length ? `<div class="stats-records">${records.map(recordHtml).join("")}</div>` : ""}
-      ${s.species.length ? `<h3 class="stats-subtitle">${icon("fish")}Nejčastější druhy</h3><ul class="stats-species">${s.species.map((x) => `<li><span>${esc(x.species)}</span><b>${esc(x.count)} ks</b><small>max. ${esc(decimal(x.maxLength))} cm</small></li>`).join("")}</ul>` : ""}
+      ${s.species.length ? `<h3 class="stats-subtitle">${icon("fish")}Nejčastější druhy</h3><ul class="stats-species">${s.species.map((x) => `<li><span>${esc(x.species)}</span><b>${esc(x.count)} ks</b><small>největší ${esc(decimal(x.maxLength))} cm</small></li>`).join("")}</ul>` : ""}
       ${s.years.length > 1 ? `<h3 class="stats-subtitle">${icon("calendar")}Po letech</h3><ul class="stats-species">${s.years.map((y) => `<li><span>${esc(y.year)}</span><b>${esc(y.visits)} ${plural(y.visits, "docházka", "docházky", "docházek")}</b><small>${esc(y.catches)} ${plural(y.catches, "úlovek", "úlovky", "úlovků")}</small></li>`).join("")}</ul>` : ""}`;
     fillWater(box);
   } catch { card.classList.add("hidden"); }
