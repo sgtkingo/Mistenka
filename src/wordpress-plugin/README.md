@@ -20,7 +20,7 @@ Produkční implementace Místenky. Chování je stejné jako u Node verze v `sr
 
 ## Instalace
 
-1. `python scripts/build-plugin.py` → `dist/mistenka.zip` (PHP + frontend + výchozí konfigurace).
+1. `python scripts/build-plugin.py` → `dist/mistenka.zip` (PHP + frontend + konfigurace MO z lokálního `config/organization.json`, který není v repu – vytvořte ho z `config/organization.json.example`). Obecný balíček se vzorem: `--example` (tak se staví GitHub release).
 2. Před sestavením zkontrolujte `config/organization.json`, hlavně `organization.appUrl` (adresa subdomény). Ostatní údaje (účet, e-maily, GDPR) jdou změnit i v portálu. ZIP má vždy `payment.provider: "fio"`, i když repo nechává `fake` pro lokální Node. Falešnou banku, kde může místenku „zaplatit“ kdokoli, dá do ZIPu jen `--fake-bank` (testovací web s `MISTENKA_DEV`).
 3. wp-config.php (nad řádek „That's all, stop editing!“):
 

@@ -9,8 +9,8 @@ Webová aplikace pro online prodej, kontrolu a odevzdání rybářských místen
 | `src/frontend/` | uživatelské rozhraní (HTML, JS, CSS) – **jediná kopie**, sdílená oběma servery |
 | `src/node/` | Node.js server se SQLite pro lokální vývoj |
 | `src/wordpress-plugin/` | PHP plugin pro WordPress – produkční nasazení ([návod](src/wordpress-plugin/README.md)) |
-| `config/organization.json` | konfigurace MO: kontakty, účet, revíry (cena, kapacita, pravidla) |
-| `config/organization.json.example` | vzor konfigurace pro novou MO (všechny klíče, revír se dvěma podrevíry s vlastní cenou a kapacitou) |
+| `config/organization.json` | konfigurace vaší MO: kontakty, účet, revíry (cena, kapacita, pravidla) – **jen lokálně, není v repu** (`.gitignore`) |
+| `config/organization.json.example` | vzor konfigurace pro novou MO (všechny klíče, revír se dvěma podrevíry s vlastní cenou a kapacitou); bez `organization.json` ho Node verze použije sama |
 | `config/species/` | pravidla druhů ryb organizace: seznam druhů, lovné míry, hájení, denní limity |
 | `test/` | sdílené testy API pro Node i PHP |
 | `dev/wordpress/` | Docker: WordPress 7.1.4 + PHP 8.3 pro vývoj a testy pluginu |
@@ -78,9 +78,9 @@ Rybář platí převodem podle QR platby (SPAYD) s jedinečným variabilním sym
 
 ## WordPress
 
-Produkční plugin je v `src/wordpress-plugin/mistenka`: `python scripts/build-plugin.py` → `dist/mistenka.zip`.
+Produkční plugin je v `src/wordpress-plugin/mistenka`: `python scripts/build-plugin.py` → `dist/mistenka.zip` s vaší lokální `config/organization.json` (balíček pro vlastní MO; `--example` místo ní zabalí vzor).
 
-Balíčky pro GitHub release: `python scripts/build-plugin.py --release` → `dist/mistenka.zip` (WP, Fio), `dist/mistenka-fake-bank.zip` (WP, testovací web) a `dist/mistenka-node.zip` (Node verze z commitu HEAD; samotný `--node`). Instalace, konstanty ve wp-config.php, cron a lokální Docker: [src/wordpress-plugin/README.md](src/wordpress-plugin/README.md).
+Obecné balíčky pro GitHub release (konfigurace ze vzoru, bez údajů konkrétní MO): `python scripts/build-plugin.py --release` → `dist/mistenka.zip` (WP, Fio), `dist/mistenka-fake-bank.zip` (WP, testovací web) a `dist/mistenka-node.zip` (Node verze z commitu HEAD; samotný `--node`). Instalace, konstanty ve wp-config.php, cron a lokální Docker: [src/wordpress-plugin/README.md](src/wordpress-plugin/README.md).
 
 ```bash
 cd dev/wordpress && docker compose up -d && sh setup.sh && sh reset.sh

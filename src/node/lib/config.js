@@ -5,13 +5,20 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const DEFAULT_PATH = path.join(__dirname, "..", "..", "..", "config", "organization.json");
+// Konfigurace MO je jen lokální (není v repu); bez ní se použije vzor, aby šel balíček rovnou spustit.
+const EXAMPLE_PATH = `${DEFAULT_PATH}.example`;
+function defaultPath() {
+  if (fs.existsSync(DEFAULT_PATH) || !fs.existsSync(EXAMPLE_PATH)) return DEFAULT_PATH;
+  console.warn("Konfigurace config/organization.json chybí – používám vzor config/organization.json.example (zkopírujte ho a upravte pro svou MO).");
+  return EXAMPLE_PATH;
+}
 
 function fail(message) {
   throw new Error(`Chybná konfigurace: ${message}`);
 }
 
 // Zdroj konfigurace: soubor MO + soubory pravidel druhů ryb, na které odkazuje (speciesRules).
-function readSource(file = process.env.MISTENKA_CONFIG || DEFAULT_PATH) {
+function readSource(file = process.env.MISTENKA_CONFIG || defaultPath()) {
   const raw = JSON.parse(fs.readFileSync(file, "utf8"));
   const baseDir = path.dirname(file);
   const species = {};

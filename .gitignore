@@ -17,3 +17,6 @@ Thumbs.db
 
 # Built plugin archives
 dist/
+
+# Konfigurace konkrétní MO – jen lokálně (v repu je vzor config/organization.json.example)
+config/organization.json
