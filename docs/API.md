@@ -71,6 +71,7 @@ Seznam druhů, lovné míry, doby hájení a denní limity jsou v samostatném s
 | `releaseFromLength` | ryba této délky a delší se musí vrátit (kapr od 70 cm) |
 | `closedSeasons` | doby hájení `[{ from: "MM-DD", to: "MM-DD" }]` včetně, mohou přecházet přes konec roku; posuzuje se den lovu místenky |
 | `weightFactor` | orientační koeficient odhadu hmotnosti: kg = k × délka³ / 100 000 |
+| `maxLength` | orientační největší délka druhu v cm (zhruba rekord v ČR) – jen pro hlídání nereálných měr a vah, není to předpis |
 | `invasive`, `note` | informace pro rybáře |
 
 `dailyLimits`: `[{ id, label, species: [id…], maxCount }]` – nejvýše `maxCount` přisvojených kusů uvedených druhů na jednu místenku.
@@ -78,6 +79,10 @@ Seznam druhů, lovné míry, doby hájení a denní limity jsou v samostatném s
 `periodLimits`: `[{ id, label, species: [id…], period: "week" | "month", maxCount, maxAreaHa?, source }]` – týdenní (kalendářní týden po–ne) a měsíční limity podle **všech vystavených místenek téhož čísla legitimace** v období dne lovu, i bez účtu. `maxAreaHa`: limit platí jen na místenkách, jejichž voda (největší z podrevírů místenky, jinak výměra revíru, údaj `area` „1,7 ha“) má nejvýš tuto výměru – např. kapr 2 ks týdně do 5 ha.
 
 `limitsEnabled` (výchozí false), `sizeRulesEnabled` (výchozí true): hlídání limitů úlovků a lovných měr (nejmenší míra, hájení, povinné vrácení). Odhad hmotnosti podle `weightFactor` funguje vždy. Vypnuté limity se nepočítají nikde (odevzdání, kontrola porybným, místenka, účet) a nevedou k blokaci; vypnuté míry se nekontrolují při odevzdání a pravidla revíru je neukazují. Ve správě Rybáři → Míry, váhy a hájení.
+
+`plausibility: { enabled, maxLength, maxWeight, weightTolerance }` – hlídání nereálných měr a vah (výchozí `{ enabled: false, maxLength: 1000, maxWeight: 1000, weightTolerance: 2.5 }`, ve správě zaškrtávátko „Hlídat nereálné míry a váhy“ v Míry, váhy a hájení):
+- **Obecná hranice** `maxLength` (cm, 1–1000) a `maxWeight` (kg, 1–1000) jedné ryby: úlovek nad ní se při odevzdání odmítne (`400 invalid_catches`). Vypnuté hlídání = jen technická hranice 1000 cm a 1000 kg.
+- **Odlehlé pozorování** (jen u známého druhu): délka nad `maxLength` druhu, nebo zapsaná hmotnost (ne `weightEstimated`), která se od odhadu podle `weightFactor` liší víc než `weightTolerance`× nahoru či dolů a zároveň o víc než 0,5 kg. Odevzdání **neblokuje**: úlovek dostane `catches[].suspect` (text) a místenka `suspicious: true` – obojí se uloží při odevzdání a pozdější změna pravidel ho nemění.
 
 **Překročení žádného limitu (denního, týdenního ani měsíčního) neblokuje odevzdání ani nákup.** Místenka vidí jen své místenky; limity svazu platí na všech revírech dohromady.
 
@@ -174,7 +179,8 @@ Veřejná kontrola – smí ji provést kdokoli (QR kód na místence, ruční z
 Tělo: `{ noCatch: boolean, catches: [{ species, length, weight?, weightEstimated? }] }`
 
 - `noCatch: true` ⇒ `catches` musí být prázdné; jinak alespoň jeden úlovek (`catches_required`).
-- `species` 1–60 znaků; známý druh (název nebo alias) se zapíše jako `name` z pravidel. Neznámý druh se přijme tak, jak je zadán. `length` 0–400 cm; `weight` volitelně 0–300 kg; `weightEstimated` = váha je odhad z délky.
+- `species` 1–60 znaků; známý druh (název nebo alias) se zapíše jako `name` z pravidel. Neznámý druh se přijme tak, jak je zadán. `length` > 0 cm; `weight` volitelně > 0 kg; obě nejvýše podle obecné hranice `fishRules.plausibility` (při vypnutém hlídání 1000 cm a 1000 kg), jinak `400 invalid_catches`; `weightEstimated` = váha je odhad z délky.
+- Odlehlé pozorování (`plausibility`, viz Pravidla druhů ryb) odevzdání **neblokuje**: úlovek má `catches[].suspect` (text, jinak `null`), místenka `suspicious: true`. Vidí to rybář v odpovědi, porybný i správce (filtr `status=suspicious`).
 - Doba hájení (podle dne lovu), `minLength` a `releaseFromLength` odevzdání **neblokují** – rozhodují pravidla v RIS. Úlovek s možným porušením má v `catches[].warning` text upozornění (jinak `null`); stejně ho vidí porybný (`GET /warden/tickets/:code`) a správce v detailu místenky. Počítá se podle aktuálních pravidel revíru, při `sizeRulesEnabled: false` je vždy `null`. Překročený limit (denní, týdenní, měsíční) odevzdání **neblokuje**: odpověď nese `limits` s `exceeded: true`, správce dostane e-mail.
 - Odevzdat lze stav `active` a `expired_unreturned`, tj. do `returnDeadline` (= konec dne lovu + `lateReturnDays`). Odevzdání po konci dne lovu má `late: true`. Stav `closed_unreturned` → `409 return_closed`.
 
@@ -392,9 +398,10 @@ Správa pro `manager`/`admin` (🛠, jinak `401`/`403 forbidden_role`). `revirId
 
 | Endpoint | Tělo / parametry | Odpověď / chyby |
 | --- | --- | --- |
-| `GET /manage/tickets` | `?q=&status=&revirId=&from=&to=&limit=100&offset=0` – `q` hledá kód, číslo legitimace, jméno, e-mail, VS; `status` = stav v API; `from`/`to` = den lovu | `{ total, tickets: [{ code, date, revirId, revir, firstName, lastName, memberId, email, status, late, seized, priceHalere, amountDueHalere, voucherUsed, catchCount, noCatch, createdAt, paidAt, returnedAt, account }] }`; `400 invalid_status`, `invalid_date` |
-| `GET /manage/tickets.csv` | stejné filtry | `text/csv` UTF-8 s BOM, oddělovač `;` (Excel v češtině) |
-| `GET /manage/tickets/{code}` | – | `{ ticket: <OwnerTicket> + variableSymbol, account, payments: [<Payment>], checks, violations, emails: [{ kind, to, subject, createdAt, sentAt, error }], cancellation, cancellable }` |
+| `GET /manage/tickets` | `?q=&status=&revirId=&from=&to=&limit=100&offset=0` – `q` hledá kód, číslo legitimace, jméno, e-mail, VS; `status` = stav v API, nebo `suspicious` = odevzdané místenky s odlehlým pozorováním; `from`/`to` = den lovu | `{ total, tickets: [{ code, date, revirId, revir, firstName, lastName, memberId, email, status, late, seized, suspicious, priceHalere, amountDueHalere, voucherUsed, catchCount, noCatch, createdAt, paidAt, returnedAt, account }] }`; `400 invalid_status`, `invalid_date` |
+| `GET /manage/tickets.csv` | stejné filtry | `text/csv` UTF-8 s BOM, oddělovač `;` (Excel v češtině); sloupec „Podezřelá“ |
+| `GET /manage/tickets/{code}` | – | `{ ticket: <OwnerTicket> + variableSymbol, account, payments: [<Payment>], checks, violations, emails: [{ kind, to, subject, createdAt, sentAt, error }], cancellation, suspicionReview, cancellable }` |
+| `POST /manage/tickets/{code}/clear-suspicion` | `{ note? }` (do 300) | detail jako výše; zruší příznak `suspicious` po prověření správcem (důvody `catches[].suspect` zůstávají), detail pak nese `suspicionReview: { at, by, note }`, audit `ticket_suspicion_cleared`. `409 not_suspicious`, `400 invalid_note` |
 | `POST /manage/tickets/{code}/cancel` | `{ reason }` (3–300) | detail jako výše; zruší objednávku nebo vystavenou neodevzdanou místenku (i zadrženou), uvolní místo, držitel vystavené dostane e-mail `ticket_cancelled`. Peníze se nevracejí automaticky. `409 not_cancellable` |
 | `GET /manage/payments` | `?state=open` (k vyřešení, výchozí) \| `all` | `{ payments: [<Payment>] }` |
 | `POST /manage/payments/{id}/resolve` | `{ action: "assign" \| "refunded" \| "ignored", note?, ticketCode? }` | `{ payment }`. `assign` vystaví místenku k objednávce (`ticketCode`, jinak ta podle VS) bez kontroly částky a kapacity – rozhoduje správce. `400 invalid_action`, `ticket_required`; `409 already_resolved`, `already_paid`, `not_assignable` |
@@ -553,8 +560,8 @@ Připomínka odevzdání chodí i zadrženým místenkám (po skončení dne lov
   "firstName": "Jan", "lastName": "Novák", "birthDate": "1980-05-15", "email": "jan@example.cz", "memberId": "12345678",
   "priceHalere": 20000, "amountDueHalere": 20000, "voucherUsed": false,
   "createdAt": "…", "issuedAt": "…", "returnedAt": null,
-  "noCatch": false, "returnable": true, "returnDeadline": "2026-11-24T23:00:00.000Z", "closedAt": null,
-  "catches": [{ "species": "kapr", "length": 52, "weight": 2.1, "weightEstimated": true }],
+  "noCatch": false, "suspicious": false, "returnable": true, "returnDeadline": "2026-11-24T23:00:00.000Z", "closedAt": null,
+  "catches": [{ "species": "kapr", "length": 52, "weight": 2.1, "weightEstimated": true, "warning": null, "suspect": null }],
   "payment": null // u pending_payment:
   // { "iban": "CZ…", "accountNumber": "2401876543/2010", "recipientName": "…", "variableSymbol": "8188232561",
   //   "amountHalere": 20000, "message": "Mistenka S7K4P2 2026-11-17", "reservedUntil": "…",

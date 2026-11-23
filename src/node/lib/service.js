@@ -37,6 +37,27 @@ function catchProblem(species, length, fishingDate) {
   if (species.releaseFromLength && length >= species.releaseFromLength) return { code: "must_release", message: `${species.name} od ${species.releaseFromLength} cm se musí vrátit zpět do revíru.` };
   return null;
 }
+// Hlídání nereálných měr a vah (pravidla druhů → plausibility). Technická hranice platí vždy, obecnou hranici
+// (nejvýše technickou) nastavuje správa – odevzdání nad ní se odmítne.
+const MAX_LENGTH_CM = 1000;
+const MAX_WEIGHT_KG = 1000;
+const OUTLIER_WEIGHT_SLACK_KG = 0.5; // rozdíl do 0,5 kg se nehlásí (zaokrouhlení u malých ryb)
+const czNumber = (n) => String(n).replace(".", ",");
+// Odlehlé pozorování: délka nad obvyklým maximem druhu (maxLength), nebo zapsaná (ne odhadnutá) hmotnost, která se od
+// odhadu z délky (weightFactor) liší víc než weightTolerance× a zároveň o víc než 0,5 kg. Vrací text, nebo null.
+function catchOutlier(species, length, weight, weightEstimated, plausibility) {
+  if (!species || !plausibility?.enabled) return null;
+  if (species.maxLength && length > species.maxLength) return `${species.name} ${czNumber(length)} cm – víc než obvyklá maximální délka druhu (${czNumber(species.maxLength)} cm).`;
+  if (weight && !weightEstimated && species.weightFactor && length > 0) {
+    const expected = species.weightFactor * length ** 3 / 100000;
+    const ratio = weight / expected;
+    const tolerance = plausibility.weightTolerance;
+    if ((ratio > tolerance || ratio < 1 / tolerance) && Math.abs(weight - expected) > OUTLIER_WEIGHT_SLACK_KG) {
+      return `${species.name} ${czNumber(length)} cm: hmotnost ${czNumber(weight)} kg neodpovídá délce (obvykle kolem ${czNumber(Math.round(expected * 10) / 10)} kg).`;
+    }
+  }
+  return null;
+}
 
 function createService({ db, config, provider, mailer, appUrl, operations, settings, mailAccounts }) {
   // ---------- pomocné ----------
@@ -200,6 +221,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       issuedAt: ticket.issued_at,
       returnedAt: ticket.returned_at,
       noCatch: Boolean(ticket.no_catch),
+      suspicious: Boolean(ticket.suspicious),
       returnable: isReturnable(ticket),
       returnDeadline: iso(w.deadline),
       closedAt: ticket.closed_at,
@@ -331,19 +353,28 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     if (!noCatch && items.length === 0) throw new ApiError(400, "catches_required", "Zapište alespoň jeden úlovek, nebo zvolte „Bez úlovku“.");
     if (items.length > 100) throw new ApiError(400, "invalid_catches", "Příliš mnoho úlovků.");
     const rules = revirRules(revirOf(ticket));
+    const plausibility = rules?.plausibility?.enabled ? rules.plausibility : null;
+    const maxLength = plausibility ? plausibility.maxLength : MAX_LENGTH_CM;
+    const maxWeight = plausibility ? plausibility.maxWeight : MAX_WEIGHT_KG;
     const catches = items.map((item, index) => {
       const name = String(item?.species || "").trim();
       const length = Number(item?.length);
       const weight = item?.weight === null || item?.weight === undefined || item?.weight === "" ? null : Number(item.weight);
       const row = `Úlovek ${index + 1}`;
       if (!name || name.length > 60) throw new ApiError(400, "invalid_catches", `${row}: vyplňte druh ryby.`);
-      if (!(length > 0 && length <= 400)) throw new ApiError(400, "invalid_catches", `${row}: vyplňte délku v cm.`);
-      if (weight !== null && !(weight > 0 && weight <= 300)) throw new ApiError(400, "invalid_catches", `${row}: neplatná hmotnost.`);
+      if (length > maxLength) throw new ApiError(400, "invalid_catches", `${row}: délka ${czNumber(length)} cm není reálná (nejvýše ${czNumber(maxLength)} cm).`);
+      if (!(length > 0)) throw new ApiError(400, "invalid_catches", `${row}: vyplňte délku v cm.`);
+      if (weight !== null && weight > maxWeight) throw new ApiError(400, "invalid_catches", `${row}: hmotnost ${czNumber(weight)} kg není reálná (nejvýše ${czNumber(maxWeight)} kg).`);
+      if (weight !== null && !(weight > 0)) throw new ApiError(400, "invalid_catches", `${row}: neplatná hmotnost.`);
       // Míra, hájení a povinné vrácení odevzdání nebrání – rozhodují pravidla v RIS; možné porušení se jen
       // vyznačí u úlovku (catches[].warning) rybáři, porybnému i správci.
+      // Odlehlé pozorování (hlídání nereálných měr a vah) odevzdání také nebrání – úlovek dostane catches[].suspect
+      // a místenka se označí jako podezřelá (tickets.suspicious), správce ji najde ve filtru.
       const known = findSpecies(rules, name);
-      return { species: known ? known.name : name, speciesId: known?.id || null, length, weight, weightEstimated: weight !== null && item.weightEstimated === true };
+      const weightEstimated = weight !== null && item.weightEstimated === true;
+      return { species: known ? known.name : name, speciesId: known?.id || null, length, weight, weightEstimated, suspect: catchOutlier(known, length, weight, weightEstimated, plausibility) };
     });
+    const suspicious = catches.some((c) => c.suspect);
     return transaction(db, () => {
       const fresh = db.prepare("SELECT * FROM tickets WHERE id = ?").get(ticket.id);
       const now = time.now();
@@ -352,9 +383,9 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       if (state === "expired_returned") throw new ApiError(409, "already_returned", "Místenka už byla odevzdána.");
       if (state === "future") throw new ApiError(409, "too_early", "Místenku není možné odevzdat před dnem lovu.");
       if (state === "closed_unreturned") throw new ApiError(409, "return_closed", "Lhůta pro odevzdání uplynula, místenka byla uzavřena jako neodevzdaná. Kontaktujte hospodáře.");
-      const insert = db.prepare("INSERT INTO catches (ticket_id, species, length_cm, weight_kg, weight_estimated) VALUES (?, ?, ?, ?, ?)");
-      for (const c of catches) insert.run(fresh.id, c.species, c.length, c.weight, c.weightEstimated ? 1 : 0);
-      db.prepare("UPDATE tickets SET returned_at = ?, return_late = ?, no_catch = ?, rules_version = ? WHERE id = ?").run(iso(now), now >= windowOf(fresh).end ? 1 : 0, noCatch ? 1 : 0, settings ? settings.rulesVersion(fresh.revir_id) : null, fresh.id);
+      const insert = db.prepare("INSERT INTO catches (ticket_id, species, length_cm, weight_kg, weight_estimated, suspect) VALUES (?, ?, ?, ?, ?, ?)");
+      for (const c of catches) insert.run(fresh.id, c.species, c.length, c.weight, c.weightEstimated ? 1 : 0, c.suspect);
+      db.prepare("UPDATE tickets SET returned_at = ?, return_late = ?, no_catch = ?, rules_version = ?, suspicious = ? WHERE id = ?").run(iso(now), now >= windowOf(fresh).end ? 1 : 0, noCatch ? 1 : 0, settings ? settings.rulesVersion(fresh.revir_id) : null, suspicious ? 1 : 0, fresh.id);
       const returned = db.prepare("SELECT * FROM tickets WHERE id = ?").get(fresh.id);
       recordViolations(returned);
       if (returned.return_late) applyPenalty(returned, "late_return");
@@ -604,8 +635,8 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     return problem ? problem.message : null;
   }
   function catchesOf(ticket) {
-    return db.prepare("SELECT species, length_cm, weight_kg, weight_estimated FROM catches WHERE ticket_id = ? ORDER BY id").all(ticket.id)
-      .map((c) => ({ species: c.species, length: c.length_cm, weight: c.weight_kg, weightEstimated: Boolean(c.weight_estimated), warning: catchWarning(ticket, c.species, c.length_cm) }));
+    return db.prepare("SELECT species, length_cm, weight_kg, weight_estimated, suspect FROM catches WHERE ticket_id = ? ORDER BY id").all(ticket.id)
+      .map((c) => ({ species: c.species, length: c.length_cm, weight: c.weight_kg, weightEstimated: Boolean(c.weight_estimated), warning: catchWarning(ticket, c.species, c.length_cm), suspect: c.suspect || null }));
   }
   // Plné údaje pro porybného + místenky téhož člena v týdnu a měsíci dne lovu (podklad pro limity, B3).
   function wardenView(ticket) {
@@ -705,7 +736,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     const catchCount = db.prepare("SELECT COUNT(*) AS n FROM catches WHERE ticket_id = ?").get(t.id).n;
     return {
       code: t.code, date: t.fishing_date, revirId: t.revir_id, revir: revirOf(t).name, subdistrict: t.subdistrict ? subdistrictName(revirOf(t), t.subdistrict) : null, firstName: t.first_name, lastName: t.last_name, memberId: t.member_id, email: t.email,
-      status, late: publicTicket(t).late, seized: Boolean(t.seized_at), priceHalere: t.price_halere, amountDueHalere: t.amount_due_halere, voucherUsed: Boolean(t.voucher_code),
+      status, late: publicTicket(t).late, seized: Boolean(t.seized_at), suspicious: Boolean(t.suspicious), priceHalere: t.price_halere, amountDueHalere: t.amount_due_halere, voucherUsed: Boolean(t.voucher_code),
       catchCount, noCatch: Boolean(t.no_catch), createdAt: t.created_at, paidAt: t.paid_at, returnedAt: t.returned_at, account: Boolean(t.user_id)
     };
   }
@@ -721,9 +752,12 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       where.push("(lower(code) = ? OR member_id LIKE ? OR lower(first_name || ' ' || last_name) LIKE ? OR lower(email) LIKE ? OR variable_symbol = ?)");
       params.push(q, `%${q.replace(/\s+/g, "")}%`, `%${q}%`, `%${q}%`, q);
     }
-    if (filters.status && !TICKET_FILTER_STATES.includes(filters.status)) throw new ApiError(400, "invalid_status", "Neznámý stav.");
+    // status=suspicious: odevzdané místenky s odlehlým pozorováním (hlídání nereálných měr a vah).
+    const suspiciousOnly = filters.status === "suspicious";
+    if (suspiciousOnly) where.push("suspicious = 1");
+    else if (filters.status && !TICKET_FILTER_STATES.includes(filters.status)) throw new ApiError(400, "invalid_status", "Neznámý stav.");
     const rows = db.prepare(`SELECT * FROM tickets ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY fishing_date DESC, id DESC LIMIT 5000`).all(...params)
-      .filter((t) => !filters.status || stateOf(t) === filters.status);
+      .filter((t) => !filters.status || suspiciousOnly || stateOf(t) === filters.status);
     return rows;
   }
   function listTickets(filters = {}) {
@@ -734,11 +768,11 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
   }
   function ticketsCsv(filters = {}) {
     const cell = (value) => { const text = String(value ?? ""); return /[;"\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; };
-    const header = ["Kód", "Revír", "Podrevír", "Datum lovu", "Jméno", "Příjmení", "Č. legitimace", "E-mail", "Stav", "Opožděně", "Zadržena", "Cena Kč", "Zaplaceno Kč", "Poukaz", "Úlovky", "Bez úlovku", "Vytvořeno", "Zaplaceno", "Odevzdáno"];
+    const header = ["Kód", "Revír", "Podrevír", "Datum lovu", "Jméno", "Příjmení", "Č. legitimace", "E-mail", "Stav", "Opožděně", "Zadržena", "Podezřelá", "Cena Kč", "Zaplaceno Kč", "Poukaz", "Úlovky", "Bez úlovku", "Vytvořeno", "Zaplaceno", "Odevzdáno"];
     const lines = searchTickets(filters).map((t) => {
       const r = manageRow(t);
       const catches = db.prepare("SELECT species, length_cm, weight_kg FROM catches WHERE ticket_id = ? ORDER BY id").all(t.id).map((c) => `${c.species} ${c.length_cm} cm${c.weight_kg ? ` ${c.weight_kg} kg` : ""}`).join(", ");
-      return [r.code, r.revir, r.subdistrict || "", r.date, r.firstName, r.lastName, r.memberId, r.email, r.status, r.late ? "ano" : "", r.seized ? "ano" : "", (r.priceHalere / 100).toFixed(2).replace(".", ","), (t.paid_at ? r.amountDueHalere / 100 : 0).toFixed(2).replace(".", ","), r.voucherUsed ? "ano" : "", catches, r.noCatch ? "ano" : "", r.createdAt, r.paidAt || "", r.returnedAt || ""].map(cell).join(";");
+      return [r.code, r.revir, r.subdistrict || "", r.date, r.firstName, r.lastName, r.memberId, r.email, r.status, r.late ? "ano" : "", r.seized ? "ano" : "", r.suspicious ? "ano" : "", (r.priceHalere / 100).toFixed(2).replace(".", ","), (t.paid_at ? r.amountDueHalere / 100 : 0).toFixed(2).replace(".", ","), r.voucherUsed ? "ano" : "", catches, r.noCatch ? "ano" : "", r.createdAt, r.paidAt || "", r.returnedAt || ""].map(cell).join(";");
     });
     return "\uFEFF" + [header.join(";"), ...lines].join("\r\n") + "\r\n"; // BOM + středník: Excel v češtině
   }
@@ -751,7 +785,27 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     const sentEmails = db.prepare("SELECT kind, to_email, subject, created_at, sent_at, error, sender FROM email_outbox WHERE ticket_id = ? ORDER BY id").all(ticket.id)
       .map((e) => ({ kind: e.kind, to: e.to_email, subject: e.subject, createdAt: e.created_at, sentAt: e.sent_at, error: e.error, sender: e.sender || null }));
     const cancellation = ticket.cancelled_at ? { at: ticket.cancelled_at, reason: ticket.cancel_reason || "zrušeno držitelem před zaplacením", byManager: Boolean(ticket.cancelled_by) } : null;
-    return { ticket: { ...ownerTicket(ticket), variableSymbol: ticket.variable_symbol, account: Boolean(ticket.user_id), rulesVersion: ticket.rules_version || null }, payments, checks, violations, emails: sentEmails, cancellation, cancellable: ["pending_payment", "payment_expired", "future", "active", "expired_unreturned", "seized"].includes(stateOf(ticket)) };
+    let suspicionReview = null;
+    if (ticket.suspicion_cleared_at) {
+      const by = ticket.suspicion_cleared_by ? db.prepare("SELECT first_name, last_name FROM users WHERE id = ?").get(ticket.suspicion_cleared_by) : null;
+      suspicionReview = { at: ticket.suspicion_cleared_at, by: by ? `${by.first_name} ${by.last_name}` : "", note: ticket.suspicion_note || "" };
+    }
+    return { ticket: { ...ownerTicket(ticket), variableSymbol: ticket.variable_symbol, account: Boolean(ticket.user_id), rulesVersion: ticket.rules_version || null }, payments, checks, violations, emails: sentEmails, cancellation, suspicionReview, cancellable: ["pending_payment", "payment_expired", "future", "active", "expired_unreturned", "seized"].includes(stateOf(ticket)) };
+  }
+  // Zrušení příznaku podezřelá (hlídání nereálných měr a vah) po prověření správcem. Důvody u úlovků (catches.suspect)
+  // zůstávají jako historie; kdo a kdy prověřil, je v detailu (suspicionReview) a v auditu.
+  function clearSuspicion(actor, code, body = {}) {
+    const note = String(body.note || "").trim();
+    if (note.length > 300) throw new ApiError(400, "invalid_note", "Poznámka může mít nejvýše 300 znaků.");
+    const ticket = findTicket(code);
+    return transaction(db, () => {
+      const fresh = db.prepare("SELECT * FROM tickets WHERE id = ?").get(ticket.id);
+      if (!fresh.suspicious) throw new ApiError(409, "not_suspicious", "Místenka není označená jako podezřelá.");
+      const now = iso(time.now());
+      db.prepare("UPDATE tickets SET suspicious = 0, suspicion_cleared_at = ?, suspicion_cleared_by = ?, suspicion_note = ? WHERE id = ?").run(now, actor?.id ?? null, note || null, fresh.id);
+      audit(actor, "ticket_suspicion_cleared", "ticket", fresh.code, { note });
+      return ticketDetail(fresh.code);
+    });
   }
   // Zrušení správcem: vystavená neodevzdaná místenka nebo objednávka. Peníze se nevracejí automaticky.
   function cancelByManager(actor, code, body = {}) {
@@ -1006,7 +1060,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     return { result: report.payments?.results?.[0] || null };
   }
 
-  return { availability, createOrder, getPublicTicket, getOwnerTicket, ticketsForUser, wardenCheck, seizeTicket, listTickets, ticketsCsv, ticketDetail, cancelByManager, listPayments, resolvePayment, listVouchers, generateVouchers, voidVoucher, listViolations, listBlocks, createBlock, liftBlock, limitsForMember, statsForUser, communityStats, cancelOrder, submitReturn, checkVoucher, createVoucher, runJobs, addJob, simulatePayment, processTransaction, stateOf };
+  return { availability, createOrder, getPublicTicket, getOwnerTicket, ticketsForUser, wardenCheck, seizeTicket, listTickets, ticketsCsv, ticketDetail, clearSuspicion, cancelByManager, listPayments, resolvePayment, listVouchers, generateVouchers, voidVoucher, listViolations, listBlocks, createBlock, liftBlock, limitsForMember, statsForUser, communityStats, cancelOrder, submitReturn, checkVoucher, createVoucher, runJobs, addJob, simulatePayment, processTransaction, stateOf };
 }
 
 module.exports = { createService, ApiError };

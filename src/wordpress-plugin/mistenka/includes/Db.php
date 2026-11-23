@@ -7,7 +7,7 @@ defined('ABSPATH') || exit;
 
 final class Db
 {
-    public const SCHEMA_VERSION = 18;
+    public const SCHEMA_VERSION = 19;
 
     // Sloupce, které se z $wpdb (vrací řetězce) převádějí na čísla – výstup API musí mít čísla jako Node.
     private const INT = ['id', 'ticket_id', 'user_id', 'price_halere', 'amount_due_halere', 'return_late', 'no_catch', 'seized_by', 'cancelled_by',
@@ -319,6 +319,10 @@ final class Db
   cancelled_by BIGINT NULL,
   rules_version VARCHAR(120) NULL,
   anonymized_at $ts NULL,
+  suspicious TINYINT NOT NULL DEFAULT 0,
+  suspicion_cleared_at $ts NULL,
+  suspicion_cleared_by BIGINT NULL,
+  suspicion_note VARCHAR(300) NULL,
   PRIMARY KEY  (id),
   UNIQUE KEY code (code),
   UNIQUE KEY variable_symbol (variable_symbol),
@@ -484,6 +488,7 @@ final class Db
   length_cm DOUBLE NOT NULL,
   weight_kg DOUBLE NULL,
   weight_estimated TINYINT NOT NULL DEFAULT 0,
+  suspect VARCHAR(300) NULL,
   PRIMARY KEY  (id),
   KEY ticket_id (ticket_id)
 ) $c;";

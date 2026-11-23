@@ -272,7 +272,7 @@ final class Config
             if (!preg_match('/^[a-z0-9-]+$/', $sid) || empty($s['name'])) self::fail("{$file}: druh musí mít id (a-z0-9-) a name");
             if (isset($ids[$sid])) self::fail("{$file}: duplicitní druh {$sid}");
             $ids[$sid] = true;
-            foreach (['minLength', 'releaseFromLength', 'weightFactor'] as $key) {
+            foreach (['minLength', 'releaseFromLength', 'weightFactor', 'maxLength'] as $key) {
                 if (array_key_exists($key, $s) && $s[$key] !== null && !(Js::isNumber($s[$key]) && $s[$key] >= 0)) self::fail("{$file}: {$s['name']} – {$key} musí být číslo >= 0");
             }
             foreach ($s['closedSeasons'] ?? [] as $season) {
@@ -296,7 +296,21 @@ final class Config
             'id' => $rules['id'] ?? null, 'name' => $rules['name'] ?? null, 'validFrom' => $rules['validFrom'] ?? null, 'validTo' => $rules['validTo'] ?? null,
             'sources' => $rules['sources'] ?? [], 'dailyLimits' => $rules['dailyLimits'] ?? [], 'periodLimits' => $rules['periodLimits'] ?? [], 'species' => $rules['species'],
             'limitsEnabled' => ($rules['limitsEnabled'] ?? false) === true, 'sizeRulesEnabled' => ($rules['sizeRulesEnabled'] ?? true) !== false,
+            'plausibility' => self::validatePlausibility($rules['plausibility'] ?? null, $file, array_key_exists('plausibility', $rules)),
         ];
+    }
+
+    // Hlídání nereálných měr a vah (výchozí vypnuto): obecná horní hranice délky a hmotnosti jedné ryby (odevzdání nad ní
+    // se odmítne) a tolerance hmotnosti vůči odhadu z délky pro odlehlá pozorování (místenka se označí jako podezřelá).
+    private static function validatePlausibility($value, string $file, bool $present): array
+    {
+        if ($present && (!is_array($value) || ($value && !Js::isAssoc($value)))) self::fail("{$file}: plausibility musí být objekt");
+        $p = array_merge(['enabled' => false, 'maxLength' => 1000, 'maxWeight' => 1000, 'weightTolerance' => 2.5], is_array($value) ? $value : []);
+        if (!is_bool($p['enabled'])) self::fail("{$file}: plausibility.enabled musí být true/false");
+        if (!(Js::isNumber($p['maxLength']) && $p['maxLength'] > 0 && $p['maxLength'] <= 1000)) self::fail("{$file}: obecná hranice délky musí být číslo 1–1000 cm");
+        if (!(Js::isNumber($p['maxWeight']) && $p['maxWeight'] > 0 && $p['maxWeight'] <= 1000)) self::fail("{$file}: obecná hranice hmotnosti musí být číslo 1–1000 kg");
+        if (!(Js::isNumber($p['weightTolerance']) && $p['weightTolerance'] >= 1.2 && $p['weightTolerance'] <= 10)) self::fail("{$file}: tolerance hmotnosti musí být číslo 1,2–10");
+        return ['enabled' => $p['enabled'], 'maxLength' => $p['maxLength'], 'maxWeight' => $p['maxWeight'], 'weightTolerance' => $p['weightTolerance']];
     }
 
     // Úpravy pro konkrétní revír („na vybraných revírech je zvýšena lovná míra …“).

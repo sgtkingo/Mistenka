@@ -20,7 +20,7 @@ function createRetention({ db, config, backups }) {
       const lastYear = Number(today.slice(0, 4)) - p.ticketYears - 1; // např. 2030 − 3 − 1 = 2026 → místenky z roku 2026 a starší
       const old = db.prepare("SELECT id FROM tickets WHERE anonymized_at IS NULL AND substr(fishing_date, 1, 4) <= ?").all(String(lastYear)).map((t) => t.id);
       for (const id of old) {
-        db.prepare("UPDATE tickets SET first_name = 'Anonymizováno', last_name = '', birth_date = '', email = '', member_id = '', user_id = NULL, seized_reason = CASE WHEN seized_reason IS NULL THEN NULL ELSE 'anonymizováno' END, seized_place = NULL, cancel_reason = CASE WHEN cancel_reason IS NULL THEN NULL ELSE 'anonymizováno' END, anonymized_at = ? WHERE id = ?").run(now, id);
+        db.prepare("UPDATE tickets SET first_name = 'Anonymizováno', last_name = '', birth_date = '', email = '', member_id = '', user_id = NULL, seized_reason = CASE WHEN seized_reason IS NULL THEN NULL ELSE 'anonymizováno' END, seized_place = NULL, cancel_reason = CASE WHEN cancel_reason IS NULL THEN NULL ELSE 'anonymizováno' END, suspicion_note = CASE WHEN suspicion_note IS NULL THEN NULL ELSE 'anonymizováno' END, anonymized_at = ? WHERE id = ?").run(now, id);
         db.prepare("DELETE FROM ticket_tokens WHERE ticket_id = ?").run(id);
         db.prepare("UPDATE limit_violations SET member_id = '' WHERE ticket_id = ?").run(id);
         db.prepare("UPDATE email_outbox SET to_email = '', body_html = '', body_text = '' WHERE ticket_id = ?").run(id);

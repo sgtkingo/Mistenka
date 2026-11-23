@@ -196,6 +196,22 @@
     if (species.releaseFromLength && length >= species.releaseFromLength) return `Od ${species.releaseFromLength} cm se musí vrátit`;
     return "";
   }
+  // Hlídání nereálných měr a vah (rules.plausibility, stejná logika jako server): odlehlé pozorování = délka nad
+  // obvyklým maximem druhu, nebo zapsaná hmotnost víc než weightTolerance× (a o víc než 0,5 kg) mimo odhad z délky.
+  const czNum = (n) => String(n).replace(".", ",");
+  function catchOutlier(rules, species, length, weight, weightEstimated) {
+    const p = rules?.plausibility;
+    if (!species || !p?.enabled || !(length > 0)) return "";
+    if (species.maxLength && length > species.maxLength) return `Neobvyklá délka – obvyklé maximum druhu je ${czNum(species.maxLength)} cm`;
+    if (weight > 0 && !weightEstimated && species.weightFactor) {
+      const expected = species.weightFactor * length ** 3 / 100000;
+      const ratio = weight / expected;
+      if ((ratio > p.weightTolerance || ratio < 1 / p.weightTolerance) && Math.abs(weight - expected) > 0.5) return `Hmotnost neodpovídá délce – obvykle kolem ${czNum(Math.round(expected * 10) / 10)} kg`;
+    }
+    return "";
+  }
+  // Obecná horní hranice délky a hmotnosti jedné ryby (při vypnutém hlídání jen technická hranice 1000).
+  const catchLimits = (rules) => (rules?.plausibility?.enabled ? { maxLength: rules.plausibility.maxLength, maxWeight: rules.plausibility.maxWeight } : { maxLength: 1000, maxWeight: 1000 });
   // Podrevír místenky (vybraný při nákupu), u starších místenek podrevíry revíru (ticketSubdistricts), např. "1 – Petr 1".
   function subdistrictLabel(revir, ticket = null) {
     if (ticket?.subdistrict) return ticket.subdistrict.label;
@@ -751,7 +767,7 @@
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", addBugButton); else addBugButton();
 
-  window.Mistenka = { infoTip, icon, rodIcon, hasGps, gpsText, mapyUrl, gpsLink, fishingPlace, gpsPlaces, gpsListHtml, openBugReport, logEvent, qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest, attachQrScanner, attachMemberIdScanner, codeFromQr, memberIdFromBarcode, roleBadge, roleBadges };
+  window.Mistenka = { infoTip, icon, rodIcon, hasGps, gpsText, mapyUrl, gpsLink, fishingPlace, gpsPlaces, gpsListHtml, openBugReport, logEvent, qs, qsa, esc, api, ApiError, loadConfig, selectedRevir, revirUrl, czDate, dayInfo, czk, czDateTime, fishingHours, subdistrictLabel, subdistrictTitle, plural, findSpecies, catchProblem, catchOutlier, catchLimits, seasonText, normalizeMemberId, isMemberId, credentialsFor, saveToken, rememberMemberId, qrMatrix, qrSvg, ticketCheckUrl, showToast, applyBranding, loadSession, setSession, setSessionUser, hasRole, isStaff, renderUserMenu, initUserMenu, ticketState, ROLE_LABELS, parseCzDate, formatCzDate, passwordProblem, limitsHtml, attachSpeciesSuggest, attachQrScanner, attachMemberIdScanner, codeFromQr, memberIdFromBarcode, roleBadge, roleBadges };
 })();
 
 // Pole s číslem členské legitimace (max. 8 znaků): ponechá jen číslice, aby vložené „1234 5678“ nepřišlo o číslici.

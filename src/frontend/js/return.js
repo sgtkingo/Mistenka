@@ -1,4 +1,4 @@
-const { qs, qsa, esc, api, loadConfig, revirUrl, czDate, czDateTime, plural, findSpecies, catchProblem, credentialsFor, rememberMemberId, normalizeMemberId, isMemberId, showToast, applyBranding, loadSession, limitsHtml } = window.Mistenka;
+const { qs, qsa, esc, api, loadConfig, revirUrl, czDate, czDateTime, plural, findSpecies, catchProblem, catchOutlier, catchLimits, credentialsFor, rememberMemberId, normalizeMemberId, isMemberId, showToast, applyBranding, loadSession, limitsHtml } = window.Mistenka;
 
 const code = (new URLSearchParams(location.search).get("code") || "").trim().toUpperCase();
 let credentials = credentialsFor(code);
@@ -46,28 +46,38 @@ function addRow() {
   fishInput.addEventListener("input", () => { renderSuggestions(); validateLength(row); updateWeight(row); });
   fishInput.addEventListener("blur", () => window.setTimeout(() => suggestions.classList.remove("visible"), 120));
   row.querySelector(".fish-length").addEventListener("input", () => { validateLength(row); updateWeight(row); });
-  row.querySelector(".fish-weight").addEventListener("input", () => { row.dataset.estimated = "false"; row.querySelector(".weight-note").classList.add("hidden"); });
+  row.querySelector(".fish-weight").addEventListener("input", () => { row.dataset.estimated = "false"; row.querySelector(".weight-note").classList.add("hidden"); validateLength(row); });
   row.querySelector(".remove-catch").addEventListener("click", () => { if (qs("#catchRows").children.length > 1) row.remove(); });
 }
 
 // Míra, hájení v den lovu a povinné vrácení: možné porušení jen vyznačí (červené pole + text), odevzdání nebrání –
-// rozhodují pravidla v RIS, údaje v Místence nemusí být aktuální. Vrací, zda je délka vyplněná.
+// rozhodují pravidla v RIS, údaje v Místence nemusí být aktuální. Hlídání nereálných měr a vah: délka či hmotnost
+// nad obecnou hranicí odevzdání zastaví (server ji odmítne), odlehlé pozorování se jen vyznačí (správce ho prověří).
+// Vrací, zda je délka vyplněná.
 function validateLength(row) {
   const known = findSpecies(rules, row.querySelector(".fish-name").value);
   const input = row.querySelector(".fish-length");
+  const weightInput = row.querySelector(".fish-weight");
   const error = row.querySelector(".length-error");
   const length = Number(input.value);
-  error.textContent = "Vyplňte délku";
-  // Lovné míry lze ve správě vypnout (sizeRulesEnabled) – pak se míra, hájení ani vrácení nekontroluje.
-  const problem = known && rules.sizeRulesEnabled !== false && catchProblem(known, length, ticket.date);
-  const warn = Boolean(problem && (length || problem.startsWith("Celoročně") || problem.startsWith("V době")));
-  row.classList.toggle("catch-warning", warn);
-  if (warn) {
-    input.classList.add("invalid");
-    error.textContent = `Možné porušení pravidel: ${problem}`;
-    return Boolean(length);
+  const weight = Number(weightInput.value);
+  const limits = catchLimits(rules);
+  const messages = [];
+  let lengthBad = false;
+  let weightBad = false;
+  if (length > limits.maxLength) { messages.push(`Nereálná délka – nejvýše ${limits.maxLength} cm`); lengthBad = true; }
+  if (weight > limits.maxWeight) { messages.push(`Nereálná hmotnost – nejvýše ${limits.maxWeight} kg`); weightBad = true; }
+  if (!messages.length) {
+    // Lovné míry lze ve správě vypnout (sizeRulesEnabled) – pak se míra, hájení ani vrácení nekontroluje.
+    const problem = known && rules.sizeRulesEnabled !== false && catchProblem(known, length, ticket.date);
+    if (problem && (length || problem.startsWith("Celoročně") || problem.startsWith("V době"))) { messages.push(`Možné porušení pravidel: ${problem}`); lengthBad = true; }
+    const outlier = catchOutlier(rules, known, length, weight, row.dataset.estimated === "true");
+    if (outlier) { messages.push(`Neobvyklý údaj: ${outlier}`); if (outlier.startsWith("Hmotnost")) weightBad = true; else lengthBad = true; }
   }
-  input.classList.remove("invalid");
+  row.classList.toggle("catch-warning", messages.length > 0);
+  input.classList.toggle("invalid", lengthBad);
+  weightInput.classList.toggle("invalid", weightBad);
+  error.textContent = messages.length ? messages.join(" · ") : "Vyplňte délku";
   return Boolean(length);
 }
 
@@ -147,6 +157,8 @@ qs("#submitReturn").addEventListener("click", async () => {
       return { species: name, length, weight: weight || null, weightEstimated: Boolean(weight) && row.dataset.estimated === "true" };
     });
     if (!valid) return showToast("Doplňte druh a délku u každé ponechané ryby, nebo zvolte „Žádná ponechaná ryba“.", "warning");
+    const limits = catchLimits(rules);
+    if (catches.some((c) => c.length > limits.maxLength || (c.weight || 0) > limits.maxWeight)) return showToast("Opravte nereálnou délku nebo hmotnost (označeno červeně).", "warning");
   }
   if (!qs("#returnDeclaration").checked) {
     // Stejně jako u nákupu: zčervenat potvrzení a dorolovat k němu.
@@ -165,7 +177,10 @@ qs("#submitReturn").addEventListener("click", async () => {
       : "Děkujeme za vyplnění sumáře ponechaných ryb. Místenka je nyní označena jako odevzdaná.";
     // Překročený limit odevzdání neblokuje – rybář dostane upozornění (správce e-mail).
     const warned = (ticket.catches || []).filter((c) => c.warning);
+    // Odlehlé pozorování (hlídání nereálných měr a vah): místenka je odevzdaná, ale vedená jako podezřelá.
+    const suspects = (ticket.catches || []).filter((c) => c.suspect);
     qs("#returnedLimits").innerHTML = (warned.length ? `<div class="warn-box catch-warning-box"><b>Možné porušení pravidel u ${warned.length === 1 ? "úlovku" : "úlovků"}</b><ul>${warned.map((c) => `<li>${esc(c.species)} ${esc(c.length)} cm: ${esc(c.warning)}</li>`).join("")}</ul><small>Místenka je odevzdaná. Rozhodují pravidla v RIS – údaje v Místence nemusí být aktuální. Porybný i správce upozornění uvidí.</small></div>` : "")
+      + (suspects.length ? `<div class="warn-box catch-warning-box"><b>Neobvyklé údaje u ${suspects.length === 1 ? "úlovku" : "úlovků"}</b><ul>${suspects.map((c) => `<li>${esc(c.suspect)}</li>`).join("")}</ul><small>Místenka je odevzdaná, ale je označená k prověření správcem. Jde-li o překlep, kontaktujte hospodáře.</small></div>` : "")
       + limitsHtml(ticket.limits, { title: "Upozornění na limity úlovků" });
     qs("#ticketSummary").classList.add("hidden");
     show("returnedState");

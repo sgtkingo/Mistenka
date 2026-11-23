@@ -50,11 +50,14 @@ async function loadStatus() {
 }
 
 // ---------- porybný: plná kontrola a zadržení (B2) ----------
-const catchText = (t) => (t.catches.length ? t.catches.map((c) => `${c.species} ${c.length} cm${c.warning ? " ⚠" : ""}`).join(", ") : t.noCatch ? "nic neponecháno" : "—");
+const catchText = (t) => (t.catches.length ? t.catches.map((c) => `${c.species} ${c.length} cm${c.warning || c.suspect ? " ⚠" : ""}`).join(", ") : t.noCatch ? "nic neponecháno" : "—");
 // Úlovky s možným porušením pravidel (míra, hájení, povinné vrácení) – porybný je má zkontrolovat podle RIS.
 const catchWarningsHtml = (catches) => {
   const warned = (catches || []).filter((c) => c.warning);
-  return warned.length ? `<div class="warn-box catch-warning-box"><b>⚠ Možné porušení pravidel – zkontrolujte</b><ul>${warned.map((c) => `<li>${esc(c.species)} ${esc(c.length)} cm: ${esc(c.warning)}</li>`).join("")}</ul><small>Podle údajů v Místence; rozhodují pravidla v RIS.</small></div>` : "";
+  const html = warned.length ? `<div class="warn-box catch-warning-box"><b>⚠ Možné porušení pravidel – zkontrolujte</b><ul>${warned.map((c) => `<li>${esc(c.species)} ${esc(c.length)} cm: ${esc(c.warning)}</li>`).join("")}</ul><small>Podle údajů v Místence; rozhodují pravidla v RIS.</small></div>` : "";
+  // Odlehlé pozorování (hlídání nereálných měr a vah) – místenka je vedená jako podezřelá.
+  const suspects = (catches || []).filter((c) => c.suspect);
+  return html + (suspects.length ? `<div class="warn-box catch-warning-box"><b>⚠ Neobvyklé míry nebo váhy</b><ul>${suspects.map((c) => `<li>${esc(c.suspect)}</li>`).join("")}</ul></div>` : "");
 };
 async function loadWarden() {
   const panel = qs("#wardenPanel");

@@ -25,7 +25,7 @@ final class Retention
             $lastYear = (int) substr($today, 0, 4) - (int) $p['ticketYears'] - 1;
             $old = array_column(Db::all('SELECT id FROM {p}tickets WHERE anonymized_at IS NULL AND SUBSTRING(fishing_date, 1, 4) <= ?', (string) $lastYear), 'id');
             foreach ($old as $id) {
-                Db::exec("UPDATE {p}tickets SET first_name = 'Anonymizováno', last_name = '', birth_date = '', email = '', member_id = '', user_id = NULL, seized_reason = CASE WHEN seized_reason IS NULL THEN NULL ELSE 'anonymizováno' END, seized_place = NULL, cancel_reason = CASE WHEN cancel_reason IS NULL THEN NULL ELSE 'anonymizováno' END, anonymized_at = ? WHERE id = ?", $now, $id);
+                Db::exec("UPDATE {p}tickets SET first_name = 'Anonymizováno', last_name = '', birth_date = '', email = '', member_id = '', user_id = NULL, seized_reason = CASE WHEN seized_reason IS NULL THEN NULL ELSE 'anonymizováno' END, seized_place = NULL, cancel_reason = CASE WHEN cancel_reason IS NULL THEN NULL ELSE 'anonymizováno' END, suspicion_note = CASE WHEN suspicion_note IS NULL THEN NULL ELSE 'anonymizováno' END, anonymized_at = ? WHERE id = ?", $now, $id);
                 Db::exec('DELETE FROM {p}ticket_tokens WHERE ticket_id = ?', $id);
                 Db::exec("UPDATE {p}limit_violations SET member_id = '' WHERE ticket_id = ?", $id);
                 Db::exec("UPDATE {p}email_outbox SET to_email = '', body_html = '', body_text = '' WHERE ticket_id = ?", $id);

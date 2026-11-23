@@ -425,6 +425,7 @@ final class App
         }
         if ($match('#^/manage/tickets/([^/]+)$#') && $method === 'GET') { $acc->requireManager($ctx); return self::json(200, $svc->ticketDetail($m[1])); }
         if ($match('#^/manage/tickets/([^/]+)/cancel$#') && $method === 'POST') return self::json(200, $svc->cancelByManager($acc->requireManager($ctx), $m[1], self::body($request)));
+        if ($match('#^/manage/tickets/([^/]+)/clear-suspicion$#') && $method === 'POST') return self::json(200, $svc->clearSuspicion($acc->requireManager($ctx), $m[1], self::body($request)));
         if ($path === '/manage/payments' && $method === 'GET') { $acc->requireManager($ctx); return self::json(200, $svc->listPayments($q('state') ?: 'open')); }
         if ($match('#^/manage/payments/(\d+)/resolve$#') && $method === 'POST') return self::json(200, $svc->resolvePayment($acc->requireManager($ctx), $m[1], self::body($request)));
         if ($path === '/manage/vouchers' && $method === 'GET') { $acc->requireManager($ctx); return self::json(200, $svc->listVouchers()); }

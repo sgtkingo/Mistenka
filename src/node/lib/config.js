@@ -213,7 +213,7 @@ function validateSpeciesRules(rules, file) {
     if (!/^[a-z0-9-]+$/.test(s.id || "") || !s.name) fail(`${file}: druh musí mít id (a-z0-9-) a name`);
     if (ids.has(s.id)) fail(`${file}: duplicitní druh ${s.id}`);
     ids.add(s.id);
-    for (const key of ["minLength", "releaseFromLength", "weightFactor"]) {
+    for (const key of ["minLength", "releaseFromLength", "weightFactor", "maxLength"]) {
       if (s[key] !== undefined && s[key] !== null && !(typeof s[key] === "number" && s[key] >= 0)) fail(`${file}: ${s.name} – ${key} musí být číslo >= 0`);
     }
     for (const season of s.closedSeasons || []) {
@@ -232,7 +232,19 @@ function validateSpeciesRules(rules, file) {
   // Hlídání limitů úlovků (výchozí vypnuto) a lovných měr – míra, hájení, povinné vrácení (výchozí zapnuto); přepíná se ve správě.
   for (const key of ["limitsEnabled", "sizeRulesEnabled"]) if (rules[key] !== undefined && typeof rules[key] !== "boolean") fail(`${file}: ${key} musí být true/false`);
   return { id: rules.id, name: rules.name, validFrom: rules.validFrom, validTo: rules.validTo, sources: rules.sources || [], dailyLimits: rules.dailyLimits || [], periodLimits: rules.periodLimits || [], species: rules.species,
-    limitsEnabled: rules.limitsEnabled === true, sizeRulesEnabled: rules.sizeRulesEnabled !== false };
+    limitsEnabled: rules.limitsEnabled === true, sizeRulesEnabled: rules.sizeRulesEnabled !== false, plausibility: validatePlausibility(rules.plausibility, file) };
+}
+// Hlídání nereálných měr a vah (výchozí vypnuto): obecná horní hranice délky a hmotnosti jedné ryby (odevzdání nad ní
+// se odmítne) a tolerance hmotnosti vůči odhadu z délky pro odlehlá pozorování (místenka se označí jako podezřelá).
+const PLAUSIBILITY_DEFAULTS = { enabled: false, maxLength: 1000, maxWeight: 1000, weightTolerance: 2.5 };
+function validatePlausibility(value, file) {
+  if (value !== undefined && (typeof value !== "object" || value === null || Array.isArray(value))) fail(`${file}: plausibility musí být objekt`);
+  const p = { ...PLAUSIBILITY_DEFAULTS, ...(value || {}) };
+  if (typeof p.enabled !== "boolean") fail(`${file}: plausibility.enabled musí být true/false`);
+  if (!(typeof p.maxLength === "number" && p.maxLength > 0 && p.maxLength <= 1000)) fail(`${file}: obecná hranice délky musí být číslo 1–1000 cm`);
+  if (!(typeof p.maxWeight === "number" && p.maxWeight > 0 && p.maxWeight <= 1000)) fail(`${file}: obecná hranice hmotnosti musí být číslo 1–1000 kg`);
+  if (!(typeof p.weightTolerance === "number" && p.weightTolerance >= 1.2 && p.weightTolerance <= 10)) fail(`${file}: tolerance hmotnosti musí být číslo 1,2–10`);
+  return { enabled: p.enabled, maxLength: p.maxLength, maxWeight: p.maxWeight, weightTolerance: p.weightTolerance };
 }
 
 // Úpravy pro konkrétní revír ("na vybraných revírech je zvýšena lovná míra …").

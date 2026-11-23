@@ -223,6 +223,7 @@
     speciesRef = docs.some((s) => s.ref === speciesRef) ? speciesRef : docs[0]?.ref;
     const part = docs.find((s) => s.ref === speciesRef);
     const d = part.data;
+    const pl = d.plausibility || {};
     const limitRows = (list, kind) => (list || []).map((l, i) => `<tr><td>${esc(l.label)}${l.maxAreaHa ? ` <small class="muted-inline">(do ${esc(l.maxAreaHa)} ha)</small>` : ""}</td><td>${kind === "day" ? "den" : l.period === "week" ? "týden" : "měsíc"}</td><td><input class="limit-max" data-kind="${kind}" data-index="${i}" type="number" min="1" value="${esc(l.maxCount)}" size="3"></td><td><small class="muted-inline">${esc(l.source || "")}</small></td></tr>`).join("");
     return `<form class="settings-form" data-scope="species:${esc(part.ref)}" novalidate>
       ${docs.length > 1 ? `<label class="field-label" for="speciesSelect">Pravidla</label><select id="speciesSelect">${docs.map((s) => `<option value="${esc(s.ref)}"${s.ref === speciesRef ? " selected" : ""}>${esc(s.data.name || s.ref)}</option>`).join("")}</select>` : ""}
@@ -231,9 +232,13 @@
       <table class="data-table edit-table"><thead><tr><th>Druhy</th><th>Období</th><th>Max. ks</th><th>Zdroj</th></tr></thead><tbody>${limitRows(d.dailyLimits, "day")}${limitRows(d.periodLimits, "period")}</tbody></table>`)}
       ${toggleSection("spSizesOn", "Lovné míry a váhy", d.sizeRulesEnabled !== false, "Při odevzdání se nekontroluje lovná míra, doba hájení ani povinné vrácení a pravidla revíru tabulku měr neukazují. Seznam druhů zůstává a odhad hmotnosti podle koeficientu se předvyplňuje dál – vypnutí se vah netýká.", `
       <p class="field-help">Prázdné pole = bez omezení.</p>
-      <div class="table-scroll"><table class="data-table edit-table species-table"><thead><tr><th>Druh</th><th>Lovná míra (cm)</th><th>Vrátit od (cm)</th><th>Doba hájení</th><th>Koef. hmotnosti${infoTip("Odhad hmotnosti z délky: hmotnost (kg) ≈ koeficient × délka³ / 100 000 (délka v cm), např. kapr s koeficientem 2 a délkou 50 cm ≈ 2,5 kg. Rybáři se při odevzdání předvyplní orientační hmotnost, kterou může přepsat – i při vypnutých lovných mírách. Prázdné = bez odhadu.")}</th></tr></thead><tbody>${d.species.map((s, i) => `
+      <div class="table-scroll"><table class="data-table edit-table species-table"><thead><tr><th>Druh</th><th>Lovná míra (cm)</th><th>Vrátit od (cm)</th><th>Doba hájení</th><th>Koef. hmotnosti${infoTip("Odhad hmotnosti z délky: hmotnost (kg) ≈ koeficient × délka³ / 100 000 (délka v cm), např. kapr s koeficientem 2 a délkou 50 cm ≈ 2,5 kg. Rybáři se při odevzdání předvyplní orientační hmotnost, kterou může přepsat – i při vypnutých lovných mírách. Prázdné = bez odhadu.")}</th><th>Max. délka (cm)${infoTip("Orientační největší délka druhu (zhruba rekord v ČR). Není to předpis: při zapnutém hlídání nereálných měr a vah se delší ryba označí jako odlehlé pozorování. Prázdné = bez kontroly délky.")}</th></tr></thead><tbody>${d.species.map((s, i) => `
         <tr data-index="${i}"><td><b>${esc(s.name)}</b>${s.invasive ? ' <small class="muted-inline">invazní</small>' : ""}</td><td><input class="sp-min" type="number" min="0" value="${esc(s.minLength ?? "")}" size="3"></td><td><input class="sp-release" type="number" min="0" value="${esc(s.releaseFromLength ?? "")}" size="3"></td>
-        <td><input class="sp-seasons" value="${esc(seasonsToText(s.closedSeasons))}" placeholder="1.1.–15.6."></td><td><input class="sp-factor" type="number" min="0" step="0.05" value="${esc(s.weightFactor ?? "")}" size="4"></td></tr>`).join("")}</tbody></table></div>`)}
+        <td><input class="sp-seasons" value="${esc(seasonsToText(s.closedSeasons))}" placeholder="1.1.–15.6."></td><td><input class="sp-factor" type="number" min="0" step="0.05" value="${esc(s.weightFactor ?? "")}" size="4"></td><td><input class="sp-maxlen" type="number" min="0" value="${esc(s.maxLength ?? "")}" size="3"></td></tr>`).join("")}</tbody></table></div>`)}
+      ${toggleSection("spPlausOn", "Hlídat nereálné míry a váhy", pl.enabled === true, "Délka ani hmotnost se nekontroluje proti obecné hranici a odlehlá pozorování se nehlásí (platí jen technická hranice 1000 cm a 1000 kg).", `
+      <p class="field-help">Úlovek delší nebo těžší než obecná hranice nejde odevzdat (překlep, záměna jednotek). Odlehlé pozorování – ryba delší než <b>Max. délka</b> druhu v tabulce výše, nebo zapsaná hmotnost, která neodpovídá délce podle <b>Koef. hmotnosti</b> – odevzdání nebrání: rybář při odevzdání dostane výstrahu a místenka se označí jako <b>podezřelá</b> (filtr v sekci Místenky).</p>
+      <div class="form-four-col">${field("plMaxLength", "Obecná hranice délky (cm)", pl.maxLength ?? 1000, 'type="number" min="1" max="1000"')}${field("plMaxWeight", "Obecná hranice hmotnosti (kg)", pl.maxWeight ?? 1000, 'type="number" min="1" max="1000"')}${field("plTolerance", "Tolerance hmotnosti (×)", String(pl.weightTolerance ?? 2.5).replace(".", ","), 'inputmode="decimal"')}<div></div></div>
+      <p class="field-help">Tolerance 2,5 = hmotnost víc než 2,5× vyšší nebo nižší než odhad z délky je podezřelá (rozdíl do 0,5 kg se nehlásí). Odhadnutá hmotnost, kterou rybář nepřepsal, se nekontroluje.</p>`)}
       ${footer(`species:${part.ref}`, part)}</form>`;
   }
   // Oddíl se zaškrtávátkem před názvem: zaškrtnuto = hlídá se (oddíl rozbalený), nezaškrtnuto = vypnuto a sbaleno.
@@ -247,10 +252,14 @@
     const d = structuredClone(view.species.find((s) => s.ref === speciesRef).data);
     d.limitsEnabled = qs("#spLimitsOn").checked;
     d.sizeRulesEnabled = qs("#spSizesOn").checked;
+    d.plausibility = { enabled: qs("#spPlausOn").checked, maxLength: num("plMaxLength", "Obecná hranice délky", { int: false }), maxWeight: num("plMaxWeight", "Obecná hranice hmotnosti", { int: false }), weightTolerance: num("plTolerance", "Tolerance hmotnosti", { int: false }) };
+    if (!(d.plausibility.maxLength > 0 && d.plausibility.maxLength <= 1000)) throw new Error("Obecná hranice délky: zadejte 1–1000 cm.");
+    if (!(d.plausibility.maxWeight > 0 && d.plausibility.maxWeight <= 1000)) throw new Error("Obecná hranice hmotnosti: zadejte 1–1000 kg.");
+    if (!(d.plausibility.weightTolerance >= 1.2 && d.plausibility.weightTolerance <= 10)) throw new Error("Tolerance hmotnosti: zadejte číslo 1,2–10.");
     const optionalNumber = (input, label) => { const raw = input.value.trim().replace(",", "."); if (!raw) return undefined; const n = Number(raw); if (!(n >= 0)) throw new Error(`${label}: neplatné číslo.`); return n; };
     qsa(".species-table tbody tr").forEach((tr) => {
       const s = d.species[Number(tr.dataset.index)];
-      for (const [cls, key, label] of [["sp-min", "minLength", "lovná míra"], ["sp-release", "releaseFromLength", "vrátit od"], ["sp-factor", "weightFactor", "koeficient"]]) {
+      for (const [cls, key, label] of [["sp-min", "minLength", "lovná míra"], ["sp-release", "releaseFromLength", "vrátit od"], ["sp-factor", "weightFactor", "koeficient"], ["sp-maxlen", "maxLength", "max. délka"]]) {
         const value = optionalNumber(qs(`.${cls}`, tr), `${s.name} – ${label}`);
         if (value === undefined) delete s[key]; else s[key] = value;
       }

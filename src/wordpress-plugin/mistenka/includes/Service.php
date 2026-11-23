@@ -86,6 +86,36 @@ final class Service
         return null;
     }
 
+    // Hlídání nereálných měr a vah (pravidla druhů → plausibility). Technická hranice platí vždy, obecnou hranici
+    // (nejvýše technickou) nastavuje správa – odevzdání nad ní se odmítne.
+    private const MAX_LENGTH_CM = 1000;
+    private const MAX_WEIGHT_KG = 1000;
+    private const OUTLIER_WEIGHT_SLACK_KG = 0.5; // rozdíl do 0,5 kg se nehlásí (zaokrouhlení u malých ryb)
+
+    private static function czNumber($n): string
+    {
+        return str_replace('.', ',', Js::str($n));
+    }
+
+    // Odlehlé pozorování: délka nad obvyklým maximem druhu (maxLength), nebo zapsaná (ne odhadnutá) hmotnost, která se od
+    // odhadu z délky (weightFactor) liší víc než weightTolerance× a zároveň o víc než 0,5 kg. Vrací text, nebo null.
+    private static function catchOutlier(?array $species, float $length, ?float $weight, bool $weightEstimated, ?array $plausibility): ?string
+    {
+        if (!$species || empty($plausibility['enabled'])) return null;
+        if (!empty($species['maxLength']) && $length > $species['maxLength']) {
+            return "{$species['name']} " . self::czNumber($length) . ' cm – víc než obvyklá maximální délka druhu (' . self::czNumber($species['maxLength']) . ' cm).';
+        }
+        if ($weight && !$weightEstimated && !empty($species['weightFactor']) && $length > 0) {
+            $expected = $species['weightFactor'] * $length ** 3 / 100000;
+            $ratio = $weight / $expected;
+            $tolerance = (float) $plausibility['weightTolerance'];
+            if (($ratio > $tolerance || $ratio < 1 / $tolerance) && abs($weight - $expected) > self::OUTLIER_WEIGHT_SLACK_KG) {
+                return "{$species['name']} " . self::czNumber($length) . ' cm: hmotnost ' . self::czNumber($weight) . ' kg neodpovídá délce (obvykle kolem ' . self::czNumber(Js::round1($expected)) . ' kg).';
+            }
+        }
+        return null;
+    }
+
     // ---------- pomocné ----------
     private function makeCode(): string
     {
@@ -302,8 +332,8 @@ final class Service
     private function catchesOf(array $ticket): array
     {
         return array_map(fn($c) => ['species' => $c['species'], 'length' => $c['length_cm'], 'weight' => $c['weight_kg'], 'weightEstimated' => (bool) $c['weight_estimated'],
-            'warning' => $this->catchWarning($ticket, $c['species'], Js::number($c['length_cm']))],
-            Db::all('SELECT species, length_cm, weight_kg, weight_estimated FROM {p}catches WHERE ticket_id = ? ORDER BY id', $ticket['id']));
+            'warning' => $this->catchWarning($ticket, $c['species'], Js::number($c['length_cm'])), 'suspect' => ($c['suspect'] ?? '') !== '' ? $c['suspect'] : null],
+            Db::all('SELECT species, length_cm, weight_kg, weight_estimated, suspect FROM {p}catches WHERE ticket_id = ? ORDER BY id', $ticket['id']));
     }
 
     private function ownerTicket(array $ticket, bool $withLimits = true): array
@@ -314,7 +344,7 @@ final class Service
         $out = array_merge($base, [
             'firstName' => $ticket['first_name'], 'lastName' => $ticket['last_name'], 'birthDate' => $ticket['birth_date'], 'email' => $ticket['email'], 'memberId' => $ticket['member_id'],
             'priceHalere' => $ticket['price_halere'], 'amountDueHalere' => $ticket['amount_due_halere'], 'voucherUsed' => (bool) $ticket['voucher_code'],
-            'createdAt' => $ticket['created_at'], 'issuedAt' => $ticket['issued_at'], 'returnedAt' => $ticket['returned_at'], 'noCatch' => (bool) $ticket['no_catch'],
+            'createdAt' => $ticket['created_at'], 'issuedAt' => $ticket['issued_at'], 'returnedAt' => $ticket['returned_at'], 'noCatch' => (bool) $ticket['no_catch'], 'suspicious' => (bool) ($ticket['suspicious'] ?? 0),
             'returnable' => $this->isReturnable($ticket), 'returnDeadline' => Time::iso(Time::fromMs($w['deadline'])), 'closedAt' => $ticket['closed_at'],
             'seizure' => $ticket['seized_at'] ? ['at' => $ticket['seized_at'], 'reason' => $ticket['seized_reason'], 'place' => $ticket['seized_place'] ?? ''] : null,
             'catches' => $this->catchesOf($ticket),
@@ -455,6 +485,9 @@ final class Service
         if (!$noCatch && !$items) throw new ApiError(400, 'catches_required', 'Zapište alespoň jeden úlovek, nebo zvolte „Bez úlovku“.');
         if (count($items) > 100) throw new ApiError(400, 'invalid_catches', 'Příliš mnoho úlovků.');
         $rules = $this->revirOf($ticket)['fishRules'] ?? null;
+        $plausibility = !empty($rules['plausibility']['enabled']) ? $rules['plausibility'] : null;
+        $maxLength = $plausibility ? $plausibility['maxLength'] : self::MAX_LENGTH_CM;
+        $maxWeight = $plausibility ? $plausibility['maxWeight'] : self::MAX_WEIGHT_KG;
         $catches = [];
         foreach ($items as $index => $item) {
             $item = is_array($item) ? $item : [];
@@ -464,14 +497,21 @@ final class Service
             $weight = $rawWeight === null || $rawWeight === '' ? null : Js::number($rawWeight);
             $row = 'Úlovek ' . ($index + 1);
             if ($name === '' || Js::len($name) > 60) throw new ApiError(400, 'invalid_catches', "{$row}: vyplňte druh ryby.");
-            if (!array_key_exists('length', $item) || !($length > 0 && $length <= 400)) throw new ApiError(400, 'invalid_catches', "{$row}: vyplňte délku v cm.");
-            if ($weight !== null && !($weight > 0 && $weight <= 300)) throw new ApiError(400, 'invalid_catches', "{$row}: neplatná hmotnost.");
+            if (array_key_exists('length', $item) && $length > $maxLength) throw new ApiError(400, 'invalid_catches', "{$row}: délka " . self::czNumber($length) . ' cm není reálná (nejvýše ' . self::czNumber($maxLength) . ' cm).');
+            if (!array_key_exists('length', $item) || !($length > 0)) throw new ApiError(400, 'invalid_catches', "{$row}: vyplňte délku v cm.");
+            if ($weight !== null && $weight > $maxWeight) throw new ApiError(400, 'invalid_catches', "{$row}: hmotnost " . self::czNumber($weight) . ' kg není reálná (nejvýše ' . self::czNumber($maxWeight) . ' kg).');
+            if ($weight !== null && !($weight > 0)) throw new ApiError(400, 'invalid_catches', "{$row}: neplatná hmotnost.");
             // Míra, hájení a povinné vrácení odevzdání nebrání – rozhodují pravidla v RIS; možné porušení se jen
             // vyznačí u úlovku (catches[].warning) rybáři, porybnému i správci.
+            // Odlehlé pozorování (hlídání nereálných měr a vah) odevzdání také nebrání – úlovek dostane catches[].suspect
+            // a místenka se označí jako podezřelá (tickets.suspicious), správce ji najde ve filtru.
             $known = self::findSpecies($rules, $name);
-            $catches[] = ['species' => $known ? $known['name'] : $name, 'length' => $length, 'weight' => $weight, 'weightEstimated' => $weight !== null && ($item['weightEstimated'] ?? null) === true];
+            $weightEstimated = $weight !== null && ($item['weightEstimated'] ?? null) === true;
+            $catches[] = ['species' => $known ? $known['name'] : $name, 'length' => $length, 'weight' => $weight, 'weightEstimated' => $weightEstimated,
+                'suspect' => self::catchOutlier($known, $length, $weight, $weightEstimated, $plausibility)];
         }
-        return Db::transaction(function () use ($ticket, $catches, $noCatch) {
+        $suspicious = (bool) array_filter(array_column($catches, 'suspect'));
+        return Db::transaction(function () use ($ticket, $catches, $noCatch, $suspicious) {
             $fresh = $this->ticketById($ticket['id']);
             $now = Time::ms(Time::now());
             $state = $this->stateOf($fresh, $now);
@@ -479,8 +519,8 @@ final class Service
             if ($state === 'expired_returned') throw new ApiError(409, 'already_returned', 'Místenka už byla odevzdána.');
             if ($state === 'future') throw new ApiError(409, 'too_early', 'Místenku není možné odevzdat před dnem lovu.');
             if ($state === 'closed_unreturned') throw new ApiError(409, 'return_closed', 'Lhůta pro odevzdání uplynula, místenka byla uzavřena jako neodevzdaná. Kontaktujte hospodáře.');
-            foreach ($catches as $c) Db::exec('INSERT INTO {p}catches (ticket_id, species, length_cm, weight_kg, weight_estimated) VALUES (?, ?, ?, ?, ?)', $fresh['id'], $c['species'], $c['length'], $c['weight'], $c['weightEstimated'] ? 1 : 0);
-            Db::exec('UPDATE {p}tickets SET returned_at = ?, return_late = ?, no_catch = ?, rules_version = ? WHERE id = ?', Time::iso(Time::fromMs($now)), $now >= $this->windowOf($fresh)['end'] ? 1 : 0, $noCatch ? 1 : 0, $this->app->settings->rulesVersion($fresh['revir_id']), $fresh['id']);
+            foreach ($catches as $c) Db::exec('INSERT INTO {p}catches (ticket_id, species, length_cm, weight_kg, weight_estimated, suspect) VALUES (?, ?, ?, ?, ?, ?)', $fresh['id'], $c['species'], $c['length'], $c['weight'], $c['weightEstimated'] ? 1 : 0, $c['suspect']);
+            Db::exec('UPDATE {p}tickets SET returned_at = ?, return_late = ?, no_catch = ?, rules_version = ?, suspicious = ? WHERE id = ?', Time::iso(Time::fromMs($now)), $now >= $this->windowOf($fresh)['end'] ? 1 : 0, $noCatch ? 1 : 0, $this->app->settings->rulesVersion($fresh['revir_id']), $suspicious ? 1 : 0, $fresh['id']);
             $returned = $this->ticketById($fresh['id']);
             $this->recordViolations($returned);
             if ($returned['return_late']) $this->applyPenalty($returned, 'late_return');
@@ -888,7 +928,7 @@ final class Service
         $status = $this->stateOf($t);
         return [
             'code' => $t['code'], 'date' => $t['fishing_date'], 'revirId' => $t['revir_id'], 'revir' => $this->revirOf($t)['name'], 'subdistrict' => !empty($t['subdistrict']) ? Config::subdistrictName($this->revirOf($t), $t['subdistrict']) : null, 'firstName' => $t['first_name'], 'lastName' => $t['last_name'], 'memberId' => $t['member_id'], 'email' => $t['email'],
-            'status' => $status, 'late' => $this->publicTicket($t)['late'], 'seized' => (bool) $t['seized_at'], 'priceHalere' => $t['price_halere'], 'amountDueHalere' => $t['amount_due_halere'], 'voucherUsed' => (bool) $t['voucher_code'],
+            'status' => $status, 'late' => $this->publicTicket($t)['late'], 'seized' => (bool) $t['seized_at'], 'suspicious' => (bool) ($t['suspicious'] ?? 0), 'priceHalere' => $t['price_halere'], 'amountDueHalere' => $t['amount_due_halere'], 'voucherUsed' => (bool) $t['voucher_code'],
             'catchCount' => (int) Db::val('SELECT COUNT(*) AS n FROM {p}catches WHERE ticket_id = ?', $t['id']), 'noCatch' => (bool) $t['no_catch'], 'createdAt' => $t['created_at'], 'paidAt' => $t['paid_at'], 'returnedAt' => $t['returned_at'], 'account' => (bool) $t['user_id'],
         ];
     }
@@ -905,9 +945,12 @@ final class Service
             $where[] = "(LOWER(code) = ? OR member_id LIKE ? OR LOWER(CONCAT(first_name, ' ', last_name)) LIKE ? OR LOWER(email) LIKE ? OR variable_symbol = ?)";
             array_push($params, $q, '%' . preg_replace('/\s+/', '', $q) . '%', "%{$q}%", "%{$q}%", $q);
         }
-        if ($filters['status'] !== '' && !in_array($filters['status'], self::TICKET_FILTER_STATES, true)) throw new ApiError(400, 'invalid_status', 'Neznámý stav.');
+        // status=suspicious: odevzdané místenky s odlehlým pozorováním (hlídání nereálných měr a vah).
+        $suspiciousOnly = $filters['status'] === 'suspicious';
+        if ($suspiciousOnly) $where[] = 'suspicious = 1';
+        elseif ($filters['status'] !== '' && !in_array($filters['status'], self::TICKET_FILTER_STATES, true)) throw new ApiError(400, 'invalid_status', 'Neznámý stav.');
         $rows = Db::all('SELECT * FROM {p}tickets ' . ($where ? 'WHERE ' . implode(' AND ', $where) : '') . ' ORDER BY fishing_date DESC, id DESC LIMIT 5000', ...$params);
-        if ($filters['status'] !== '') $rows = array_values(array_filter($rows, fn($t) => $this->stateOf($t) === $filters['status']));
+        if ($filters['status'] !== '' && !$suspiciousOnly) $rows = array_values(array_filter($rows, fn($t) => $this->stateOf($t) === $filters['status']));
         return $rows;
     }
 
@@ -928,12 +971,12 @@ final class Service
             return preg_match('/[;"\n\r]/', $text) ? '"' . str_replace('"', '""', $text) . '"' : $text;
         };
         $money = fn($halere) => str_replace('.', ',', number_format($halere / 100, 2, '.', ''));
-        $header = ['Kód', 'Revír', 'Podrevír', 'Datum lovu', 'Jméno', 'Příjmení', 'Č. legitimace', 'E-mail', 'Stav', 'Opožděně', 'Zadržena', 'Cena Kč', 'Zaplaceno Kč', 'Poukaz', 'Úlovky', 'Bez úlovku', 'Vytvořeno', 'Zaplaceno', 'Odevzdáno'];
+        $header = ['Kód', 'Revír', 'Podrevír', 'Datum lovu', 'Jméno', 'Příjmení', 'Č. legitimace', 'E-mail', 'Stav', 'Opožděně', 'Zadržena', 'Podezřelá', 'Cena Kč', 'Zaplaceno Kč', 'Poukaz', 'Úlovky', 'Bez úlovku', 'Vytvořeno', 'Zaplaceno', 'Odevzdáno'];
         $lines = [];
         foreach ($this->searchTickets($filters) as $t) {
             $r = $this->manageRow($t);
             $catches = implode(', ', array_map(fn($c) => "{$c['species']} " . Js::str($c['length_cm']) . ' cm' . ($c['weight_kg'] ? ' ' . Js::str($c['weight_kg']) . ' kg' : ''), Db::all('SELECT species, length_cm, weight_kg FROM {p}catches WHERE ticket_id = ? ORDER BY id', $t['id'])));
-            $lines[] = implode(';', array_map($cell, [$r['code'], $r['revir'], $r['subdistrict'] ?? '', $r['date'], $r['firstName'], $r['lastName'], $r['memberId'], $r['email'], $r['status'], $r['late'] ? 'ano' : '', $r['seized'] ? 'ano' : '',
+            $lines[] = implode(';', array_map($cell, [$r['code'], $r['revir'], $r['subdistrict'] ?? '', $r['date'], $r['firstName'], $r['lastName'], $r['memberId'], $r['email'], $r['status'], $r['late'] ? 'ano' : '', $r['seized'] ? 'ano' : '', $r['suspicious'] ? 'ano' : '',
                 $money($r['priceHalere']), $money($t['paid_at'] ? $r['amountDueHalere'] : 0), $r['voucherUsed'] ? 'ano' : '', $catches, $r['noCatch'] ? 'ano' : '', $r['createdAt'], $r['paidAt'] ?? '', $r['returnedAt'] ?? '']));
         }
         return "\u{FEFF}" . implode("\r\n", array_merge([implode(';', $header)], $lines)) . "\r\n"; // BOM + středník: Excel v češtině
@@ -949,11 +992,32 @@ final class Service
         $emails = array_map(fn($e) => ['kind' => $e['kind'], 'to' => $e['to_email'], 'subject' => $e['subject'], 'createdAt' => $e['created_at'], 'sentAt' => $e['sent_at'], 'error' => $e['error'], 'sender' => $e['sender'] ?: null],
             Db::all('SELECT kind, to_email, subject, created_at, sent_at, error, sender FROM {p}email_outbox WHERE ticket_id = ? ORDER BY id', $ticket['id']));
         $cancellation = $ticket['cancelled_at'] ? ['at' => $ticket['cancelled_at'], 'reason' => $ticket['cancel_reason'] ?: 'zrušeno držitelem před zaplacením', 'byManager' => (bool) $ticket['cancelled_by']] : null;
+        $suspicionReview = null;
+        if (!empty($ticket['suspicion_cleared_at'])) {
+            $by = $ticket['suspicion_cleared_by'] ? Db::row('SELECT first_name, last_name FROM {p}users WHERE id = ?', $ticket['suspicion_cleared_by']) : null;
+            $suspicionReview = ['at' => $ticket['suspicion_cleared_at'], 'by' => $by ? "{$by['first_name']} {$by['last_name']}" : '', 'note' => $ticket['suspicion_note'] ?? ''];
+        }
         return [
             'ticket' => array_merge($this->ownerTicket($ticket), ['variableSymbol' => $ticket['variable_symbol'], 'account' => (bool) $ticket['user_id'], 'rulesVersion' => $ticket['rules_version'] ?: null]),
-            'payments' => $payments, 'checks' => $checks, 'violations' => $violations, 'emails' => $emails, 'cancellation' => $cancellation,
+            'payments' => $payments, 'checks' => $checks, 'violations' => $violations, 'emails' => $emails, 'cancellation' => $cancellation, 'suspicionReview' => $suspicionReview,
             'cancellable' => in_array($this->stateOf($ticket), ['pending_payment', 'payment_expired', 'future', 'active', 'expired_unreturned', 'seized'], true),
         ];
+    }
+
+    // Zrušení příznaku podezřelá (hlídání nereálných měr a vah) po prověření správcem. Důvody u úlovků (catches.suspect)
+    // zůstávají jako historie; kdo a kdy prověřil, je v detailu (suspicionReview) a v auditu.
+    public function clearSuspicion(array $actor, $code, array $body): array
+    {
+        $note = trim(Js::s($body['note'] ?? ''));
+        if (Js::len($note) > 300) throw new ApiError(400, 'invalid_note', 'Poznámka může mít nejvýše 300 znaků.');
+        $ticket = $this->findTicket($code);
+        return Db::transaction(function () use ($ticket, $actor, $note) {
+            $fresh = $this->ticketById($ticket['id']);
+            if (empty($fresh['suspicious'])) throw new ApiError(409, 'not_suspicious', 'Místenka není označená jako podezřelá.');
+            Db::exec('UPDATE {p}tickets SET suspicious = 0, suspicion_cleared_at = ?, suspicion_cleared_by = ?, suspicion_note = ? WHERE id = ?', Time::nowIso(), $actor['id'] ?? null, $note !== '' ? $note : null, $fresh['id']);
+            $this->audit($actor, 'ticket_suspicion_cleared', 'ticket', $fresh['code'], ['note' => $note]);
+            return $this->ticketDetail($fresh['code']);
+        });
     }
 
     // Zrušení správcem: vystavená neodevzdaná místenka nebo objednávka. Peníze se nevracejí automaticky.

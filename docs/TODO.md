@@ -13,3 +13,7 @@ Chyba také přijde na email admina - založ tomu v "Emailoví klienti
 -- Úspěch: zelená (např. úspěšně vystaveno, odevdáno)
 
 - DONE: Při odevzdání místenky už neověřovat úplnost question boxem: checkbox stačí
+
+- DONE: Přidat hlídání teoretických maximálních mír a vah - dal bych do Míry, váhy a hájení jednotné nastavení (checkbox) "Hlídat nereálné míry a váhy". Tato funkce by hlídala zjednodušeně jen aby obecná míra byla pod určitou úroven a stejně i váha + upozornovala na odlehlé pozorování. Obecná hranice může být vysoká, třeba 1000 cm a 1000 kg na rybu, je to spíše numerické omezení. Ale hlídání odlehlých pozorování by měo být založeno na skutečných "Lovné míry a váhy" - pokud by byla ryba příliš mimo tabulku, rybář u odevzdání dostane výstrahu a v systému bude místenka vedená jako podezřelá. 
+
+- Zobrazování "Místenky člena" při kontrole porybným bych defaultně nedělal, je to příliš inforací. Ale už t máme hotovo, takže dáme do nastavení přepínač, a defaultně ho dáme false. Vytvoř novou sekci "Kontroly" v "Rybáři" a tam to dej. 

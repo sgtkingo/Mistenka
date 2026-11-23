@@ -1220,6 +1220,92 @@ test("nastavení organizace a pravidel ryb; verze pravidel se uloží k odevzdan
   assert.equal((await call("GET", "/config")).data.reviry[0].fishRules.species.find((s) => s.id === "lin-obecny").minLength, 25);
 });
 
+test("hlídání nereálných měr a vah: obecná hranice odmítne, odlehlé pozorování označí místenku jako podezřelou", async () => {
+  await setClock("2026-06-10T08:00:00Z");
+  const { session } = await managerAccount();
+  const base = (await call("GET", "/manage/settings", { session })).data.species.find((s) => s.ref === SPECIES_REF).data;
+  const rules = (await call("GET", "/config")).data.reviry[0].fishRules;
+  assert.deepEqual(rules.plausibility, { enabled: true, maxLength: 1000, maxWeight: 1000, weightTolerance: 2.5 }, "výchozí pravidla hlídají");
+  assert.equal(rules.species.find((s) => s.id === "kapr-obecny").maxLength, 120);
+  const save = (plausibility) => call("PUT", "/manage/settings/species", { body: { ref: SPECIES_REF, data: { ...base, plausibility } }, session });
+  assert.equal((await save({ enabled: true, maxLength: 2000, maxWeight: 150, weightTolerance: 2.5 })).data.code, "invalid_settings");
+  assert.equal((await save({ enabled: true, maxLength: 300, maxWeight: 150, weightTolerance: 1 })).data.code, "invalid_settings");
+  assert.equal((await save({ enabled: "ano", maxLength: 300, maxWeight: 150, weightTolerance: 2.5 })).data.code, "invalid_settings");
+  const saved = await save({ enabled: true, maxLength: 300, maxWeight: 150, weightTolerance: 2.5 });
+  assert.equal(saved.status, 200, JSON.stringify(saved.data));
+
+  // Obecná hranice: odevzdání se odmítne (i u neznámého druhu).
+  const t = await paidTicket();
+  const ret = (body) => call("POST", `/tickets/${t.code}/return`, { body, token: t.token });
+  const tooLong = await ret({ catches: [{ species: "neznámá ryba", length: 350 }] });
+  assert.equal(tooLong.data.code, "invalid_catches");
+  assert.match(tooLong.data.error, /nejvýše 300 cm/);
+  const tooHeavy = await ret({ catches: [{ species: "kapr", length: 80, weight: 200 }] });
+  assert.equal(tooHeavy.data.code, "invalid_catches");
+  assert.match(tooHeavy.data.error, /nejvýše 150 kg/);
+
+  // Odlehlé pozorování: odevzdání projde, úlovek má suspect, místenka je podezřelá.
+  const ok = await ret({ catches: [
+    { species: "kapr", length: 130 },                                 // nad obvyklým maximem druhu (120 cm)
+    { species: "kapr", length: 50, weight: 10 },                      // odhad 2,5 kg → 4× víc
+    { species: "kapr", length: 50, weight: 0.8 },                     // 0,32× odhadu
+    { species: "kapr", length: 50, weight: 10, weightEstimated: true }, // odhad se nekontroluje
+    { species: "plotice", length: 20, weight: 0.3 },                  // 3× odhadu, ale rozdíl jen 0,2 kg
+    { species: "neznámá ryba", length: 250, weight: 90 },             // neznámý druh – jen obecná hranice
+    { species: "kapr", length: 55, weight: 3 }] });
+  assert.equal(ok.status, 200, JSON.stringify(ok.data));
+  const s = ok.data.catches.map((c) => c.suspect);
+  assert.match(s[0], /kapr obecný 130 cm – víc než obvyklá maximální délka druhu \(120 cm\)/);
+  assert.match(s[1], /hmotnost 10 kg neodpovídá délce \(obvykle kolem 2,5 kg\)/);
+  assert.match(s[2], /hmotnost 0,8 kg neodpovídá/);
+  assert.deepEqual(s.slice(3), [null, null, null, null]);
+  assert.equal(ok.data.suspicious, true);
+
+  const clean = await paidTicket();
+  const cleanReturn = await call("POST", `/tickets/${clean.code}/return`, { body: { catches: [{ species: "kapr", length: 55, weight: 3 }] }, token: clean.token });
+  assert.equal(cleanReturn.data.suspicious, false);
+
+  // Správce: filtr podezřelých, příznak v seznamu, detail, CSV; porybný vidí důvod u úlovku.
+  const list = (await call("GET", "/manage/tickets?status=suspicious&limit=500", { session })).data;
+  assert.ok(list.tickets.some((x) => x.code === t.code && x.suspicious === true));
+  assert.ok(list.tickets.every((x) => x.suspicious === true), "filtr vrací jen podezřelé");
+  const detail = (await call("GET", `/manage/tickets/${t.code}`, { session })).data;
+  assert.equal(detail.ticket.suspicious, true);
+  assert.equal(detail.ticket.catches.filter((c) => c.suspect).length, 3);
+  const csvRes = await fetch(url(`/manage/tickets.csv?q=${t.code}`), { headers: { Cookie: session.cookie } });
+  const csv = await csvRes.text();
+  assert.match(csv.split("\r\n")[0], /Zadržena;Podezřelá;Cena/);
+  assert.match(csv.split("\r\n")[1], /;ano;/);
+  const warden = await wardenAccount();
+  assert.equal((await call("GET", `/warden/tickets/${t.code}`, { session: warden.session })).data.catches.filter((c) => c.suspect).length, 3);
+
+  // Zrušení příznaku po prověření: jen správce, poznámka do 300 znaků, důvody u úlovků zůstanou.
+  const clearPath = `/manage/tickets/${t.code}/clear-suspicion`;
+  assert.equal((await call("POST", clearPath, { body: {}, session: warden.session })).status, 403);
+  assert.equal((await call("POST", clearPath, { body: { note: "x".repeat(301) }, session })).data.code, "invalid_note");
+  assert.equal((await call("POST", `/manage/tickets/${clean.code}/clear-suspicion`, { body: {}, session })).data.code, "not_suspicious");
+  const cleared = await call("POST", clearPath, { body: { note: "Ověřeno s rybářem – překlep" }, session });
+  assert.equal(cleared.status, 200, JSON.stringify(cleared.data));
+  assert.equal(cleared.data.ticket.suspicious, false);
+  assert.equal(cleared.data.ticket.catches.filter((c) => c.suspect).length, 3, "důvody zůstávají v historii");
+  assert.equal(cleared.data.suspicionReview.note, "Ověřeno s rybářem – překlep");
+  assert.ok(cleared.data.suspicionReview.at && cleared.data.suspicionReview.by);
+  assert.equal((await call("POST", clearPath, { body: {}, session })).data.code, "not_suspicious", "podruhé už není co rušit");
+  assert.ok(!(await call("GET", "/manage/tickets?status=suspicious&limit=500", { session })).data.tickets.some((x) => x.code === t.code), "zmizí z filtru");
+  assert.equal((await call("GET", `/manage/tickets/${clean.code}`, { session })).data.suspicionReview, null);
+
+  // Vypnuto: jen technická hranice 1000 cm / 1000 kg, odlehlá pozorování se nehlásí.
+  assert.equal((await save({ enabled: false, maxLength: 300, maxWeight: 150, weightTolerance: 2.5 })).status, 200);
+  const off = await paidTicket();
+  const offRet = (body) => call("POST", `/tickets/${off.code}/return`, { body, token: off.token });
+  assert.equal((await offRet({ catches: [{ species: "kapr", length: 1200 }] })).data.code, "invalid_catches");
+  const offOk = await offRet({ catches: [{ species: "kapr", length: 350, weight: 200 }] });
+  assert.equal(offOk.status, 200, JSON.stringify(offOk.data));
+  assert.equal(offOk.data.catches[0].suspect, null);
+  assert.equal(offOk.data.suspicious, false);
+  await call("POST", "/manage/settings/reset", { body: { scope: `species:${SPECIES_REF}` }, session });
+});
+
 // ---------- mapy revírů ----------
 const square = (lon, lat, d = 0.001) => [[[lon, lat], [lon + d, lat], [lon + d, lat + d], [lon, lat + d], [lon, lat]]];
 test("mapy revírů: mapa ze souboru, uložení, kontrola, veřejné API a odkaz na mapu v e-mailu", async () => {

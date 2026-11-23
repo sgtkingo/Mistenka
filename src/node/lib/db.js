@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
-const SCHEMA_VERSION = 18;
+const SCHEMA_VERSION = 19;
 
 // Sloupce tabulky users (sdílí vytvoření i migrace).
 const USERS_COLUMNS = `
@@ -113,6 +113,9 @@ function openDatabase(dataDir, { autoRecover = true } = {}) {
   addColumns("vouchers", [["created_at", "TEXT"], ["created_by", "INTEGER"], ["note", "TEXT"], ["voided_at", "TEXT"]]);
   // Migrace 13 -> 14: odesílatel e-mailu (SMTP účet skupiny nebo výchozí).
   addColumns("email_outbox", [["sender", "TEXT"]]);
+  // Migrace 18 -> 19: hlídání nereálných měr a vah (podezřelá místenka, důvod u úlovku).
+  addColumns("tickets", [["suspicious", "INTEGER NOT NULL DEFAULT 0"], ["suspicion_cleared_at", "TEXT"], ["suspicion_cleared_by", "INTEGER"], ["suspicion_note", "TEXT"]]);
+  addColumns("catches", [["suspect", "TEXT"]]);
   // Migrace 4 -> 5: zadržení místenky porybným.
   for (const [column, definition] of [["seized_at", "TEXT"], ["seized_by", "INTEGER"], ["seized_reason", "TEXT"], ["seized_place", "TEXT"]]) {
     if (ticketColumns.length && !ticketColumns.includes(column)) db.exec(`ALTER TABLE tickets ADD COLUMN ${column} ${definition}`);
@@ -182,7 +185,11 @@ function openDatabase(dataDir, { autoRecover = true } = {}) {
       cancel_reason TEXT,                      -- zrušení správcem (B4)
       cancelled_by INTEGER,
       rules_version TEXT,                      -- verze pravidel druhů použitá při odevzdání (B5)
-      anonymized_at TEXT                       -- osobní údaje odstraněny po uplynutí lhůty (GDPR)
+      anonymized_at TEXT,                      -- osobní údaje odstraněny po uplynutí lhůty (GDPR)
+      suspicious INTEGER NOT NULL DEFAULT 0,   -- odlehlé pozorování při odevzdání (hlídání nereálných měr a vah)
+      suspicion_cleared_at TEXT,               -- správce příznak podezřelá zrušil (prověřeno)
+      suspicion_cleared_by INTEGER,
+      suspicion_note TEXT
     );
     -- Nastavení z manažerského portálu (B5): každá změna = nová verze celé části.
     CREATE TABLE IF NOT EXISTS settings_versions (
@@ -337,7 +344,8 @@ function openDatabase(dataDir, { autoRecover = true } = {}) {
       species TEXT NOT NULL,
       length_cm REAL NOT NULL,
       weight_kg REAL,
-      weight_estimated INTEGER NOT NULL DEFAULT 0
+      weight_estimated INTEGER NOT NULL DEFAULT 0,
+      suspect TEXT                             -- důvod odlehlého pozorování (hlídání nereálných měr a vah)
     );
     CREATE TABLE IF NOT EXISTS vouchers (
       code TEXT PRIMARY KEY,

@@ -352,6 +352,7 @@ async function handleApi(req, res, url, ip) {
   }
   if ((m = pathname.match(/^\/api\/manage\/tickets\/([^/]+)$/)) && method === "GET") { accounts.requireManager(ctx); return send(res, 200, service.ticketDetail(m[1])); }
   if ((m = pathname.match(/^\/api\/manage\/tickets\/([^/]+)\/cancel$/)) && method === "POST") return send(res, 200, service.cancelByManager(accounts.requireManager(ctx), m[1], await readBody(req)));
+  if ((m = pathname.match(/^\/api\/manage\/tickets\/([^/]+)\/clear-suspicion$/)) && method === "POST") return send(res, 200, service.clearSuspicion(accounts.requireManager(ctx), m[1], await readBody(req)));
   if (pathname === "/api/manage/payments" && method === "GET") { accounts.requireManager(ctx); return send(res, 200, service.listPayments({ state: url.searchParams.get("state") || "open" })); }
   if ((m = pathname.match(/^\/api\/manage\/payments\/(\d+)\/resolve$/)) && method === "POST") return send(res, 200, service.resolvePayment(accounts.requireManager(ctx), m[1], await readBody(req)));
   if (pathname === "/api/manage/vouchers" && method === "GET") { accounts.requireManager(ctx); return send(res, 200, service.listVouchers()); }

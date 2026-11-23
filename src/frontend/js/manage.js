@@ -267,7 +267,7 @@ async function loadTickets(append = false) {
       const state = ticketState(t);
       return `<tr class="clickable" data-code="${esc(t.code)}"><td data-label="Den">${esc(czDate(t.date, { year: false }))}</td><td data-label="Kód"><b>${esc(t.code)}</b></td>
         <td data-label="Rybář">${esc(`${t.firstName} ${t.lastName}`)}<br><small class="muted-inline">${esc(t.memberId)}${t.account ? " · účet" : ""}</small></td>
-        <td data-label="Revír">${esc(t.revir)}${t.subdistrict ? `<br><small class="muted-inline">${esc(t.subdistrict)}</small>` : ""}</td><td data-label="Stav"><span class="badge badge-${esc(state.tone)}">${esc(state.label)}</span>${t.seized && t.status !== "seized" ? ' <span class="badge badge-bad">zadržena</span>' : ""}</td>
+        <td data-label="Revír">${esc(t.revir)}${t.subdistrict ? `<br><small class="muted-inline">${esc(t.subdistrict)}</small>` : ""}</td><td data-label="Stav"><span class="badge badge-${esc(state.tone)}">${esc(state.label)}</span>${t.seized && t.status !== "seized" ? ' <span class="badge badge-bad">zadržena</span>' : ""}${t.suspicious ? ' <span class="badge badge-warn" title="Neobvyklé míry nebo váhy úlovků">podezřelá</span>' : ""}</td>
         <td data-label="Úlovky">${t.status === "expired_returned" ? (t.noCatch ? "nic neponecháno" : esc(t.catchCount)) : ""}</td><td data-label="Cena">${t.voucherUsed ? "poukaz" : esc(czk(t.priceHalere))}</td></tr>`;
     }).join("");
     if (append) qs("#ticketTable tbody").insertAdjacentHTML("beforeend", rows);
@@ -292,9 +292,9 @@ async function openTicket(code) {
     const d = await api(`/manage/tickets/${encodeURIComponent(code)}`);
     const t = d.ticket;
     const state = ticketState(t);
-    const catches = t.catches.length ? t.catches.map((c) => `${esc(c.species)} ${esc(c.length)} cm${c.weight ? ` · ${esc(c.weight)} kg${c.weightEstimated ? " (odhad)" : ""}` : ""}${c.warning ? ` <span class="catch-warn-inline">⚠ ${esc(c.warning)}</span>` : ""}`).join("<br>") : t.noCatch ? "nic neponecháno" : "—";
+    const catches = t.catches.length ? t.catches.map((c) => `${esc(c.species)} ${esc(c.length)} cm${c.weight ? ` · ${esc(c.weight)} kg${c.weightEstimated ? " (odhad)" : ""}` : ""}${c.warning ? ` <span class="catch-warn-inline">⚠ ${esc(c.warning)}</span>` : ""}${c.suspect ? ` <span class="catch-warn-inline">⚠ Neobvyklý údaj: ${esc(c.suspect)}</span>` : ""}`).join("<br>") : t.noCatch ? "nic neponecháno" : "—";
     body.innerHTML = `
-      <div class="dialog-head"><div><span class="section-kicker">Místenka</span><h2>${esc(t.code)} <span class="badge badge-${esc(state.tone)}">${esc(state.label)}</span></h2></div><button class="text-button" type="button" id="closeDialog">Zavřít ✕</button></div>
+      <div class="dialog-head"><div><span class="section-kicker">Místenka</span><h2>${esc(t.code)} <span class="badge badge-${esc(state.tone)}">${esc(state.label)}</span>${t.suspicious ? ' <span class="badge badge-warn">podezřelá</span>' : ""}</h2></div><button class="text-button" type="button" id="closeDialog">Zavřít ✕</button></div>
       <dl class="summary-list">
         <div><dt>Rybář</dt><dd>${esc(`${t.firstName} ${t.lastName}`)}${t.account ? " (účet)" : ""}</dd></div>
         <div><dt>Č. legitimace · narozen</dt><dd>${esc(t.memberId)} · ${esc(czDate(t.birthDate))}</dd></div>
@@ -306,6 +306,9 @@ async function openTicket(code) {
         <div><dt>Úlovky</dt><dd>${catches}</dd></div>
       </dl>
       ${t.seizure ? `<div class="status-error"><b>Zadrženo ${esc(czDateTime(t.seizure.at))}</b><br>${esc(t.seizure.reason)}${t.seizure.place ? ` · ${esc(t.seizure.place)}` : ""}</div>` : ""}
+      ${t.suspicious ? `<div class="warn-box"><b>Podezřelá místenka</b> – neobvyklé míry nebo váhy úlovků (viz Úlovky). Po prověření příznak zrušte; důvody u úlovků zůstanou v historii.
+        <label class="field-label" for="suspicionNote">Poznámka k prověření (volitelné)</label><input id="suspicionNote" maxlength="300" placeholder="např. ověřeno s rybářem – překlep"><button class="secondary-button" type="button" id="clearSuspicion">Zrušit příznak podezřelá</button></div>` : ""}
+      ${d.suspicionReview ? `<p class="field-help">Prověřeno ${esc(czDateTime(d.suspicionReview.at))}${d.suspicionReview.by ? ` · ${esc(d.suspicionReview.by)}` : ""}${d.suspicionReview.note ? ` · ${esc(d.suspicionReview.note)}` : ""} – příznak podezřelá zrušen.</p>` : ""}
       ${d.cancellation ? `<div class="status-error"><b>Zrušeno ${esc(czDateTime(d.cancellation.at))}</b>${d.cancellation.byManager ? " správcem" : ""}<br>${esc(d.cancellation.reason)}</div>` : ""}
       ${limitsHtml(t.limits, { title: "Limity úlovků" })}
       ${d.violations.length ? `<p class="field-help">Zapsané překročení: ${d.violations.map((v) => `${esc(v.label)} ${esc(v.count)}/${esc(v.maxCount)}`).join(", ")}</p>` : ""}
@@ -315,6 +318,12 @@ async function openTicket(code) {
       ${d.cancellable ? `<details class="seize-box"><summary>Zrušit místenku</summary><p class="field-help">Místenka přestane platit a uvolní místo. ${t.payment === null && !t.voucherUsed ? "Peníze se nevracejí automaticky – vraťte je v bankovnictví. " : ""}Držitel vystavené místenky dostane e-mail.</p>
         <label class="field-label req" for="cancelReason">Důvod</label><input id="cancelReason" maxlength="300"><button class="danger-button" type="button" id="cancelTicket">Zrušit místenku</button></details>` : ""}`;
     qs("#closeDialog").addEventListener("click", () => dialog.close());
+    qs("#clearSuspicion")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try { await api(`/manage/tickets/${t.code}/clear-suspicion`, { method: "POST", body: { note: qs("#suspicionNote").value.trim() } }); showToast("Příznak podezřelá zrušen.", "success"); openTicket(t.code); loadTickets(); }
+      catch (error) { showToast(error.message, "error"); button.disabled = false; }
+    });
     qs("#cancelTicket")?.addEventListener("click", async (event) => {
       const reason = qs("#cancelReason").value.trim();
       if (reason.length < 3) return showToast("Uveďte důvod zrušení.", "warning");
