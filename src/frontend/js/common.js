@@ -560,7 +560,9 @@
   }
   // Našeptávač druhů ryb (vlastní, nativní <datalist> se v prohlížečích vykresluje nespolehlivě).
   // input musí být v obalu s position:relative (.fish-field); getSpecies() vrací seznam druhů z pravidel revíru.
-  function attachSpeciesSuggest(input, getSpecies, onChoose = () => {}) {
+  // Jediná implementace pro celou aplikaci (odevzdání, zarybnění, oprava úlovků): filtruje podle názvu i aliasů,
+  // ovládání šipkami, Enter vybere, Esc zavře. hint(species) = volitelný doplněk u položky (např. „min. 40 cm“).
+  function attachSpeciesSuggest(input, getSpecies, onChoose = () => {}, { hint = () => "" } = {}) {
     const box = document.createElement("div");
     box.className = "fish-suggestions";
     box.setAttribute("role", "listbox");
@@ -572,7 +574,7 @@
     const render = () => {
       const query = input.value.trim().toLowerCase();
       const matches = (getSpecies() || []).filter((s) => !query || s.name.toLowerCase().includes(query) || (s.aliases || []).some((a) => a.toLowerCase().includes(query)));
-      box.innerHTML = matches.map((s) => `<button type="button" role="option" data-name="${esc(s.name)}">${esc(s.name)}</button>`).join("");
+      box.innerHTML = matches.map((s) => { const extra = hint(s); return `<button type="button" role="option" data-name="${esc(s.name)}">${esc(s.name)}${extra ? ` <small>${esc(extra)}</small>` : ""}</button>`; }).join("");
       box.classList.toggle("visible", matches.length > 0);
       active = -1;
       qsa("button", box).forEach((button) => button.addEventListener("mousedown", (event) => { event.preventDefault(); choose(button.dataset.name); }));

@@ -1,4 +1,4 @@
-const { qs, qsa, esc, api, loadConfig, revirUrl, czDate, czDateTime, plural, findSpecies, catchProblem, catchOutlier, catchLimits, credentialsFor, rememberMemberId, normalizeMemberId, isMemberId, showToast, applyBranding, loadSession, limitsHtml } = window.Mistenka;
+const { qs, qsa, esc, api, loadConfig, revirUrl, czDate, czDateTime, plural, findSpecies, catchProblem, attachSpeciesSuggest, catchOutlier, catchLimits, credentialsFor, rememberMemberId, normalizeMemberId, isMemberId, showToast, applyBranding, loadSession, limitsHtml } = window.Mistenka;
 
 const code = (new URLSearchParams(location.search).get("code") || "").trim().toUpperCase();
 let credentials = credentialsFor(code);
@@ -12,39 +12,14 @@ function showError(message) { qs("#returnError").textContent = message; show("re
 function addRow() {
   const row = document.createElement("div");
   row.className = "catch-row catch-grid";
-  row.innerHTML = `<div class="fish-field"><input class="fish-name" placeholder="např. kapr" autocomplete="off" maxlength="60"><div class="fish-suggestions" role="listbox"></div></div><div><input class="fish-length" type="number" min="1" step="1" placeholder="cm"><span class="length-error">Vyplňte délku</span></div><div class="weight-field"><input class="fish-weight" type="number" min="0" step="0.01" placeholder="dopočítá se"><span class="weight-note hidden">~</span></div><button class="remove-catch" type="button" aria-label="Odstranit řádek">×</button>`;
+  row.innerHTML = `<div class="fish-field"><input class="fish-name" placeholder="např. kapr" autocomplete="off" maxlength="60"></div><div><input class="fish-length" type="number" min="1" step="1" placeholder="cm"><span class="length-error">Vyplňte délku</span></div><div class="weight-field"><input class="fish-weight" type="number" min="0" step="0.01" placeholder="dopočítá se"><span class="weight-note hidden">~</span></div><button class="remove-catch" type="button" aria-label="Odstranit řádek">×</button>`;
   qs("#catchRows").append(row);
   row.dataset.estimated = "false";
   const fishInput = row.querySelector(".fish-name");
-  const suggestions = row.querySelector(".fish-suggestions");
-  let active = -1;
-  const choose = (name) => { fishInput.value = name; suggestions.classList.remove("visible"); active = -1; validateLength(row); updateWeight(row); };
-  const renderSuggestions = () => {
-    const query = fishInput.value.trim().toLowerCase();
-    const matches = (rules?.species || []).filter((s) => !query || s.name.toLowerCase().includes(query) || (s.aliases || []).some((a) => a.toLowerCase().includes(query)));
-    suggestions.innerHTML = matches.map((s) => `<button type="button" role="option" data-name="${esc(s.name)}">${esc(s.name)}${s.minLength && rules.sizeRulesEnabled !== false ? ` <small>min. ${esc(s.minLength)} cm</small>` : ""}</button>`).join("");
-    suggestions.classList.toggle("visible", matches.length > 0);
-    active = -1;
-    suggestions.querySelectorAll("button").forEach((button) => button.addEventListener("mousedown", (event) => { event.preventDefault(); choose(button.dataset.name); }));
-  };
-  fishInput.addEventListener("keydown", (event) => {
-    const buttons = suggestions.querySelectorAll("button");
-    if (!suggestions.classList.contains("visible") || !buttons.length) return;
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      active = event.key === "ArrowDown" ? (active + 1) % buttons.length : (active - 1 + buttons.length) % buttons.length;
-      buttons.forEach((button, index) => button.classList.toggle("active", index === active));
-      buttons[active].scrollIntoView({ block: "nearest" });
-    } else if (event.key === "Enter" && active >= 0) {
-      event.preventDefault();
-      choose(buttons[active].dataset.name);
-    } else if (event.key === "Escape") {
-      suggestions.classList.remove("visible");
-    }
-  });
-  fishInput.addEventListener("focus", renderSuggestions);
-  fishInput.addEventListener("input", () => { renderSuggestions(); validateLength(row); updateWeight(row); });
-  fishInput.addEventListener("blur", () => window.setTimeout(() => suggestions.classList.remove("visible"), 120));
+  // Společný našeptávač druhů (common.js); u druhu s lovnou mírou ukáže „min. … cm“.
+  attachSpeciesSuggest(fishInput, () => rules?.species, () => { validateLength(row); updateWeight(row); },
+    { hint: (s) => (s.minLength && rules.sizeRulesEnabled !== false ? `min. ${s.minLength} cm` : "") });
+  fishInput.addEventListener("input", () => { validateLength(row); updateWeight(row); });
   row.querySelector(".fish-length").addEventListener("input", () => { validateLength(row); updateWeight(row); });
   row.querySelector(".fish-weight").addEventListener("input", () => { row.dataset.estimated = "false"; row.querySelector(".weight-note").classList.add("hidden"); validateLength(row); });
   row.querySelector(".remove-catch").addEventListener("click", () => { if (qs("#catchRows").children.length > 1) row.remove(); });
