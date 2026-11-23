@@ -12,6 +12,7 @@
     "seed": "node src/node/scripts/seed.js",
     "user": "node src/node/scripts/user.js",
     "test": "node test/api.test.js",
-    "build:plugin": "python scripts/build-plugin.py"
+    "build:plugin": "python scripts/build-plugin.py",
+    "release": "python scripts/release.py"
   }
 }
