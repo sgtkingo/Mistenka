@@ -560,6 +560,9 @@
   }
   // Našeptávač druhů ryb (vlastní, nativní <datalist> se v prohlížečích vykresluje nespolehlivě).
   // input musí být v obalu s position:relative (.fish-field); getSpecies() vrací seznam druhů z pravidel revíru.
+  // Nahlásit chybu: popis nejvýše 250 znaků; bez snímku obrazovky aspoň 10 znaků (stejně kontroluje server).
+  const BUG_TEXT_MAX = 250;
+  const BUG_TEXT_MIN = 10;
   // Jediná implementace pro celou aplikaci (odevzdání, zarybnění, oprava úlovků): filtruje podle názvu i aliasů,
   // ovládání šipkami, Enter vybere, Esc zavře. hint(species) = volitelný doplněk u položky (např. „min. 40 cm“).
   function attachSpeciesSuggest(input, getSpecies, onChoose = () => {}, { hint = () => "" } = {}) {
@@ -716,8 +719,9 @@
     let screenshot = null;
     dialog.innerHTML = `<form method="dialog" class="bug-form" novalidate>
       <div class="bug-head"><span class="bug-title">${icon("bug", 20)} Nahlásit chybu</span><button class="bug-x bug-close" type="button" aria-label="Zavřít">×</button></div>
-      <label class="field-label req" for="bugText">Co se stalo?</label>
-      <textarea id="bugText" rows="5" maxlength="4000" placeholder="Popište, co jste dělali a co se pokazilo (např. po kliknutí na Zaplatit se nic nestalo)."></textarea>
+      <label class="field-label" for="bugText">Co se stalo?</label>
+      <textarea id="bugText" rows="5" maxlength="${BUG_TEXT_MAX}" placeholder="Popište, co jste dělali a co se pokazilo (např. po kliknutí na Zaplatit se nic nestalo)."></textarea>
+      <div class="bug-counter"><span class="field-help">Bez snímku obrazovky aspoň ${BUG_TEXT_MIN} znaků, se snímkem může zůstat prázdné.</span><span id="bugCount">0 / ${BUG_TEXT_MAX}</span></div>
       ${user ? `<p class="field-help">Hlášení odešle ${esc(`${user.firstName} ${user.lastName}`)} – odpovíme na e-mail účtu.</p>` : '<label class="field-label" for="bugEmail">E-mail pro odpověď <span class="optional">(nepovinný)</span></label><input id="bugEmail" type="email" maxlength="200" autocomplete="email">'}
       <label class="field-label" for="bugFile">Snímek obrazovky <span class="optional">(nepovinný)</span></label>
       <div class="bug-shot"><label class="secondary-button bug-file-button">${icon("doc")} Přiložit snímek…<input id="bugFile" type="file" accept="image/*" hidden></label><span class="field-help">nebo ho vložte ze schránky (Ctrl+V)</span></div>
@@ -735,10 +739,12 @@
     dialog.onpaste = (e) => { const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith("image/")); if (item) { e.preventDefault(); useFile(item.getAsFile()); } };
     qs("#bugRemoveShot", dialog).addEventListener("click", () => { setShot(null); qs("#bugFile", dialog).value = ""; });
     qsa(".bug-close", dialog).forEach((b) => b.addEventListener("click", () => dialog.close()));
+    const counter = () => { const n = qs("#bugText", dialog).value.length; const el = qs("#bugCount", dialog); el.textContent = `${n} / ${BUG_TEXT_MAX}`; el.classList.toggle("near-limit", n >= BUG_TEXT_MAX - 20); };
+    qs("#bugText", dialog).addEventListener("input", counter);
     qs("form", dialog).addEventListener("submit", async (event) => {
       event.preventDefault();
       const description = qs("#bugText", dialog).value.trim();
-      if (description.length < 10) { qs("#bugText", dialog).focus(); return showToast("Popište prosím, co se stalo (aspoň 10 znaků).", "warning"); }
+      if (!screenshot && description.length < BUG_TEXT_MIN) { qs("#bugText", dialog).focus(); return showToast(`Popište prosím, co se stalo (aspoň ${BUG_TEXT_MIN} znaků), nebo přiložte snímek obrazovky.`, "warning"); }
       const button = qs("#bugSend", dialog);
       button.disabled = true;
       try {

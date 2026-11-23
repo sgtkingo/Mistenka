@@ -1879,9 +1879,11 @@ test("hlášení chyb: kdokoli nahlásí (popis, záznam událostí, snímek), a
   const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
   const body = { description: "Po kliknutí na Zaplatit se nic nestalo.", url: "/payment.html", userAgent: "Test", viewport: "390x844", clientTime: "2026-06-10T08:00:00Z",
     log: [{ at: "2026-06-10T07:59:58Z", type: "api", message: "POST /orders → 500 error", page: "/" }], screenshot: png };
-  for (const [overrides, code] of [[{ description: "krátké" }, "invalid_description"], [{ screenshot: "data:text/html;base64,PGI+" }, "invalid_screenshot"], [{ contactEmail: "x" }, "invalid_email"]]) {
+  for (const [overrides, code] of [[{ description: "krátké", screenshot: null }, "invalid_description"], [{ description: "x".repeat(251) }, "invalid_description"], [{ screenshot: "data:text/html;base64,PGI+" }, "invalid_screenshot"], [{ contactEmail: "x" }, "invalid_email"]]) {
     assert.equal((await call("POST", "/bug-reports", { body: { ...body, ...overrides } })).data.code, code, JSON.stringify(overrides));
   }
+  // Se snímkem obrazovky může být popis krátký i prázdný.
+  assert.equal((await call("POST", "/bug-reports", { body: { ...body, description: "" } })).status, 201, "jen snímek bez popisu");
   const sent = await call("POST", "/bug-reports", { body: { ...body, contactEmail: "Rybar@Example.cz" } });
   assert.equal(sent.status, 201, JSON.stringify(sent.data));
   assert.ok(await lastEmail(ROOT.email, "bug_report"), "e-mail adminovi");

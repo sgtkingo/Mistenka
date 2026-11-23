@@ -47,12 +47,19 @@ function markInvalid(input, className, message) {
 }
 
 // ---------- výběr revíru ----------
+// Cena za den: revír s podrevíry v prodeji má cenu každého podrevíru – jedna cena, nebo rozsah „0–150 Kč“.
+function priceLabel(item) {
+  const prices = (item.saleSubdistricts || []).length ? item.saleSubdistricts.map((s) => s.priceCzk) : [item.priceCzk];
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  return min === max ? czk(Math.round(min * 100)) : `${czk(Math.round(min * 100)).replace(/\s*Kč$/, "")}–${czk(Math.round(max * 100))}`;
+}
 function renderPicker() {
   qs("#revirPicker").classList.remove("hidden");
   qs("#revirList").innerHTML = config.reviry.map((item) => `
     <a class="action-card" href="?revir=${encodeURIComponent(item.id)}">
       <span class="action-icon">⌁</span>
-      <span class="action-content"><strong>${esc(item.name)}</strong><small>${esc([item.number, item.kind, czk(Math.round(item.priceCzk * 100)) + " / den"].filter(Boolean).join(" · "))}</small></span>
+      <span class="action-content"><strong>${esc(item.name)}</strong><small>${esc([item.number, item.kind, `${priceLabel(item)} / den`].filter(Boolean).join(" · "))}</small></span>
       <span class="card-arrow">→</span>
     </a>`).join("");
 }
@@ -62,7 +69,7 @@ function renderRevir() {
   document.title = `Místenka · ${revir.name}`;
   qsa("[data-revir-name]").forEach((el) => { el.textContent = revir.name; });
   if (config.reviry.length > 1) qs("#changeRevir").classList.remove("hidden");
-  const meta = [revir.area && `<span>${icon("water")}<strong>${esc(revir.area)}</strong> vodní plochy</span>`, revir.subdistrictCount && `<span>${icon("map")}<strong>${esc(revir.subdistrictCount)}</strong> ${plural(revir.subdistrictCount, "podrevír", "podrevíry", "podrevírů")}</span>`, `<span>${icon("ticket")}<strong>${(() => { const prices = saleSubs().length ? saleSubs().map((s) => s.priceCzk) : [revir.priceCzk]; const min = Math.min(...prices); return `${prices.some((p) => p !== min) ? "od " : ""}${esc(czk(Math.round(min * 100)))}`; })()} / den</strong></span>`].filter(Boolean);
+  const meta = [revir.area && `<span>${icon("water")}<strong>${esc(revir.area)}</strong> vodní plochy</span>`, revir.subdistrictCount && `<span>${icon("map")}<strong>${esc(revir.subdistrictCount)}</strong> ${plural(revir.subdistrictCount, "podrevír", "podrevíry", "podrevírů")}</span>`, `<span>${icon("ticket")}<strong>${esc(priceLabel(revir))} / den</strong></span>`].filter(Boolean);
   qs("#heroMeta").innerHTML = meta.join('<span class="meta-divider"></span>');
   const [first, ...rest] = revir.name.split(" ");
   qs("#artLabel").innerHTML = `${esc(first)}<br><span>${esc(rest.join(" "))}</span>`;

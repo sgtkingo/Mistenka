@@ -539,3 +539,8 @@ th .info-tip::after{bottom:auto;top:calc(100% + 8px);left:auto;right:-6px;transf
 .status-mild>span{background:#fff3b0}
 .catch-edit .fish-suggestions{z-index:20}
 .report-meta{display:block;margin-top:4px}
+.bug-counter{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-top:4px}
+.bug-counter #bugCount{font-size:12px;color:var(--muted);white-space:nowrap}
+.bug-counter #bugCount.near-limit{color:#c2610c;font-weight:600}
+.bug-log-details{margin-top:18px}
+.bug-log-details summary{cursor:pointer;font-weight:700;font-size:15px;margin-bottom:8px}

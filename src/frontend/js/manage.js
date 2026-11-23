@@ -530,7 +530,7 @@ async function loadBugs(openId = "") {
     qsa("#bugTabs .tab").forEach((b) => b.addEventListener("click", () => { bugFilter = b.dataset.filter; qs("#bugDetail").innerHTML = ""; loadBugs(); }));
     qs("#bugList").innerHTML = data.reports.length ? `<table class="data-table bug-table"><thead><tr><th>#</th><th>Nahlášeno</th><th>Popis</th><th>Nahlásil</th><th>Priorita</th><th>Stav</th></tr></thead><tbody>${data.reports.map((r) => `
       <tr class="clickable" data-bug="${r.id}"><td data-label="#">${r.id}</td><td data-label="Nahlášeno">${esc(czDateTime(r.createdAt))}<br><small class="muted-inline">${esc(r.url || "")}</small></td>
-      <td data-label="Popis">${esc(r.description.length > 110 ? `${r.description.slice(0, 110)}…` : r.description)}${r.hasScreenshot ? ' <span class="muted-inline">📷</span>' : ""}${r.githubUrl ? ' <span class="muted-inline">GitHub</span>' : ""}</td>
+      <td data-label="Popis">${r.description ? esc(r.description.length > 110 ? `${r.description.slice(0, 110)}…` : r.description) : '<span class="muted-inline">bez popisu</span>'}${r.hasScreenshot ? ' <span class="muted-inline">📷</span>' : ""}${r.githubUrl ? ' <span class="muted-inline">GitHub</span>' : ""}</td>
       <td data-label="Nahlásil">${r.user ? esc(r.user.name || r.user.email) : r.contactEmail ? esc(r.contactEmail) : '<span class="muted-inline">anonymně</span>'}</td>
       <td data-label="Priorita">${bugBadge(BUG_PRIORITY, r.priority)}</td><td data-label="Stav">${bugBadge(BUG_STATUS, r.status)}</td></tr>`).join("")}</tbody></table>`
       : '<p class="muted">Žádná hlášení v tomto stavu.</p>';
@@ -549,7 +549,7 @@ async function showBug(id) {
     const options = (map, current) => Object.entries(map).map(([k, [label]]) => `<option value="${k}"${k === current ? " selected" : ""}>${esc(label)}</option>`).join("");
     box.innerHTML = `<div class="bug-detail">
       <div class="bug-detail-head"><h2>Hlášení #${r.id}</h2>${bugBadge(BUG_PRIORITY, r.priority)} ${bugBadge(BUG_STATUS, r.status)}</div>
-      <p class="bug-description">${esc(r.description)}</p>
+      <p class="bug-description">${r.description ? esc(r.description) : '<span class="muted-inline">Bez popisu – jen snímek obrazovky.</span>'}</p>
       <dl class="summary-list">
         <div><dt>Nahlášeno</dt><dd>${esc(czDateTime(r.createdAt))}</dd></div>
         <div><dt>Nahlásil</dt><dd>${r.user ? `${esc(r.user.name)} · <a class="text-link" href="mailto:${esc(r.user.email)}">${esc(r.user.email)}</a>` : r.contactEmail ? `nepřihlášený · <a class="text-link" href="mailto:${esc(r.contactEmail)}">${esc(r.contactEmail)}</a>` : "anonymně"}</dd></div>
@@ -558,8 +558,8 @@ async function showBug(id) {
         <div><dt>Okno</dt><dd>${esc(r.viewport || "—")}</dd></div>
       </dl>
       ${r.screenshot ? `<h3>Snímek obrazovky</h3><a href="${esc(r.screenshot)}" download="hlaseni-${r.id}.jpg" title="Stáhnout"><img class="bug-screenshot" src="${esc(r.screenshot)}" alt="Snímek obrazovky k hlášení ${r.id}"></a>` : ""}
-      <h3>Poslední události <small class="muted-inline">(${r.log.length})</small></h3>
-      ${r.log.length ? `<table class="data-table bug-log-table"><thead><tr><th>Čas</th><th>Typ</th><th>Stránka</th><th>Událost</th></tr></thead><tbody>${r.log.map((e) => `<tr class="log-${esc(e.type)}"><td data-label="Čas">${esc(e.at ? czDateTime(e.at) : "")}</td><td data-label="Typ">${esc(e.type)}</td><td data-label="Stránka">${esc(e.page)}</td><td data-label="Událost">${esc(e.message)}</td></tr>`).join("")}</tbody></table>` : '<p class="muted">Bez záznamu událostí.</p>'}
+      <details class="bug-log-details"><summary>Poslední události <small class="muted-inline">(${r.log.length})</small></summary>
+      ${r.log.length ? `<table class="data-table bug-log-table"><thead><tr><th>Čas</th><th>Typ</th><th>Stránka</th><th>Událost</th></tr></thead><tbody>${r.log.map((e) => `<tr class="log-${esc(e.type)}"><td data-label="Čas">${esc(e.at ? czDateTime(e.at) : "")}</td><td data-label="Typ">${esc(e.type)}</td><td data-label="Stránka">${esc(e.page)}</td><td data-label="Událost">${esc(e.message)}</td></tr>`).join("")}</tbody></table>` : '<p class="muted">Bez záznamu událostí.</p>'}</details>
       <h3>Řešení</h3>
       <form id="bugForm" class="settings-form" novalidate>
         <div class="form-two-col"><div><label class="field-label" for="bugStatus">Stav</label><select id="bugStatus">${options(BUG_STATUS, r.status)}</select></div><div><label class="field-label" for="bugPriority">Priorita</label><select id="bugPriority">${options(BUG_PRIORITY, r.priority)}</select></div></div>

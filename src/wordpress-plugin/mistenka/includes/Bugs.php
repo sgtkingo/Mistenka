@@ -87,12 +87,14 @@ final class Bugs
     // ---------- nahlášení (veřejné) ----------
     public function create(array $input, ?array $user): array
     {
-        $description = self::text($input['description'] ?? null, 4000);
-        if (Js::len($description) < 10) throw new ApiError(400, 'invalid_description', 'Popište prosím, co se stalo (aspoň 10 znaků).');
+        // Popis nejvýše 250 znaků; může být prázdný, když je přiložený snímek obrazovky, jinak aspoň 10 znaků.
+        $description = trim(Js::s($input['description'] ?? ''));
+        if (Js::len($description) > 250) throw new ApiError(400, 'invalid_description', 'Popis může mít nejvýše 250 znaků.');
         $contactEmail = Js::lower(self::text($input['contactEmail'] ?? null, 200));
         if ($contactEmail !== '' && !preg_match(Validate::EMAIL_RE, $contactEmail)) throw new ApiError(400, 'invalid_email', 'Zadejte platný e-mail pro odpověď, nebo pole nechte prázdné.');
         $screenshot = Js::truthy($input['screenshot'] ?? null) ? Js::s($input['screenshot']) : null;
         if ($screenshot !== null && (strlen($screenshot) > self::MAX_SCREENSHOT || !preg_match(self::SCREENSHOT_RE, $screenshot))) throw new ApiError(400, 'invalid_screenshot', 'Snímek obrazovky musí být obrázek PNG, JPEG nebo WebP do 1,5 MB.');
+        if ($screenshot === null && Js::len($description) < 10) throw new ApiError(400, 'invalid_description', 'Popište prosím, co se stalo (aspoň 10 znaků), nebo přiložte snímek obrazovky.');
         $log = [];
         foreach (array_slice(is_array($input['log'] ?? null) ? $input['log'] : [], -self::MAX_LOG) as $e) {
             $e = is_array($e) ? $e : [];
@@ -159,7 +161,8 @@ final class Bugs
         $row = $this->find($id);
         if (!self::githubConfigured()) throw new ApiError(409, 'github_not_configured', 'GitHub není nastaven (MISTENKA_GITHUB_TOKEN a MISTENKA_GITHUB_REPO ve wp-config.php).');
         if ($row['github_url']) throw new ApiError(409, 'already_on_github', 'Hlášení už má GitHub issue.');
-        $title = '[Místenka #' . $row['id'] . '] ' . Js::slice(explode("\n", $row['description'])[0], 0, 100);
+        $first = Js::slice(explode("\n", $row['description'])[0], 0, 100);
+        $title = '[Místenka #' . $row['id'] . '] ' . ($first !== '' ? $first : 'snímek obrazovky bez popisu');
         $response = wp_remote_post('https://api.github.com/repos/' . self::githubRepo() . '/issues', [
             'timeout' => 20,
             'headers' => ['Authorization' => 'Bearer ' . self::githubToken(), 'Accept' => 'application/vnd.github+json', 'Content-Type' => 'application/json', 'User-Agent' => 'mistenka'],

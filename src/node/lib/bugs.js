@@ -51,12 +51,14 @@ function createBugs({ db, config, appUrl, github: githubIn = {} }) {
 
   // ---------- nahlášení (veřejné) ----------
   function create(input = {}, user = null) {
-    const description = text(input.description, 4000);
-    if (description.length < 10) throw new ApiError(400, "invalid_description", "Popište prosím, co se stalo (aspoň 10 znaků).");
+    // Popis nejvýše 250 znaků; může být prázdný, když je přiložený snímek obrazovky, jinak aspoň 10 znaků.
+    const description = String(input.description ?? "").trim();
+    if (description.length > 250) throw new ApiError(400, "invalid_description", "Popis může mít nejvýše 250 znaků.");
     const contactEmail = text(input.contactEmail, 200).toLowerCase();
     if (contactEmail && !EMAIL_RE.test(contactEmail)) throw new ApiError(400, "invalid_email", "Zadejte platný e-mail pro odpověď, nebo pole nechte prázdné.");
     const screenshot = input.screenshot ? String(input.screenshot) : null;
     if (screenshot && (screenshot.length > MAX_SCREENSHOT || !SCREENSHOT_RE.test(screenshot))) throw new ApiError(400, "invalid_screenshot", "Snímek obrazovky musí být obrázek PNG, JPEG nebo WebP do 1,5 MB.");
+    if (!screenshot && description.length < 10) throw new ApiError(400, "invalid_description", "Popište prosím, co se stalo (aspoň 10 znaků), nebo přiložte snímek obrazovky.");
     const log = (Array.isArray(input.log) ? input.log : []).slice(-MAX_LOG).map((e) => ({ at: text(e?.at, 40), type: text(e?.type, 20), message: text(e?.message, 500), page: text(e?.page, 200) }));
     const now = iso(time.now());
     const id = Number(db.prepare(`INSERT INTO bug_reports (created_at, user_id, contact_email, description, url, user_agent, viewport, client_time, log, screenshot, status, priority, updated_at)
@@ -110,7 +112,7 @@ function createBugs({ db, config, appUrl, github: githubIn = {} }) {
       response = await fetch(`https://api.github.com/repos/${github.repo}/issues`, {
         method: "POST",
         headers: { Authorization: `Bearer ${github.token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json", "User-Agent": "mistenka" },
-        body: JSON.stringify({ title: `[Místenka #${row.id}] ${row.description.split("\n")[0].slice(0, 100)}`, body: issueBody(row), labels: ["bug"] })
+        body: JSON.stringify({ title: `[Místenka #${row.id}] ${row.description.split("\n")[0].slice(0, 100) || "snímek obrazovky bez popisu"}`, body: issueBody(row), labels: ["bug"] })
       });
     } catch (error) { throw new ApiError(502, "github_failed", `GitHub je nedostupný: ${error.message}`); }
     const data = await response.json().catch(() => ({}));
