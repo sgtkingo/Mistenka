@@ -337,6 +337,7 @@ body.season-closed .action-card[data-panel="buy"]{display:none}body.season-close
 .toggle-section.collapsed .toggle-off{display:inline}
 .toggle-section.collapsed p.toggle-off{display:block}
 .toggle-section.collapsed .toggle-body{display:none}
+.toggle-section+.toggle-section{margin-top:32px}
 .kpi em{display:block;color:var(--muted);font-size:11px;font-style:normal}
 .stats-records{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:12px 0 4px}
 .stats-records>div{border:1px solid #c4e6cc;background:#f3faf5;border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:2px}
