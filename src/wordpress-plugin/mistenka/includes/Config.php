@@ -139,6 +139,9 @@ final class Config
         // Veřejná část statistiky v účtu („Jak se posledně dařilo ostatním?“) – výchozí zapnuto.
         $config['statsPolicy'] = array_merge(['community' => true], is_array($config['statsPolicy'] ?? null) ? $config['statsPolicy'] : []);
         if (!is_bool($config['statsPolicy']['community'])) self::fail('statsPolicy.community musí být true/false');
+        // Kontrola porybným: „Místenky člena“ (místenky téhož čísla legitimace v týdnu a měsíci) – výchozí vypnuto.
+        $config['checkPolicy'] = array_merge(['memberHistory' => false], is_array($config['checkPolicy'] ?? null) ? $config['checkPolicy'] : []);
+        if (!is_bool($config['checkPolicy']['memberHistory'])) self::fail('checkPolicy.memberHistory musí být true/false');
         $config['limitPolicy'] = array_merge(['violationsBeforeBlock' => 0, 'blockDays' => null], is_array($config['limitPolicy'] ?? null) ? $config['limitPolicy'] : []);
         $lp = $config['limitPolicy'];
         if (!Js::isInteger($lp['violationsBeforeBlock']) || $lp['violationsBeforeBlock'] < 0) self::fail('počet porušení před blokací musí být celé číslo >= 0');

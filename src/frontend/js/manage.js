@@ -30,6 +30,7 @@ qsa(".manage-nav-item").forEach((item) => item.addEventListener("click", () => {
   if (section === "vouchers") loadVouchers();
   if (section === "users") loadUsers();
   if (section === "limits") loadLimits();
+  if (section === "checks") loadChecks();
   if (section === "announcements") loadAnnouncements();
   if (section === "seasons") loadSeasons();
   if (section === "pricing") loadPricing();
@@ -179,6 +180,24 @@ qs("#returnPolicyForm").addEventListener("submit", (event) => submitForm(event, 
   await api("/manage/settings/organization", { method: "PUT", body: { data, note: "Lhůta pro odevzdání" } });
   showToast(`Lhůta pro odevzdání: ${days} dní.`, "success");
   loadPenaltyRules();
+}));
+
+// ---------- kontroly porybným (nastavení organizace: checkPolicy) ----------
+let checksOrg = null;
+async function loadChecks() {
+  const box = qs("#checksBox");
+  try {
+    checksOrg = (await api("/manage/settings")).organization.data;
+    const on = checksOrg.checkPolicy?.memberHistory === true;
+    box.innerHTML = `<label class="checkbox-label settings-check"><input type="checkbox" id="cpMemberHistory"${on ? " checked" : ""}> <span><b>Zobrazovat „Místenky člena“</b> – při kontrole porybný uvidí všechny místenky téhož čísla legitimace v týdnu a měsíci dne lovu, s úlovky (podklad pro týdenní a měsíční limity).${window.Mistenka.infoTip("Výchozí vypnuto – je to hodně informací navíc. Bez této volby porybný vidí jen kontrolovanou místenku, její úlovky, limity úlovků a záznam kontrol.")}</span></label>
+      <button class="primary-button" type="submit">Uložit</button>`;
+  } catch (error) { box.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
+}
+qs("#checksForm").addEventListener("submit", (event) => submitForm(event, async () => {
+  const data = { ...structuredClone(checksOrg), checkPolicy: { ...(checksOrg.checkPolicy || {}), memberHistory: qs("#cpMemberHistory").checked } };
+  await api("/manage/settings/organization", { method: "PUT", body: { data, note: "Kontroly porybným" } });
+  showToast("Nastavení kontrol uloženo.", "success");
+  loadChecks();
 }));
 
 const CAUSE_LABELS = { limits: "limity úlovků", late_return: "pozdní odevzdání", seizure: "zadržení porybným", manual: "ručně" };

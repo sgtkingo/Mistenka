@@ -664,6 +664,13 @@ test("porybný: plná kontrola jen s rolí, údaje člena, místenky v týdnu a 
   assert.equal((await call("GET", `/warden/tickets/${code}`, { session: member.session })).data.code, "forbidden_role");
 
   const warden = await wardenAccount();
+  // „Místenky člena“ jsou ve výchozím stavu vypnuté (Rybáři → Kontroly).
+  assert.equal((await call("GET", `/warden/tickets/${monday.code}`, { session: warden.session })).data.memberHistory, null);
+  const { session: mgr } = await managerAccount();
+  const org = (await call("GET", "/manage/settings", { session: mgr })).data.organization.data;
+  assert.equal(org.checkPolicy.memberHistory, false);
+  assert.equal((await call("PUT", "/manage/settings/organization", { body: { data: { ...org, checkPolicy: { memberHistory: "ano" } } }, session: mgr })).data.code, "invalid_settings");
+  assert.equal((await call("PUT", "/manage/settings/organization", { body: { data: { ...org, checkPolicy: { memberHistory: true } } }, session: mgr })).status, 200);
   const res = await call("GET", `/warden/tickets/${monday.code}`, { session: warden.session });
   assert.equal(res.status, 200, JSON.stringify(res.data));
   const view = res.data;

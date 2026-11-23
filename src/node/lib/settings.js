@@ -10,7 +10,7 @@ const emails = require("./emails");
 const { buildConfig } = require("./config");
 const { ApiError } = require("./validate");
 
-const ORG_KEYS = ["organization", "returnPolicy", "salesPolicy", "publicCheck", "statsPolicy", "limitPolicy", "penaltyPolicy", "privacy"];
+const ORG_KEYS = ["organization", "returnPolicy", "salesPolicy", "publicCheck", "statsPolicy", "checkPolicy", "limitPolicy", "penaltyPolicy", "privacy"];
 const PAYMENT_KEYS = ["accountNumber", "bankCode", "recipientName", "reservationMinutes", "messagePrefix"];
 const iso = (date) => date.toISOString();
 const pick = (object, keys) => Object.fromEntries(keys.filter((key) => object?.[key] !== undefined).map((key) => [key, object[key]]));

@@ -72,7 +72,7 @@ async function loadWarden() {
 const memberRolesHtml = (roles = ["member"]) => window.Mistenka.roleBadges(roles);
 function renderWarden(view) {
   const panel = qs("#wardenPanel");
-  const history = view.memberHistory.tickets;
+  const history = view.memberHistory?.tickets || []; // null = vypnuto v Rybáři → Kontroly
   const weekCount = history.filter((t) => t.inWeek).length;
   const monthCount = history.filter((t) => t.inMonth).length;
   const seizure = view.seizure ? `<div class="status-error"><b>Zadrženo ${esc(czDateTime(view.seizure.at))}</b>${view.seizure.wardenName ? ` · ${esc(view.seizure.wardenName)}` : ""}<br>${esc(view.seizure.reason)}${view.seizure.place ? ` · ${esc(view.seizure.place)}` : ""}</div>` : "";
@@ -90,12 +90,12 @@ function renderWarden(view) {
     ${catchWarningsHtml(view.catches)}
     ${view.blocked ? `<div class="status-error">Člen má pozastavený nákup místenek ${view.blocked.until ? `do ${esc(czDate(view.blocked.until))}` : "do odvolání"}: ${esc(view.blocked.reason)}</div>` : ""}
     ${limitsHtml(view.limits, { mode: "all", title: "Limity úlovků člena" })}
-    <h3>Místenky člena</h3>
+    ${view.memberHistory ? `<h3>Místenky člena</h3>
     <p class="field-help">Týden ${esc(czDate(view.memberHistory.week.from, { year: false }))}–${esc(czDate(view.memberHistory.week.to))}: ${weekCount} · měsíc: ${monthCount}. Jen místenky v Místence – limity platí na všech revírech svazu dohromady.</p>
     <table class="data-table"><thead><tr><th>Den</th><th>Revír</th><th>Stav</th><th>Úlovky${window.Mistenka.infoTip("⚠ = možné porušení pravidel u úlovku (míra, hájení, povinné vrácení) podle údajů v Místence – rozhodují pravidla v RIS.")}</th></tr></thead><tbody>${history.map((t) => {
       const state = ticketState(t);
       return `<tr${t.current ? ' class="current-row"' : ""}><td data-label="Den">${esc(czDate(t.date, { year: false }))}${t.inWeek ? "" : ' <small class="muted-inline">(mimo týden)</small>'}</td><td data-label="Revír">${esc(t.revir)}</td><td data-label="Stav"><span class="badge badge-${esc(state.tone)}">${esc(state.label)}</span></td><td data-label="Úlovky">${esc(catchText(t))}</td></tr>`;
-    }).join("")}</tbody></table>
+    }).join("")}</tbody></table>` : ""}
     <h3>Záznam kontrol</h3>
     <ul class="check-log">${view.checks.map((c) => `<li>${esc(czDateTime(c.at))} · ${esc(c.wardenName)}${c.status === "seized" ? " · <b>zadržení</b>" : ""}</li>`).join("") || "<li>—</li>"}</ul>
     ${view.seizable ? `<details class="seize-box"><summary>Zadržet místenku</summary>

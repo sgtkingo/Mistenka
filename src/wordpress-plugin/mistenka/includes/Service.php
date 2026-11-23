@@ -832,7 +832,9 @@ final class Service
         $month = ['from' => substr($ticket['fishing_date'], 0, 8) . '01', 'to' => Time::monthEnd($ticket['fishing_date'])];
         $from = $week['from'] < $month['from'] ? $week['from'] : $month['from'];
         $to = $week['to'] > $month['to'] ? $week['to'] : $month['to'];
-        $history = array_map(fn($t) => [
+        // Místenky člena jen při zapnutém checkPolicy.memberHistory (Rybáři → Kontroly), jinak memberHistory: null.
+        $showHistory = ($this->config()['checkPolicy']['memberHistory'] ?? false) === true;
+        $history = !$showHistory ? [] : array_map(fn($t) => [
             'code' => $t['code'], 'date' => $t['fishing_date'], 'revir' => $this->revirOf($t)['name'], 'status' => $this->stateOf($t), 'current' => $t['id'] === $ticket['id'],
             'inWeek' => $t['fishing_date'] >= $week['from'] && $t['fishing_date'] <= $week['to'], 'inMonth' => $t['fishing_date'] >= $month['from'] && $t['fishing_date'] <= $month['to'],
             'noCatch' => (bool) $t['no_catch'], 'catches' => $this->catchesOf($t),
@@ -848,7 +850,7 @@ final class Service
             'firstName' => $ticket['first_name'], 'lastName' => $ticket['last_name'], 'birthDate' => $ticket['birth_date'], 'memberId' => $ticket['member_id'],
             'returnedAt' => $ticket['returned_at'], 'noCatch' => (bool) $ticket['no_catch'], 'catches' => $this->catchesOf($ticket),
             'seizable' => $this->stateOf($ticket) === 'active', 'memberRoles' => $this->memberRolesOf($ticket), 'seizure' => $seizure, 'checks' => $checks,
-            'memberHistory' => ['week' => $week, 'month' => $month, 'tickets' => $history],
+            'memberHistory' => $showHistory ? ['week' => $week, 'month' => $month, 'tickets' => $history] : null,
             'limits' => $this->limitsFor($ticket), 'blocked' => $block ? $this->blockShape($block) : null,
         ]);
     }

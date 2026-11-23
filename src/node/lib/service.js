@@ -638,14 +638,16 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     return db.prepare("SELECT species, length_cm, weight_kg, weight_estimated, suspect FROM catches WHERE ticket_id = ? ORDER BY id").all(ticket.id)
       .map((c) => ({ species: c.species, length: c.length_cm, weight: c.weight_kg, weightEstimated: Boolean(c.weight_estimated), warning: catchWarning(ticket, c.species, c.length_cm), suspect: c.suspect || null }));
   }
-  // Plné údaje pro porybného + místenky téhož člena v týdnu a měsíci dne lovu (podklad pro limity, B3).
+  // Plné údaje pro porybného + místenky téhož člena v týdnu a měsíci dne lovu (podklad pro limity, B3) –
+  // ty jen při zapnutém checkPolicy.memberHistory (Rybáři → Kontroly), jinak memberHistory: null.
   function wardenView(ticket) {
+    const showHistory = config.checkPolicy?.memberHistory === true;
     const base = publicTicket(ticket);
     const week = { from: time.weekStart(ticket.fishing_date), to: time.addDays(time.weekStart(ticket.fishing_date), 6) };
     const month = { from: `${ticket.fishing_date.slice(0, 8)}01`, to: time.monthEnd(ticket.fishing_date) };
     const from = week.from < month.from ? week.from : month.from;
     const to = week.to > month.to ? week.to : month.to;
-    const history = db.prepare("SELECT * FROM tickets WHERE member_id = ? AND status = 'issued' AND fishing_date BETWEEN ? AND ? ORDER BY fishing_date, id").all(ticket.member_id, from, to)
+    const history = (showHistory ? db.prepare("SELECT * FROM tickets WHERE member_id = ? AND status = 'issued' AND fishing_date BETWEEN ? AND ? ORDER BY fishing_date, id").all(ticket.member_id, from, to) : [])
       .map((t) => ({
         code: t.code, date: t.fishing_date, revir: revirOf(t).name, status: stateOf(t), current: t.id === ticket.id,
         inWeek: t.fishing_date >= week.from && t.fishing_date <= week.to, inMonth: t.fishing_date >= month.from && t.fishing_date <= month.to,
@@ -665,7 +667,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       returnedAt: ticket.returned_at, noCatch: Boolean(ticket.no_catch), catches: catchesOf(ticket),
       seizable: stateOf(ticket) === "active",
       memberRoles: memberRolesOf(ticket),
-      seizure, checks, memberHistory: { week, month, tickets: history },
+      seizure, checks, memberHistory: showHistory ? { week, month, tickets: history } : null,
       limits: limitsFor(ticket),
       blocked: activeBlock(ticket.member_id) ? blockShape(activeBlock(ticket.member_id)) : null
     };

@@ -108,6 +108,9 @@ function buildConfig(rawInput, speciesDocs, mapDocs = {}) {
   // Veřejná část statistiky v účtu („Jak se posledně dařilo ostatním?“) – výchozí zapnuto.
   config.statsPolicy = { community: true, ...(config.statsPolicy || {}) };
   if (typeof config.statsPolicy.community !== "boolean") fail("statsPolicy.community musí být true/false");
+  // Kontrola porybným: „Místenky člena“ (místenky téhož čísla legitimace v týdnu a měsíci) – výchozí vypnuto.
+  config.checkPolicy = { memberHistory: false, ...(config.checkPolicy || {}) };
+  if (typeof config.checkPolicy.memberHistory !== "boolean") fail("checkPolicy.memberHistory musí být true/false");
   // Automatická blokace po opakovaném porušení limitů (0 = vypnuto).
   config.limitPolicy = { violationsBeforeBlock: 0, blockDays: null, ...(config.limitPolicy || {}) };
   if (!Number.isInteger(config.limitPolicy.violationsBeforeBlock) || config.limitPolicy.violationsBeforeBlock < 0) fail("počet porušení před blokací musí být celé číslo >= 0");

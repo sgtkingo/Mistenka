@@ -529,7 +529,7 @@ Plná kontrola. Každé otevření se zapíše do záznamu kontrol (`ticket_chec
   "memberRoles": ["member", "warden"],    // funkce držitele: role jeho účtu (podle účtu místenky nebo čísla legitimace), bez účtu ["member"]
   "seizure": null,                        // { at, reason, place, wardenName }
   "checks": [{ "wardenName": "Petr Strážný", "at": "…", "status": "active" }],   // nejnovější první, max. 20
-  "memberHistory": {                      // vystavené místenky téhož čísla legitimace v týdnu (po–ne) a měsíci dne lovu
+  "memberHistory": {                      // vystavené místenky téhož čísla legitimace v týdnu (po–ne) a měsíci dne lovu; null = vypnuto (checkPolicy.memberHistory, výchozí false, Rybáři → Kontroly)
     "week": { "from": "2026-06-08", "to": "2026-06-14" }, "month": { "from": "2026-06-01", "to": "2026-06-30" },
     "tickets": [{ "code": "…", "date": "…", "revir": "Petrůvka 1 A", "status": "active", "current": true, "inWeek": true, "inMonth": true, "noCatch": false, "catches": [] }]
   } }
