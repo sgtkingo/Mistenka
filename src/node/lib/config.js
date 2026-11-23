@@ -69,6 +69,10 @@ function buildConfig(rawInput, speciesDocs, mapDocs = {}) {
   config.salesPolicy = { bookingDaysAhead: legacyAhead ?? 3, ...(config.salesPolicy || {}) };
   if (!Number.isInteger(config.salesPolicy.bookingDaysAhead) || config.salesPolicy.bookingDaysAhead < 0 || config.salesPolicy.bookingDaysAhead > 60) fail("prodej dopředu musí být 0–60 dní");
   for (const revir of config.reviry) if (revir && typeof revir === "object") revir.bookingDaysAhead = config.salesPolicy.bookingDaysAhead;
+  // Místenky na rybáře a den (na podrevír): unreturned = jedna neodevzdaná, po odevzdání lze koupit další (výchozí);
+  // one = jedna na den i po odevzdání; none = bez omezení.
+  config.salesPolicy.ticketsPerDay ??= "unreturned";
+  if (!["unreturned", "one", "none"].includes(config.salesPolicy.ticketsPerDay)) fail("salesPolicy.ticketsPerDay musí být unreturned | one | none");
   const ids = new Set();
   for (const revir of config.reviry) {
     if (!/^[a-z0-9-]+$/.test(revir.id || "")) fail(`revír má neplatné id: ${revir.id}`);

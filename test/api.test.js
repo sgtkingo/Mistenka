@@ -1859,7 +1859,7 @@ test("jedna místenka na rybáře, den a podrevír (podle čísla legitimace)", 
   const again = await call("POST", "/orders", { body: orderBody({ memberId, date: "2026-06-13" }) });
   assert.equal(again.status, 409);
   assert.equal(again.data.code, "duplicate_ticket");
-  assert.match(again.data.error, /Rozpracovanou objednávku/, "u nezaplacené objednávky poradí dokončit nebo zrušit");
+  assert.match(again.data.error, /rozpracovanou objednávku/, "u nezaplacené objednávky poradí dokončit nebo zrušit");
   assert.equal((await call("POST", "/orders", { body: orderBody({ memberId, date: "2026-06-13", subdistrict: 2 }) })).status, 201, "jiný podrevír týž den lze");
   assert.equal((await call("POST", "/orders", { body: orderBody({ memberId, date: "2026-06-12" }) })).status, 201, "stejný podrevír jiný den lze");
   // Zrušená objednávka místo neblokuje; vystavená (zaplacená) místenka ano.
@@ -1868,9 +1868,35 @@ test("jedna místenka na rybáře, den a podrevír (podle čísla legitimace)", 
   assert.ok(paid.code);
   const duplicate = await call("POST", "/orders", { body: orderBody({ memberId, date: "2026-06-13" }) });
   assert.equal(duplicate.data.code, "duplicate_ticket");
-  assert.doesNotMatch(duplicate.data.error, /Rozpracovanou/);
+  assert.match(duplicate.data.error, /až ji odevzdáte/);
   // Jiný rybář na stejný den a podrevír koupit může.
   assert.equal((await call("POST", "/orders", { body: orderBody({ memberId: "77000002", date: "2026-06-13" }) })).status, 201);
+});
+
+test("místenky na rybáře a den: po odevzdání lze koupit další (výchozí), přepínatelné v Ceny a místa", async () => {
+  await setClock("2026-06-20T08:00:00Z"); // volný den (kapacita 10. 6. je vyčerpaná jinými testy)
+  const memberId = "77000011";
+  const first = await paidTicket({ memberId, date: "2026-06-20" });
+  assert.equal((await call("POST", "/orders", { body: orderBody({ memberId, date: "2026-06-20" }) })).data.code, "duplicate_ticket", "neodevzdaná blokuje");
+  assert.equal((await call("POST", `/tickets/${first.code}/return`, { body: { noCatch: true }, token: first.token })).status, 200);
+  const second = await paidTicket({ memberId, date: "2026-06-20" });
+  assert.ok(second.code, "po odevzdání další místenka na týž den a podrevír");
+
+  const { session } = await managerAccount();
+  const org = (await call("GET", "/manage/settings", { session })).data.organization.data;
+  assert.equal(org.salesPolicy.ticketsPerDay, "unreturned");
+  const setRule = (ticketsPerDay) => call("PUT", "/manage/settings/organization", { body: { data: { ...org, salesPolicy: { ...org.salesPolicy, ticketsPerDay } } }, session });
+  assert.equal((await setRule("dva")).data.code, "invalid_settings");
+  assert.equal((await setRule("one")).status, 200);
+  await call("POST", `/tickets/${second.code}/return`, { body: { noCatch: true }, token: second.token });
+  const strict = await call("POST", "/orders", { body: orderBody({ memberId, date: "2026-06-20" }) });
+  assert.equal(strict.data.code, "duplicate_ticket", "pravidlo one: ani po odevzdání");
+  assert.match(strict.data.error, /jen jednu místenku/);
+  assert.equal((await setRule("none")).status, 200);
+  const third = await paidTicket({ memberId, date: "2026-06-20" });
+  assert.equal((await call("POST", "/orders", { body: orderBody({ memberId, date: "2026-06-20" }) })).status, 201, "bez omezení i s neodevzdanou");
+  assert.ok(third.code);
+  await call("POST", "/manage/settings/reset", { body: { scope: "organization" }, session });
 });
 
 // ---------- hlášení chyb ----------

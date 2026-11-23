@@ -113,12 +113,23 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
   }
   // Platná místenka (vystavená, nebo rezervovaná a čekající na platbu) téhož rybáře na stejný den a podrevír.
   // Místenka na celý revír (bez podrevíru) se kryje s každým podrevírem.
+  // Pravidlo salesPolicy.ticketsPerDay (Ceny a místa): unreturned = odevzdaná místenka další nákup neblokuje,
+  // one = blokuje každá vystavená, none = bez kontroly. Rezervace čekající na platbu blokuje vždy (kromě none).
   function duplicateTicket(memberId, revirId, date, subdistrict) {
+    const rule = config.salesPolicy?.ticketsPerDay || "unreturned";
+    if (rule === "none") return null;
+    const issued = rule === "unreturned" ? "(status = 'issued' AND returned_at IS NULL)" : "status = 'issued'";
     return db.prepare(`SELECT status FROM tickets WHERE member_id = ? AND revir_id = ? AND fishing_date = ?
       AND (subdistrict IS NULL OR ? IS NULL OR subdistrict = ?)
-      AND (status = 'issued' OR (status = 'pending_payment' AND reserved_until > ?)) LIMIT 1`).get(memberId, revirId, date, subdistrict, subdistrict, iso(time.now())) || null;
+      AND (${issued} OR (status = 'pending_payment' AND reserved_until > ?)) LIMIT 1`).get(memberId, revirId, date, subdistrict, subdistrict, iso(time.now())) || null;
   }
-  const DUPLICATE_TEXT = (subdistrict, pending) => `Na tento den už máte místenku na ${subdistrict ? "tento podrevír" : "tento revír"}. Jeden rybář může mít na den jen jednu místenku na podrevír.${pending ? " Rozpracovanou objednávku dokončete platbou (odkaz v e-mailu s pokyny k platbě), nebo ji zrušte." : ""}`;
+  const DUPLICATE_TEXT = (subdistrict, pending) => {
+    const where = subdistrict ? "tento podrevír" : "tento revír";
+    if (pending) return `Na tento den už máte rozpracovanou objednávku na ${where}. Dokončete ji platbou (odkaz v e-mailu s pokyny k platbě), nebo ji zrušte.`;
+    return config.salesPolicy?.ticketsPerDay === "one"
+      ? `Na tento den už máte místenku na ${where}. Jeden rybář může mít na den jen jednu místenku na podrevír.`
+      : `Na tento den už máte neodevzdanou místenku na ${where}. Další můžete koupit, až ji odevzdáte.`;
+  };
   // Kapacita a cena místenky: podrevíru (je-li v prodeji), jinak revíru.
   const saleOf = (revir, subdistrict) => (subdistrict === null || subdistrict === undefined ? null : (revir.saleSubdistricts || []).find((s) => String(s.number) === String(subdistrict)) || null);
   const capacityOf = (revir, subdistrict) => saleOf(revir, subdistrict)?.dailyCapacity ?? revir.dailyCapacity;

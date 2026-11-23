@@ -201,7 +201,13 @@
         <div id="pricingPanel"><p class="muted">Načítám…</p></div>
         <form id="salesPolicyForm" class="return-policy sales-policy" novalidate>
           <label class="field-label" for="bookingDaysAhead">Prodej dopředu<span class="info-tip" tabindex="0" role="img" aria-label="Platí pro všechny revíry: kolik dní dopředu si rybář může koupit místenku (dnešek + tento počet dní)." data-tip="Platí pro všechny revíry: kolik dní dopředu si rybář může koupit místenku (dnešek + tento počet dní).">i</span></label>
-          <div class="return-policy-row"><div class="input-suffix"><input id="bookingDaysAhead" type="number" min="0" max="60" value="3"><span>dní (0 = jen dnes)</span></div><button class="secondary-button" type="submit">Uložit</button></div>
+          <div class="return-policy-row"><div class="input-suffix"><input id="bookingDaysAhead" type="number" min="0" max="60" value="3"><span>dní (0 = jen dnes)</span></div></div>
+          <label class="field-label" for="ticketsPerDay">Místenky na rybáře a den<span class="info-tip" tabindex="0" role="img" aria-label="Platí pro všechny revíry, počítá se podle čísla legitimace na stejný den a podrevír (místenka na celý revír se kryje s každým podrevírem). Rozpracovaná nezaplacená objednávka blokuje vždy, zrušená ani nezaplacená po vypršení ne." data-tip="Platí pro všechny revíry, počítá se podle čísla legitimace na stejný den a podrevír (místenka na celý revír se kryje s každým podrevírem). Rozpracovaná nezaplacená objednávka blokuje vždy, zrušená ani nezaplacená po vypršení ne.">i</span></label>
+          <div class="return-policy-row"><select id="ticketsPerDay">
+            <option value="unreturned">Jedna neodevzdaná – po odevzdání lze koupit další</option>
+            <option value="one">Jedna na den – ani po odevzdání další</option>
+            <option value="none">Bez omezení</option>
+          </select><button class="secondary-button" type="submit">Uložit</button></div>
         </form>
       </section>
 

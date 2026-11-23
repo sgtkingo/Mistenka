@@ -188,19 +188,27 @@ final class Service
 
     // Platná místenka (vystavená, nebo rezervovaná a čekající na platbu) téhož rybáře na stejný den a podrevír.
     // Místenka na celý revír (bez podrevíru) se kryje s každým podrevírem.
+    // Pravidlo salesPolicy.ticketsPerDay (Ceny a místa): unreturned = odevzdaná místenka další nákup neblokuje,
+    // one = blokuje každá vystavená, none = bez kontroly. Rezervace čekající na platbu blokuje vždy (kromě none).
     private function duplicateTicket(string $memberId, string $revirId, string $date, ?string $subdistrict): ?string
     {
-        $sql = "SELECT status FROM {p}tickets WHERE member_id = ? AND revir_id = ? AND fishing_date = ? AND (status = 'issued' OR (status = 'pending_payment' AND reserved_until > ?))";
+        $rule = $this->config()['salesPolicy']['ticketsPerDay'] ?? 'unreturned';
+        if ($rule === 'none') return null;
+        $issued = $rule === 'unreturned' ? "(status = 'issued' AND returned_at IS NULL)" : "status = 'issued'";
+        $sql = "SELECT status FROM {p}tickets WHERE member_id = ? AND revir_id = ? AND fishing_date = ? AND ({$issued} OR (status = 'pending_payment' AND reserved_until > ?))";
         $status = $subdistrict === null
             ? Db::val($sql . ' LIMIT 1', $memberId, $revirId, $date, Time::nowIso())
             : Db::val($sql . ' AND (subdistrict IS NULL OR subdistrict = ?) LIMIT 1', $memberId, $revirId, $date, Time::nowIso(), $subdistrict);
         return $status === null || $status === false ? null : (string) $status;
     }
 
-    private static function duplicateText(?string $subdistrict, bool $pending): string
+    private function duplicateText(?string $subdistrict, bool $pending): string
     {
-        return 'Na tento den už máte místenku na ' . ($subdistrict !== null ? 'tento podrevír' : 'tento revír') . '. Jeden rybář může mít na den jen jednu místenku na podrevír.'
-            . ($pending ? ' Rozpracovanou objednávku dokončete platbou (odkaz v e-mailu s pokyny k platbě), nebo ji zrušte.' : '');
+        $where = $subdistrict !== null ? 'tento podrevír' : 'tento revír';
+        if ($pending) return "Na tento den už máte rozpracovanou objednávku na {$where}. Dokončete ji platbou (odkaz v e-mailu s pokyny k platbě), nebo ji zrušte.";
+        return ($this->config()['salesPolicy']['ticketsPerDay'] ?? 'unreturned') === 'one'
+            ? "Na tento den už máte místenku na {$where}. Jeden rybář může mít na den jen jednu místenku na podrevír."
+            : "Na tento den už máte neodevzdanou místenku na {$where}. Další můžete koupit, až ji odevzdáte.";
     }
 
     // Podrevír v prodeji (cena a kapacita), nebo null = místenka na celý revír.
@@ -417,7 +425,7 @@ final class Service
                 throw new ApiError(403, 'member_blocked', "Nákup místenek je pro toto číslo legitimace pozastaven {$until}. Důvod: {$block['reason']}. Kontaktujte správce organizace.");
             }
             $duplicate = $this->duplicateTicket($order['memberId'], $revir['id'], $order['date'], $order['subdistrict']);
-            if ($duplicate !== null) throw new ApiError(409, 'duplicate_ticket', self::duplicateText($order['subdistrict'], $duplicate === 'pending_payment'));
+            if ($duplicate !== null) throw new ApiError(409, 'duplicate_ticket', $this->duplicateText($order['subdistrict'], $duplicate === 'pending_payment'));
             if ($this->takenSeats($revir['id'], $order['date'], 0, $order['subdistrict']) >= self::capacityOf($revir, $order['subdistrict'])) throw new ApiError(409, 'sold_out', $order['subdistrict'] !== null ? 'Na vybraný den už v tomto podrevíru nejsou volná místa.' : 'Na vybraný den už nejsou volná místa.');
             if ($order['voucherCode'] !== '') {
                 $voucher = Db::row('SELECT * FROM {p}vouchers WHERE code = ?', $order['voucherCode']);

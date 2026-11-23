@@ -107,6 +107,10 @@ final class Config
         $ahead = $config['salesPolicy']['bookingDaysAhead'];
         if (!Js::isInteger($ahead) || $ahead < 0 || $ahead > 60) self::fail('prodej dopředu musí být 0–60 dní');
         foreach ($config['reviry'] as $i => $r) if (is_array($r)) $config['reviry'][$i]['bookingDaysAhead'] = $ahead;
+        // Místenky na rybáře a den (na podrevír): unreturned = jedna neodevzdaná, po odevzdání lze koupit další (výchozí);
+        // one = jedna na den i po odevzdání; none = bez omezení.
+        if (!isset($config['salesPolicy']['ticketsPerDay'])) $config['salesPolicy']['ticketsPerDay'] = 'unreturned';
+        if (!in_array($config['salesPolicy']['ticketsPerDay'], ['unreturned', 'one', 'none'], true)) self::fail('salesPolicy.ticketsPerDay musí být unreturned | one | none');
         $ids = [];
         foreach ($config['reviry'] as $revir) {
             $id = is_array($revir) ? Js::str($revir['id'] ?? '') : '';

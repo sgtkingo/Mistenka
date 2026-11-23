@@ -680,19 +680,21 @@ function renderRevirStatus(seasons) {
     }));
   });
 }
-// Prodej dopředu – jeden údaj pro celou organizaci (nastavení organizace: salesPolicy).
+// Prodej dopředu a místenky na rybáře a den – pro celou organizaci (nastavení organizace: salesPolicy).
 let salesOrg = null;
 async function loadSalesPolicy() {
   try {
     salesOrg = (await api("/manage/settings")).organization.data;
     qs("#bookingDaysAhead").value = salesOrg.salesPolicy?.bookingDaysAhead ?? 3;
+    qs("#ticketsPerDay").value = salesOrg.salesPolicy?.ticketsPerDay || "unreturned";
   } catch (error) { showToast(error.message, "error"); }
 }
 qs("#salesPolicyForm").addEventListener("submit", (event) => submitForm(event, async () => {
   const days = Number(qs("#bookingDaysAhead").value);
   if (!Number.isInteger(days) || days < 0 || days > 60) throw new Error("Prodej dopředu musí být celé číslo 0–60 dní.");
-  await api("/manage/settings/organization", { method: "PUT", body: { data: { ...structuredClone(salesOrg), salesPolicy: { bookingDaysAhead: days } }, note: "Prodej dopředu" } });
-  showToast(days ? `Místenky se prodávají ${days} dní dopředu.` : "Místenky se prodávají jen na dnešek.", "success");
+  const ticketsPerDay = qs("#ticketsPerDay").value;
+  await api("/manage/settings/organization", { method: "PUT", body: { data: { ...structuredClone(salesOrg), salesPolicy: { ...(salesOrg.salesPolicy || {}), bookingDaysAhead: days, ticketsPerDay } }, note: "Pravidla prodeje" } });
+  showToast("Pravidla prodeje uložena.", "success");
   loadSalesPolicy();
 }));
 async function loadSeasons() {
