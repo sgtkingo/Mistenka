@@ -538,3 +538,4 @@ th .info-tip::after{bottom:auto;top:calc(100% + 8px);left:auto;right:-6px;transf
 .status-mild{background:#fffbe0;border-color:#f0dd86;color:#7a6000}
 .status-mild>span{background:#fff3b0}
 .catch-edit .fish-suggestions{z-index:20}
+.report-meta{display:block;margin-top:4px}

@@ -16,6 +16,10 @@ qsa(".manage-nav-item").forEach((item) => item.addEventListener("click", () => {
   const section = item.dataset.section;
   qsa(".manage-section").forEach((el) => el.classList.toggle("hidden", el.id !== `section-${section}`));
   if (location.hash.slice(1).split("/")[0] !== section) history.replaceState(null, "", section === "tickets" ? location.pathname : `#${section}`);
+  // Po kliknutí v menu odscrollovat na začátek sekce: nahoru, když je stránka odscrollovaná dolů (menu je přilepené),
+  // a na mobilu dolů, když je sekce pod dlouhým menu mimo obrazovku.
+  const top = qs(`#section-${section}`)?.getBoundingClientRect().top;
+  if (top !== undefined && (top < 0 || top > window.innerHeight * 0.6)) window.scrollTo({ top: Math.max(0, window.scrollY + top - 16), behavior: "smooth" });
   if (section === "tickets") loadTickets();
   if (section === "backups") loadBackups();
   if (section === "audit") loadAudit();
