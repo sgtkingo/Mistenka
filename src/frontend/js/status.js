@@ -6,7 +6,7 @@ const STATES = {
   future: ["Budoucí", "Místenka začne platit v den lovu.", "status-future", "→"],
   active: ["Aktivní", "Místenka platí pro dnešní den lovu.", "status-active", "✓"],
   expired_returned: ["Odevzdaná", "Místenka byla odevzdána.", "status-returned", "↩"],
-  expired_returned_late: ["Opožděné odevzdání", "Místenka byla odevzdána po skončení dne lovu.", "status-warning", "↩"],
+  expired_returned_late: ["Opožděné odevzdání", "Místenka byla odevzdána po skončení dne lovu.", "status-mild", "↩"],
   expired_unreturned: ["Propadlá, neodevzdaná", "Místenka už neplatí pro lov a nebyla odevzdána.", "status-warning", "!"],
   closed_unreturned: ["Uzavřená, neodevzdaná", "Místenka nebyla odevzdána ani v prodloužené lhůtě a byla automaticky uzavřena.", "status-expired", "×"],
   pending_payment: ["Čeká na platbu", "Místenka zatím nebyla zaplacena a neopravňuje k lovu.", "status-warning", "…"],

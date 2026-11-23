@@ -377,6 +377,29 @@ final class Emails
         );
     }
 
+    // ---------- oprava úlovků správcem ----------
+    private static function catchesText(array $part): string
+    {
+        if (!empty($part['noCatch'])) return 'nic neponecháno';
+        $cz = fn($n) => str_replace('.', ',', Js::str($n));
+        $out = implode(', ', array_map(fn($c) => "{$c['species']} " . $cz($c['length']) . ' cm' . (!empty($c['weight']) ? ' · ' . $cz($c['weight']) . ' kg' : ''), $part['catches'] ?? []));
+        return $out !== '' ? $out : '—';
+    }
+
+    public static function catchesCorrected(array $config, array $x): array
+    {
+        $t = $x['ticket'];
+        $revir = $x['revir'];
+        $contact = self::contactLine($config);
+        $rows = [['Kód místenky', $t['code']], ['Revír', $revir['name']], ['Datum lovu', self::czDate($t['fishing_date'])], ['Důvod opravy', $x['reason']], ['Původně', self::catchesText($x['before'])], ['Nově', self::catchesText($x['after'])]];
+        $disagree = 'Pokud s opravou nesouhlasíte, ozvěte se hospodáři' . ($contact ? " ({$contact})" : '') . '.';
+        return self::mail(
+            "Místenka {$t['code']} – správce opravil úlovky",
+            self::layout($config, 'info', 'Správce opravil úlovky', '<p>Správce organizace opravil úlovky, které jste uvedl/a při odevzdání místenky. Místenka zůstává odevzdaná, nic dalšího dělat nemusíte.</p>' . self::table($rows) . '<p>' . self::esc($disagree) . '</p>'),
+            self::text(array_merge(['Správce organizace opravil úlovky, které jste uvedl/a při odevzdání místenky. Místenka zůstává odevzdaná.'], self::rowsText($rows), [$disagree]))
+        );
+    }
+
     // ---------- mimořádné uzavření (B4) ----------
     public static function closureNotice(array $config, array $x): array
     {

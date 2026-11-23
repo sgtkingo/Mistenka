@@ -495,3 +495,46 @@ th .info-tip::after{bottom:auto;top:calc(100% + 8px);left:auto;right:-6px;transf
 .map-view-row{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:14px 0 4px;font-size:13px;color:var(--muted)}
 .map-dirty{color:#a8520a;font-weight:600}
 @media (max-width:760px){.map-facts{grid-template-columns:1fr}.map-editor-cols{grid-template-columns:1fr}.revir-map{height:62vh;min-height:320px}}
+/* Detail místenky ve správě: úlovky a podezřelá místenka */
+.catch-detail-list{list-style:none;margin:0 0 6px;padding:0;border:1px solid var(--line);border-radius:8px}
+.catch-detail-list li{padding:9px 12px;border-bottom:1px solid var(--line);font-size:13px}
+.catch-detail-list li:last-child{border-bottom:0}
+.catch-main{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline}
+.catch-main b{min-width:150px}
+.catch-note{margin-top:5px;padding:5px 9px;border-radius:5px;font-size:12px;line-height:1.4}
+.catch-note-rule{background:#fde8e6;color:#b52f27}
+.catch-note-suspect{background:#fff4e8;color:#a8520a}
+.suspicion-box{margin-top:18px;background:#fff8ef;border:1px solid #f5c99a;border-left:4px solid #e08a2c;border-radius:8px;padding:14px 16px}
+.suspicion-head{display:flex;flex-direction:column;gap:3px;margin-bottom:12px;font-size:13px}
+.suspicion-head b{color:#a8520a;font-size:14px}
+.suspicion-head span{color:var(--muted)}
+.suspicion-row{display:flex;gap:8px;align-items:stretch}
+.suspicion-row input{flex:1;min-width:0;border:1px solid #ddd;border-radius:4px;padding:9px 12px;font:inherit;font-size:13px;background:#fff}
+.suspicion-row button{white-space:nowrap}
+.suspicion-done{margin-top:14px;background:#e6f6ea;color:#17803f;border-radius:6px;padding:10px 14px;font-size:13px}
+.suspicion-done small{color:var(--muted)}
+@media(max-width:600px){.suspicion-row{flex-direction:column}.catch-main b{min-width:0;width:100%}}
+/* Úlovky v detailu místenky: zobrazení i oprava správcem v jednom seznamu */
+.catches-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.catches-head .text-button{font-weight:600}
+.catch-edit{display:none;grid-template-columns:2fr 1fr 1fr 28px;gap:8px;align-items:center}
+.catch-edit input{width:100%;min-width:0;border:1px solid #ddd;border-radius:4px;padding:7px 10px;font:inherit;font-size:13px;background:#fff}
+.catch-edit input:disabled{background:#f1f0ef;color:var(--faint)}
+.catch-edit .input-suffix input{width:100%!important}
+.catches-section .edit-only{display:none}
+.catches-section.editing .edit-only{display:block}
+.catches-section.editing .view-only,.catches-section.editing .catch-main{display:none}
+.catches-section.editing .catch-edit{display:grid}
+.catches-section.editing .catch-detail-list{border-color:#b9d8f2;background:#f7fbff}
+.catches-section.no-catch .catch-detail-list{opacity:.5}
+.catch-empty{color:var(--muted)}
+.correct-reason{width:100%;border:1px solid #ddd;border-radius:4px;padding:9px 12px;font:inherit;font-size:13px}
+.correct-actions{display:flex;gap:8px;margin-top:10px}
+.catches-section .settings-check{margin:10px 0 4px}
+.correction-list{list-style:none;margin:0;padding:0;font-size:13px}
+.correction-list li{padding:8px 0;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:2px}
+@media(max-width:600px){.catches-section.editing .catch-edit{grid-template-columns:1fr 1fr 28px}.catch-edit .fish-field{grid-column:1/-1}}
+.badge-mild{background:#fff8c5;color:#7a6000}
+.status-mild{background:#fffbe0;border-color:#f0dd86;color:#7a6000}
+.status-mild>span{background:#fff3b0}
+.catch-edit .fish-suggestions{z-index:20}

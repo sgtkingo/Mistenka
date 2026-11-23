@@ -320,7 +320,7 @@ Portál → **Admin → Emailoví klienti**. Organizace může mít víc poštov
 
 | Skupina | E-maily |
 | --- | --- |
-| `tickets` – Místenky | `payment_instructions`, `ticket_issued`, `return_reminder`, `ticket_closed`, `ticket_seized`, `ticket_cancelled`, `closure_notice`, `member_blocked` |
+| `tickets` – Místenky | `payment_instructions`, `ticket_issued`, `return_reminder`, `ticket_closed`, `ticket_seized`, `ticket_cancelled`, `catches_corrected`, `closure_notice`, `member_blocked` |
 | `accounts` – Účty | `account_verify`, `account_exists`, `magic_link`, `password_reset`, `email_change`, `staff_invite`, `account_deleted`, `warden_request_approved`, `warden_request_rejected` |
 | `notices` – Upozornění správců | `warden_request`, `seizure_notice`, `limit_exceeded`, `season_report`, `payment_settings_changed`, `database_auto_restored` |
 | `bugs` – Hlášení chyb | `bug_report` (všem adminům) |
@@ -400,7 +400,8 @@ Správa pro `manager`/`admin` (🛠, jinak `401`/`403 forbidden_role`). `revirId
 | --- | --- | --- |
 | `GET /manage/tickets` | `?q=&status=&revirId=&from=&to=&limit=100&offset=0` – `q` hledá kód, číslo legitimace, jméno, e-mail, VS; `status` = stav v API, nebo `suspicious` = odevzdané místenky s odlehlým pozorováním; `from`/`to` = den lovu | `{ total, tickets: [{ code, date, revirId, revir, firstName, lastName, memberId, email, status, late, seized, suspicious, priceHalere, amountDueHalere, voucherUsed, catchCount, noCatch, createdAt, paidAt, returnedAt, account }] }`; `400 invalid_status`, `invalid_date` |
 | `GET /manage/tickets.csv` | stejné filtry | `text/csv` UTF-8 s BOM, oddělovač `;` (Excel v češtině); sloupec „Podezřelá“ |
-| `GET /manage/tickets/{code}` | – | `{ ticket: <OwnerTicket> + variableSymbol, account, payments: [<Payment>], checks, violations, emails: [{ kind, to, subject, createdAt, sentAt, error }], cancellation, suspicionReview, cancellable }` |
+| `GET /manage/tickets/{code}` | – | `{ ticket: <OwnerTicket> + variableSymbol, account, payments: [<Payment>], checks, violations, emails: [{ kind, to, subject, createdAt, sentAt, error }], cancellation, suspicionReview, corrections: [{ at, by, reason, before, after }], correctable, cancellable }` – `before`/`after` = `{ noCatch, catches: [{ species, length, weight }] }` |
+| `PUT /manage/tickets/{code}/catches` | `{ noCatch, catches: [{ species, length, weight?, weightEstimated? }], reason }` (důvod 3–300) | oprava úlovků odevzdané místenky správcem; úlovky se kontrolují stejně jako při odevzdání (`invalid_catches`, `catches_required`) a znovu vyhodnotí (`warning`, `suspect`, příznak `suspicious` – zrušení se zapíše do `suspicionReview`). Překročení limitů této místenky se přepočítá bez e-mailu správcům a bez automatické blokace. Audit `ticket_catches_corrected` (původní a nové údaje), rybář dostane e-mail `catches_corrected`. Odpověď = detail. `400 invalid_reason`, `no_change`; `409 not_returned`, `anonymized` |
 | `POST /manage/tickets/{code}/clear-suspicion` | `{ note? }` (do 300) | detail jako výše; zruší příznak `suspicious` po prověření správcem (důvody `catches[].suspect` zůstávají), detail pak nese `suspicionReview: { at, by, note }`, audit `ticket_suspicion_cleared`. `409 not_suspicious`, `400 invalid_note` |
 | `POST /manage/tickets/{code}/cancel` | `{ reason }` (3–300) | detail jako výše; zruší objednávku nebo vystavenou neodevzdanou místenku (i zadrženou), uvolní místo, držitel vystavené dostane e-mail `ticket_cancelled`. Peníze se nevracejí automaticky. `409 not_cancellable` |
 | `GET /manage/payments` | `?state=open` (k vyřešení, výchozí) \| `all` | `{ payments: [<Payment>] }` |
@@ -620,6 +621,7 @@ V tomto pořadí; Node je spouští v intervalu, WordPress cron hostingu přes `
 | `limit_exceeded` | odevzdání s překročeným limitem, příjemcům upozornění správcům | `status.html?code=…` |
 | `member_blocked` | automatická blokace po opakovaném porušení limitů (držiteli) | – |
 | `ticket_cancelled` | správce zrušil vystavenou místenku | – |
+| `catches_corrected` | správce opravil úlovky odevzdané místenky (důvod, původně → nově) | – |
 | `season_report` | automatická uzávěrka po skončení sezony, příjemcům upozornění správcům | `manage.html#reports/<id>` |
 | `database_auto_restored` | databáze obnovena ze zálohy při startu (všem adminům) | – |
 | `payment_settings_changed` | admin změnil platební údaje (všem adminům) | – |

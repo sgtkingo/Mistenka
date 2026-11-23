@@ -267,7 +267,7 @@ final class Service
     {
         $revir = $this->revirOf($ticket);
         $render = ['payment_instructions' => 'paymentInstructions', 'ticket_issued' => 'ticketIssued', 'return_reminder' => 'returnReminder', 'ticket_closed' => 'ticketClosed', 'ticket_seized' => 'ticketSeized',
-            'seizure_notice' => 'seizureNotice', 'limit_exceeded' => 'limitExceeded', 'member_blocked' => 'memberBlocked', 'ticket_cancelled' => 'ticketCancelled'][$kind];
+            'seizure_notice' => 'seizureNotice', 'limit_exceeded' => 'limitExceeded', 'member_blocked' => 'memberBlocked', 'ticket_cancelled' => 'ticketCancelled', 'catches_corrected' => 'catchesCorrected'][$kind];
         $mail = Emails::$render($this->config(), array_merge(['ticket' => $ticket, 'revir' => $revir, 'links' => $this->links($ticket, $token)], $extra));
         $this->app->queueEmail($ticket['id'], $kind, $extra['to'] ?? $ticket['email'], $mail);
     }
@@ -475,10 +475,9 @@ final class Service
         });
     }
 
-    public function submitReturn($code, array $credentials, array $body, ?array $user): array
+    // Úlovky z těla požadavku (odevzdání i oprava správcem): kontrola, kanonický název druhu, odlehlé pozorování.
+    private function parseCatches(array $ticket, array $body): array
     {
-        $ticket = $this->findTicket($code);
-        $this->authorize($ticket, $credentials, $user);
         $noCatch = ($body['noCatch'] ?? null) === true;
         $items = isset($body['catches']) && is_array($body['catches']) && !Js::isAssoc($body['catches']) ? $body['catches'] : [];
         if ($noCatch && $items) throw new ApiError(400, 'invalid_catches', 'Při hlášení bez úlovku neuvádějte žádné úlovky.');
@@ -510,7 +509,19 @@ final class Service
             $catches[] = ['species' => $known ? $known['name'] : $name, 'length' => $length, 'weight' => $weight, 'weightEstimated' => $weightEstimated,
                 'suspect' => self::catchOutlier($known, $length, $weight, $weightEstimated, $plausibility)];
         }
-        $suspicious = (bool) array_filter(array_column($catches, 'suspect'));
+        return [$noCatch, $catches, (bool) array_filter(array_column($catches, 'suspect'))];
+    }
+
+    private function insertCatches($ticketId, array $catches): void
+    {
+        foreach ($catches as $c) Db::exec('INSERT INTO {p}catches (ticket_id, species, length_cm, weight_kg, weight_estimated, suspect) VALUES (?, ?, ?, ?, ?, ?)', $ticketId, $c['species'], $c['length'], $c['weight'], $c['weightEstimated'] ? 1 : 0, $c['suspect']);
+    }
+
+    public function submitReturn($code, array $credentials, array $body, ?array $user): array
+    {
+        $ticket = $this->findTicket($code);
+        $this->authorize($ticket, $credentials, $user);
+        [$noCatch, $catches, $suspicious] = $this->parseCatches($ticket, $body);
         return Db::transaction(function () use ($ticket, $catches, $noCatch, $suspicious) {
             $fresh = $this->ticketById($ticket['id']);
             $now = Time::ms(Time::now());
@@ -519,7 +530,7 @@ final class Service
             if ($state === 'expired_returned') throw new ApiError(409, 'already_returned', 'Místenka už byla odevzdána.');
             if ($state === 'future') throw new ApiError(409, 'too_early', 'Místenku není možné odevzdat před dnem lovu.');
             if ($state === 'closed_unreturned') throw new ApiError(409, 'return_closed', 'Lhůta pro odevzdání uplynula, místenka byla uzavřena jako neodevzdaná. Kontaktujte hospodáře.');
-            foreach ($catches as $c) Db::exec('INSERT INTO {p}catches (ticket_id, species, length_cm, weight_kg, weight_estimated, suspect) VALUES (?, ?, ?, ?, ?, ?)', $fresh['id'], $c['species'], $c['length'], $c['weight'], $c['weightEstimated'] ? 1 : 0, $c['suspect']);
+            $this->insertCatches($fresh['id'], $catches);
             Db::exec('UPDATE {p}tickets SET returned_at = ?, return_late = ?, no_catch = ?, rules_version = ?, suspicious = ? WHERE id = ?', Time::iso(Time::fromMs($now)), $now >= $this->windowOf($fresh)['end'] ? 1 : 0, $noCatch ? 1 : 0, $this->app->settings->rulesVersion($fresh['revir_id']), $suspicious ? 1 : 0, $fresh['id']);
             $returned = $this->ticketById($fresh['id']);
             $this->recordViolations($returned);
@@ -602,15 +613,20 @@ final class Service
     }
 
     // Při odevzdání: zapíše překročené limity, upozorní správce, případně automaticky zablokuje.
-    private function recordViolations(array $ticket): array
+    private function insertViolations(array $ticket, array $exceeded): void
     {
-        $exceeded = array_values(array_filter($this->limitsFor($ticket), fn($l) => $l['exceeded']));
-        if (!$exceeded) return [];
         $now = Time::nowIso();
         foreach ($exceeded as $l) {
             Db::exec('INSERT INTO {p}limit_violations (ticket_id, member_id, limit_id, label, period, period_from, period_to, count, max_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 $ticket['id'], $ticket['member_id'], $l['id'], $l['label'], $l['period'], $l['from'], $l['to'], $l['count'], $l['maxCount'], $now);
         }
+    }
+
+    private function recordViolations(array $ticket): array
+    {
+        $exceeded = array_values(array_filter($this->limitsFor($ticket), fn($l) => $l['exceeded']));
+        if (!$exceeded) return [];
+        $this->insertViolations($ticket, $exceeded);
         foreach (Mailer::noticeRecipients() as $to) $this->enqueueEmail($ticket, 'limit_exceeded', null, ['to' => $to, 'limits' => $exceeded]);
         $this->applyPenalty($ticket, 'limits', ['limits' => $exceeded]);
         return $exceeded;
@@ -999,11 +1015,52 @@ final class Service
             $by = $ticket['suspicion_cleared_by'] ? Db::row('SELECT first_name, last_name FROM {p}users WHERE id = ?', $ticket['suspicion_cleared_by']) : null;
             $suspicionReview = ['at' => $ticket['suspicion_cleared_at'], 'by' => $by ? "{$by['first_name']} {$by['last_name']}" : '', 'note' => $ticket['suspicion_note'] ?? ''];
         }
+        $corrections = array_map(function ($a) {
+            $d = json_decode((string) ($a['detail'] ?? ''), true) ?: [];
+            return ['at' => $a['at'], 'by' => $a['first_name'] ? "{$a['first_name']} {$a['last_name']}" : '', 'reason' => $d['reason'] ?? '', 'before' => $d['before'] ?? null, 'after' => $d['after'] ?? null];
+        }, Db::all("SELECT a.at, a.detail, u.first_name, u.last_name FROM {p}audit_events a LEFT JOIN {p}users u ON u.id = a.actor_user_id WHERE a.action = 'ticket_catches_corrected' AND a.target_type = 'ticket' AND a.target_id = ? ORDER BY a.id", $ticket['code']));
+        $correctable = $ticket['status'] === 'issued' && !empty($ticket['returned_at']) && empty($ticket['anonymized_at']);
         return [
             'ticket' => array_merge($this->ownerTicket($ticket), ['variableSymbol' => $ticket['variable_symbol'], 'account' => (bool) $ticket['user_id'], 'rulesVersion' => $ticket['rules_version'] ?: null]),
-            'payments' => $payments, 'checks' => $checks, 'violations' => $violations, 'emails' => $emails, 'cancellation' => $cancellation, 'suspicionReview' => $suspicionReview,
+            'payments' => $payments, 'checks' => $checks, 'violations' => $violations, 'emails' => $emails, 'cancellation' => $cancellation, 'suspicionReview' => $suspicionReview, 'corrections' => $corrections, 'correctable' => $correctable,
             'cancellable' => in_array($this->stateOf($ticket), ['pending_payment', 'payment_expired', 'future', 'active', 'expired_unreturned', 'seized'], true),
         ];
+    }
+
+    // Oprava úlovků odevzdané místenky správcem (typicky překlep ověřený s rybářem). Povinný důvod; původní a nové
+    // údaje jdou do auditu (detail: corrections), rybář dostane e-mail. Úlovky se znovu vyhodnotí (upozornění,
+    // odlehlá pozorování – příznak podezřelá se podle nich nastaví či zruší) a překročení limitů této místenky se
+    // přepočítá. E-mail správcům ani automatická blokace se znovu nespouští – proběhly při odevzdání; blokaci,
+    // která už vznikla, zruší správce ručně v Limitech a blokacích.
+    public function correctCatches(array $actor, $code, array $body): array
+    {
+        $reason = trim(Js::s($body['reason'] ?? ''));
+        if (Js::len($reason) < 3 || Js::len($reason) > 300) throw new ApiError(400, 'invalid_reason', 'Uveďte důvod opravy (3–300 znaků).');
+        $ticket = $this->findTicket($code);
+        [$noCatch, $catches, $suspicious] = $this->parseCatches($ticket, $body);
+        return Db::transaction(function () use ($ticket, $actor, $reason, $noCatch, $catches, $suspicious) {
+            $fresh = $this->ticketById($ticket['id']);
+            if ($fresh['status'] !== 'issued' || empty($fresh['returned_at'])) throw new ApiError(409, 'not_returned', 'Opravit lze jen úlovky odevzdané místenky.');
+            if (!empty($fresh['anonymized_at'])) throw new ApiError(409, 'anonymized', 'Místenka je anonymizovaná, úlovky už nelze opravit.');
+            $shape = fn($species, $length, $weight) => ['species' => (string) $species, 'length' => (float) $length, 'weight' => $weight === null ? null : (float) $weight];
+            $before = ['noCatch' => (bool) $fresh['no_catch'], 'catches' => array_map(fn($c) => $shape($c['species'], $c['length_cm'], $c['weight_kg']),
+                Db::all('SELECT species, length_cm, weight_kg FROM {p}catches WHERE ticket_id = ? ORDER BY id', $fresh['id']))];
+            $after = ['noCatch' => $noCatch, 'catches' => array_map(fn($c) => $shape($c['species'], $c['length'], $c['weight']), $catches)];
+            if ($before == $after) throw new ApiError(400, 'no_change', 'Úlovky se nezměnily.');
+            $now = Time::nowIso();
+            Db::exec('DELETE FROM {p}catches WHERE ticket_id = ?', $fresh['id']);
+            $this->insertCatches($fresh['id'], $catches);
+            Db::exec('UPDATE {p}tickets SET no_catch = ?, suspicious = ? WHERE id = ?', $noCatch ? 1 : 0, $suspicious ? 1 : 0, $fresh['id']);
+            if (!empty($fresh['suspicious']) && !$suspicious) {
+                Db::exec('UPDATE {p}tickets SET suspicion_cleared_at = ?, suspicion_cleared_by = ?, suspicion_note = ? WHERE id = ?', $now, $actor['id'] ?? null, Js::slice("Úlovky opraveny: {$reason}", 0, 300), $fresh['id']);
+            }
+            $updated = $this->ticketById($fresh['id']);
+            Db::exec('DELETE FROM {p}limit_violations WHERE ticket_id = ?', $fresh['id']);
+            $this->insertViolations($updated, array_values(array_filter($this->limitsFor($updated), fn($l) => $l['exceeded'])));
+            $this->audit($actor, 'ticket_catches_corrected', 'ticket', $fresh['code'], ['reason' => $reason, 'before' => $before, 'after' => $after]);
+            $this->enqueueEmail($updated, 'catches_corrected', null, ['reason' => $reason, 'before' => $before, 'after' => $after]);
+            return $this->ticketDetail($fresh['code']);
+        });
     }
 
     // Zrušení příznaku podezřelá (hlídání nereálných měr a vah) po prověření správcem. Důvody u úlovků (catches.suspect)

@@ -541,7 +541,7 @@
   function ticketState(ticket) {
     const [label, tone] = TICKET_STATES[ticket.status] || [ticket.status, "off"];
     // Barvy: zelená = v pořádku, oranžová = varování, červená = vážné, modrá / šedá = informace.
-    if (ticket.status === "expired_returned" && ticket.late) return { label: "Odevzdaná opožděně", tone: "warn" };
+    if (ticket.status === "expired_returned" && ticket.late) return { label: "Odevzdaná opožděně", tone: "mild" };
     return { label, tone };
   }
   // Limity úlovků (B3): přehled pro rybáře, porybného i správce.

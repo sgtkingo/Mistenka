@@ -20,8 +20,8 @@ const iso = (date) => date.toISOString();
 const ENCRYPTIONS = ["ssl", "tls", "none"];
 // Skupiny e-mailů: každá má svého odesílatele. Druhy odpovídají sloupci email_outbox.kind.
 const GROUPS = [
-  { id: "tickets", label: "Místenky", help: "pokyny k platbě, vystavená místenka, připomínka a uzavření, zadržení, zrušení, uzavření revíru, blokace nákupu",
-    kinds: ["payment_instructions", "ticket_issued", "return_reminder", "ticket_closed", "ticket_seized", "ticket_cancelled", "closure_notice", "member_blocked"] },
+  { id: "tickets", label: "Místenky", help: "pokyny k platbě, vystavená místenka, připomínka a uzavření, zadržení, zrušení, oprava úlovků, uzavření revíru, blokace nákupu",
+    kinds: ["payment_instructions", "ticket_issued", "return_reminder", "ticket_closed", "ticket_seized", "ticket_cancelled", "catches_corrected", "closure_notice", "member_blocked"] },
   { id: "accounts", label: "Účty", help: "registrace, přihlášení odkazem, obnova hesla, změna e-mailu, pozvánka do správy, vyřízení žádosti o porybného, smazání účtu",
     kinds: ["account_verify", "account_exists", "magic_link", "password_reset", "email_change", "staff_invite", "account_deleted", "warden_request_approved", "warden_request_rejected"] },
   { id: "notices", label: "Upozornění správců", help: "žádosti „Jsem porybný“, zadržení, překročené limity, uzávěrka sezony, změna platebních údajů, obnova databáze",

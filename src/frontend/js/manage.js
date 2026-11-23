@@ -311,7 +311,25 @@ async function openTicket(code) {
     const d = await api(`/manage/tickets/${encodeURIComponent(code)}`);
     const t = d.ticket;
     const state = ticketState(t);
-    const catches = t.catches.length ? t.catches.map((c) => `${esc(c.species)} ${esc(c.length)} cm${c.weight ? ` · ${esc(c.weight)} kg${c.weightEstimated ? " (odhad)" : ""}` : ""}${c.warning ? ` <span class="catch-warn-inline">⚠ ${esc(c.warning)}</span>` : ""}${c.suspect ? ` <span class="catch-warn-inline">⚠ Neobvyklý údaj: ${esc(c.suspect)}</span>` : ""}`).join("<br>") : t.noCatch ? "nic neponecháno" : "—";
+    // Úlovky: jeden seznam pro zobrazení i opravu správcem. „Opravit“ přepne řádky na pole (druh, délka, hmotnost);
+    // upozornění zůstávají pod řádkem (po uložení se vyhodnotí znovu). Povinný důvod; historie oprav z auditu.
+    const cz = (n) => String(n).replace(".", ",");
+    const notes = (c) => `${c.warning ? `<div class="catch-note catch-note-rule">⚠ Možné porušení pravidel: ${esc(c.warning)}</div>` : ""}${c.suspect ? `<div class="catch-note catch-note-suspect">⚠ Neobvyklý údaj: ${esc(c.suspect)}</div>` : ""}`;
+    const editFields = (c = {}) => `<div class="catch-edit"><div class="fish-field"><input class="cr-species" value="${esc(c.species ?? "")}" placeholder="druh" maxlength="60" aria-label="Druh"></div><div class="input-suffix"><input class="cr-length" type="number" min="1" step="any" value="${esc(c.length ?? "")}" aria-label="Délka"><span>cm</span></div><div class="input-suffix"><input class="cr-weight" type="number" min="0" step="0.01" value="${esc(c.weight ?? "")}" placeholder="—" aria-label="Hmotnost"><span>kg</span></div><button class="text-button cr-remove" type="button" aria-label="Odebrat úlovek">✕</button></div>`;
+    const catchItem = (c = {}) => `<li class="catch-item" data-estimated="${c.weightEstimated ? "true" : "false"}" data-weight="${esc(c.weight ?? "")}">${c.species ? `<div class="catch-main"><b>${esc(c.species)}</b><span>${esc(cz(c.length))} cm</span>${c.weight ? `<span>${esc(cz(c.weight))} kg${c.weightEstimated ? ' <small class="muted-inline">odhad</small>' : ""}</span>` : ""}</div>` : ""}${d.correctable ? editFields(c) : ""}${notes(c)}</li>`;
+    // Našeptávač druhů vlastní (nativní datalist se v modálním dialogu vykresluje mimo pole).
+    const revirSpecies = () => config.reviry.find((r) => r.id === t.revir.id)?.fishRules?.species || [];
+    const partText = (p) => (!p ? "—" : p.noCatch ? "nic neponecháno" : p.catches.map((c) => `${c.species} ${cz(c.length)} cm${c.weight ? ` · ${cz(c.weight)} kg` : ""}`).join(", ") || "—");
+    const catchesBlock = t.returnedAt || t.catches.length ? `<section class="catches-section" id="catchesSection">
+      <div class="catches-head"><h3>Úlovky ${t.catches.length ? `<small class="muted-inline">${t.catches.length} ks</small>` : ""}</h3>${d.correctable ? '<button class="text-button view-only" type="button" id="correctStart">✎ Opravit úlovky</button>' : ""}</div>
+      ${d.correctable ? `<p class="field-help edit-only">Např. překlep ověřený s rybářem. Úlovky se znovu vyhodnotí (pravidla, neobvyklé údaje), přepočítají se limity této místenky a rybář dostane e-mail s původními a novými údaji. Původní údaje zůstanou v historii.</p>` : ""}
+      <ul class="catch-detail-list" id="catchList">${t.catches.map(catchItem).join("")}${t.catches.length ? "" : `<li class="catch-empty view-only">${t.noCatch ? "Nic neponecháno" : "—"}</li>`}</ul>
+      ${d.correctable ? `<div class="edit-only"><button class="text-button" type="button" id="correctAdd">+ Úlovek</button>
+      <label class="checkbox-label settings-check"><input type="checkbox" id="correctNoCatch"${t.noCatch ? " checked" : ""}> <span>Žádná ponechaná ryba</span></label>
+      <label class="field-label req" for="correctReason">Důvod opravy</label><input id="correctReason" class="correct-reason" maxlength="300" placeholder="např. ověřeno telefonicky – délka 38 cm, ne 78 cm">
+      <div class="correct-actions"><button class="primary-button" type="button" id="correctSave">Uložit opravu</button><button class="secondary-button" type="button" id="correctCancel">Zrušit</button></div></div>` : ""}
+    </section>` : "";
+    const correctionsBlock = d.corrections?.length ? `<h3>Opravy úlovků</h3><ul class="correction-list">${d.corrections.map((c) => `<li><div><b>${esc(czDateTime(c.at))}</b>${c.by ? ` · ${esc(c.by)}` : ""} · ${esc(c.reason)}</div><div class="muted-inline">Původně: ${esc(partText(c.before))}</div><div>Nově: ${esc(partText(c.after))}</div></li>`).join("")}</ul>` : "";
     body.innerHTML = `
       <div class="dialog-head"><div><span class="section-kicker">Místenka</span><h2>${esc(t.code)} <span class="badge badge-${esc(state.tone)}">${esc(state.label)}</span>${t.suspicious ? ' <span class="badge badge-warn">podezřelá</span>' : ""}</h2></div><button class="text-button" type="button" id="closeDialog">Zavřít ✕</button></div>
       <dl class="summary-list">
@@ -322,12 +340,14 @@ async function openTicket(code) {
         <div><dt>Cena</dt><dd>${esc(czk(t.priceHalere))}${t.voucherUsed ? " · poukaz" : ""}${t.variableSymbol ? ` · VS ${esc(t.variableSymbol)}` : ""}</dd></div>
         <div><dt>Vytvořeno · vystaveno</dt><dd>${esc(czDateTime(t.createdAt))}${t.issuedAt ? ` · ${esc(czDateTime(t.issuedAt))}` : ""}</dd></div>
         ${t.returnedAt ? `<div><dt>Odevzdáno</dt><dd>${esc(czDateTime(t.returnedAt))}${t.late ? " · opožděně" : ""}</dd></div>` : ""}
-        <div><dt>Úlovky</dt><dd>${catches}</dd></div>
       </dl>
+      ${catchesBlock}
+      ${correctionsBlock}
       ${t.seizure ? `<div class="status-error"><b>Zadrženo ${esc(czDateTime(t.seizure.at))}</b><br>${esc(t.seizure.reason)}${t.seizure.place ? ` · ${esc(t.seizure.place)}` : ""}</div>` : ""}
-      ${t.suspicious ? `<div class="warn-box"><b>Podezřelá místenka</b> – neobvyklé míry nebo váhy úlovků (viz Úlovky). Po prověření příznak zrušte; důvody u úlovků zůstanou v historii.
-        <label class="field-label" for="suspicionNote">Poznámka k prověření (volitelné)</label><input id="suspicionNote" maxlength="300" placeholder="např. ověřeno s rybářem – překlep"><button class="secondary-button" type="button" id="clearSuspicion">Zrušit příznak podezřelá</button></div>` : ""}
-      ${d.suspicionReview ? `<p class="field-help">Prověřeno ${esc(czDateTime(d.suspicionReview.at))}${d.suspicionReview.by ? ` · ${esc(d.suspicionReview.by)}` : ""}${d.suspicionReview.note ? ` · ${esc(d.suspicionReview.note)}` : ""} – příznak podezřelá zrušen.</p>` : ""}
+      ${t.suspicious ? `<div class="suspicion-box"><div class="suspicion-head"><b>Podezřelá místenka</b><span>Neobvyklé míry nebo váhy úlovků – viz oranžová upozornění výše. Po prověření příznak zrušte; důvody u úlovků zůstanou v historii.</span></div>
+        <label class="field-label" for="suspicionNote">Poznámka k prověření <small class="muted-inline">(volitelné)</small></label>
+        <div class="suspicion-row"><input id="suspicionNote" maxlength="300" placeholder="např. ověřeno s rybářem – překlep v délce"><button class="secondary-button" type="button" id="clearSuspicion">Zrušit příznak</button></div></div>` : ""}
+      ${d.suspicionReview ? `<p class="suspicion-done">✓ Prověřeno ${esc(czDateTime(d.suspicionReview.at))}${d.suspicionReview.by ? ` · ${esc(d.suspicionReview.by)}` : ""} – příznak podezřelá zrušen.${d.suspicionReview.note ? `<br><small>${esc(d.suspicionReview.note)}</small>` : ""}</p>` : ""}
       ${d.cancellation ? `<div class="status-error"><b>Zrušeno ${esc(czDateTime(d.cancellation.at))}</b>${d.cancellation.byManager ? " správcem" : ""}<br>${esc(d.cancellation.reason)}</div>` : ""}
       ${limitsHtml(t.limits, { title: "Limity úlovků" })}
       ${d.violations.length ? `<p class="field-help">Zapsané překročení: ${d.violations.map((v) => `${esc(v.label)} ${esc(v.count)}/${esc(v.maxCount)}`).join(", ")}</p>` : ""}
@@ -337,6 +357,32 @@ async function openTicket(code) {
       ${d.cancellable ? `<details class="seize-box"><summary>Zrušit místenku</summary><p class="field-help">Místenka přestane platit a uvolní místo. ${t.payment === null && !t.voucherUsed ? "Peníze se nevracejí automaticky – vraťte je v bankovnictví. " : ""}Držitel vystavené místenky dostane e-mail.</p>
         <label class="field-label req" for="cancelReason">Důvod</label><input id="cancelReason" maxlength="300"><button class="danger-button" type="button" id="cancelTicket">Zrušit místenku</button></details>` : ""}`;
     qs("#closeDialog").addEventListener("click", () => dialog.close());
+    // Oprava úlovků v seznamu.
+    const section = qs("#catchesSection");
+    const suggest = (row) => window.Mistenka.attachSpeciesSuggest(qs(".cr-species", row), revirSpecies);
+    qsa("#catchList .catch-item", section || document).forEach((row) => { if (qs(".cr-species", row)) suggest(row); });
+    const syncNoCatch = () => { const off = qs("#correctNoCatch").checked; qsa("#catchList input, #correctAdd", section).forEach((el) => { el.disabled = off; }); section.classList.toggle("no-catch", off); };
+    qs("#correctStart")?.addEventListener("click", () => { section.classList.add("editing"); syncNoCatch(); if (!qs("#catchList .catch-item")) qs("#correctAdd").click(); });
+    qs("#correctCancel")?.addEventListener("click", () => openTicket(t.code));
+    qs("#correctNoCatch")?.addEventListener("change", syncNoCatch);
+    qs("#correctAdd")?.addEventListener("click", () => { qs("#catchList").insertAdjacentHTML("beforeend", catchItem()); const row = qs("#catchList .catch-item:last-child"); suggest(row); qs(".cr-species", row).focus(); });
+    qs("#catchList")?.addEventListener("click", (event) => { if (event.target.classList.contains("cr-remove")) event.target.closest(".catch-item").remove(); });
+    qs("#correctSave")?.addEventListener("click", async (event) => {
+      const noCatch = qs("#correctNoCatch").checked;
+      const catches = noCatch ? [] : qsa("#catchList .catch-item").map((row) => {
+        const weightRaw = qs(".cr-weight", row).value.trim();
+        const weight = weightRaw === "" ? null : Number(weightRaw.replace(",", "."));
+        // Nezměněná odhadnutá hmotnost zůstane označená jako odhad.
+        return { species: qs(".cr-species", row).value.trim(), length: Number(qs(".cr-length", row).value.replace(",", ".")), weight, weightEstimated: row.dataset.estimated === "true" && weightRaw === row.dataset.weight };
+      }).filter((c) => c.species || c.length);
+      const reason = qs("#correctReason").value.trim();
+      if (!noCatch && !catches.length) return showToast("Zapište aspoň jeden úlovek, nebo zaškrtněte „Žádná ponechaná ryba“.", "warning");
+      if (reason.length < 3) { qs("#correctReason").focus(); return showToast("Uveďte důvod opravy.", "warning"); }
+      const button = event.currentTarget;
+      button.disabled = true;
+      try { await api(`/manage/tickets/${t.code}/catches`, { method: "PUT", body: { noCatch, catches, reason } }); showToast("Úlovky opraveny, rybář dostane e-mail.", "success"); openTicket(t.code); loadTickets(); }
+      catch (error) { showToast(error.message, "error"); button.disabled = false; }
+    });
     qs("#clearSuspicion")?.addEventListener("click", async (event) => {
       const button = event.currentTarget;
       button.disabled = true;
@@ -743,7 +789,7 @@ qs("#createBackup").addEventListener("click", async (event) => {
   button.disabled = true;
   try { await api("/manage/backups", { method: "POST", body: { note } }); showToast("Záloha vytvořena.", "success"); loadBackups(); } catch (error) { showToast(error.message, "error"); } finally { button.disabled = false; }
 });
-const ACTION_LABELS = { roles_changed: "změna rolí", roles_forced: "role (příkazová řádka)", staff_invited: "pozvání do správy", admin_setup: "založení admina", settings_changed: "nastavení", ticket_seized: "zadržení místenky", ticket_cancelled: "zrušení místenky",
+const ACTION_LABELS = { roles_changed: "změna rolí", roles_forced: "role (příkazová řádka)", staff_invited: "pozvání do správy", admin_setup: "založení admina", settings_changed: "nastavení", ticket_seized: "zadržení místenky", ticket_cancelled: "zrušení místenky", ticket_catches_corrected: "oprava úlovků", ticket_suspicion_cleared: "zrušení příznaku podezřelá",
   payment_resolved: "vyřešení platby", member_blocked: "blokace člena", member_blocked_auto: "automatická blokace", member_unblocked: "zrušení blokace", backup_created: "záloha", backup_deleted: "smazání zálohy", season_created: "sezona", season_updated: "úprava sezony", season_deleted: "smazání sezony",
   closure_created: "uzavření revíru", closure_deleted: "zrušení uzavření", announcement_created: "nová zpráva", announcement_updated: "úprava zprávy", announcement_deleted: "smazání zprávy", vouchers_created: "nové poukazy", voucher_voided: "zneplatnění poukazu",
   stocking_created: "zarybnění", stocking_updated: "úprava zarybnění", stocking_deleted: "smazání zarybnění", stocking_budget_set: "rozpočet zarybnění", report_created: "uzávěrka", season_report_created: "uzávěrka sezony",

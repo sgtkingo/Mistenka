@@ -1301,6 +1301,36 @@ test("hlídání nereálných měr a vah: obecná hranice odmítne, odlehlé poz
   assert.ok(!(await call("GET", "/manage/tickets?status=suspicious&limit=500", { session })).data.tickets.some((x) => x.code === t.code), "zmizí z filtru");
   assert.equal((await call("GET", `/manage/tickets/${clean.code}`, { session })).data.suspicionReview, null);
 
+  // Oprava úlovků správcem: povinný důvod, jen odevzdaná místenka, nové vyhodnocení, historie, e-mail rybáři.
+  const fix = await paidTicket();
+  const fixPath = `/manage/tickets/${fix.code}/catches`;
+  const fixBody = { catches: [{ species: "kapr", length: 55, weight: 3 }], reason: "Ověřeno telefonicky" };
+  assert.equal((await call("PUT", fixPath, { body: fixBody, session })).data.code, "not_returned", "neodevzdanou opravit nelze");
+  await call("POST", `/tickets/${fix.code}/return`, { body: { catches: [{ species: "kapr", length: 130 }, { species: "lín", length: 30 }] }, token: fix.token });
+  assert.equal((await call("GET", `/manage/tickets/${fix.code}`, { session })).data.ticket.suspicious, true);
+  assert.equal((await call("PUT", fixPath, { body: fixBody, session: warden.session })).status, 403);
+  assert.equal((await call("PUT", fixPath, { body: { ...fixBody, reason: "" }, session })).data.code, "invalid_reason");
+  assert.equal((await call("PUT", fixPath, { body: { ...fixBody, catches: [{ species: "kapr", length: 350 }] }, session })).data.code, "invalid_catches", "stejná kontrola jako při odevzdání");
+  assert.equal((await call("PUT", fixPath, { body: { catches: [{ species: "kapr obecný", length: 130 }, { species: "lín obecný", length: 30 }], reason: "nic" }, session })).data.code, "no_change");
+  const fixed = await call("PUT", fixPath, { body: { catches: [{ species: "kapr", length: 13 }, { species: "lín", length: 30, weight: 0.5 }], reason: "Ověřeno telefonicky – 13 cm, ne 130" }, session });
+  assert.equal(fixed.status, 200, JSON.stringify(fixed.data));
+  assert.deepEqual(fixed.data.ticket.catches.map((c) => [c.species, c.length, c.weight]), [["kapr obecný", 13, null], ["lín obecný", 30, 0.5]]);
+  assert.match(fixed.data.ticket.catches[0].warning, /lovnou mírou/, "úlovky se znovu vyhodnotí");
+  assert.equal(fixed.data.ticket.suspicious, false, "po opravě už není podezřelá");
+  assert.match(fixed.data.suspicionReview.note, /^Úlovky opraveny: /);
+  assert.equal(fixed.data.corrections.length, 1);
+  assert.equal(fixed.data.corrections[0].reason, "Ověřeno telefonicky – 13 cm, ne 130");
+  assert.deepEqual(fixed.data.corrections[0].before.catches.map((c) => c.length), [130, 30]);
+  assert.deepEqual(fixed.data.corrections[0].after.catches.map((c) => c.length), [13, 30]);
+  assert.ok(fixed.data.corrections[0].by);
+  const mail = fixed.data.emails.find((e) => e.subject.includes("správce opravil úlovky"));
+  assert.ok(mail, "rybář dostane e-mail");
+  const toNone = await call("PUT", fixPath, { body: { noCatch: true, reason: "Ryby pustil zpět" }, session });
+  assert.equal(toNone.status, 200, JSON.stringify(toNone.data));
+  assert.equal(toNone.data.ticket.noCatch, true);
+  assert.equal(toNone.data.ticket.catches.length, 0);
+  assert.equal(toNone.data.corrections.length, 2);
+
   // Vypnuto: jen technická hranice 1000 cm / 1000 kg, odlehlá pozorování se nehlásí.
   assert.equal((await save({ enabled: false, maxLength: 300, maxWeight: 150, weightTolerance: 2.5 })).status, 200);
   const off = await paidTicket();

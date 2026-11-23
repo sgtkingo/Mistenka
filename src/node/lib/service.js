@@ -163,7 +163,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
   }
   function enqueueEmail(ticket, kind, token, extra = {}) {
     const revir = revirOf(ticket);
-    const render = { payment_instructions: emails.paymentInstructions, ticket_issued: emails.ticketIssued, return_reminder: emails.returnReminder, ticket_closed: emails.ticketClosed, ticket_seized: emails.ticketSeized, seizure_notice: emails.seizureNotice, limit_exceeded: emails.limitExceeded, member_blocked: emails.memberBlocked, ticket_cancelled: emails.ticketCancelled }[kind];
+    const render = { payment_instructions: emails.paymentInstructions, ticket_issued: emails.ticketIssued, return_reminder: emails.returnReminder, ticket_closed: emails.ticketClosed, ticket_seized: emails.ticketSeized, seizure_notice: emails.seizureNotice, limit_exceeded: emails.limitExceeded, member_blocked: emails.memberBlocked, ticket_cancelled: emails.ticketCancelled, catches_corrected: emails.catchesCorrected }[kind];
     const mail = render(config, { ticket, revir, links: links(ticket, token), ...extra });
     db.prepare("INSERT INTO email_outbox (ticket_id, kind, to_email, subject, body_html, body_text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(ticket.id, kind, extra.to || ticket.email, mail.subject, mail.html, mail.text, iso(time.now()));
@@ -344,9 +344,8 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     });
   }
 
-  function submitReturn(code, credentials, body = {}, user = null) {
-    const ticket = findTicket(code);
-    authorize(ticket, credentials, user);
+  // Úlovky z těla požadavku (odevzdání i oprava správcem): kontrola, kanonický název druhu, odlehlé pozorování.
+  function parseCatches(ticket, body) {
     const noCatch = body.noCatch === true;
     const items = Array.isArray(body.catches) ? body.catches : [];
     if (noCatch && items.length) throw new ApiError(400, "invalid_catches", "Při hlášení bez úlovku neuvádějte žádné úlovky.");
@@ -374,7 +373,17 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       const weightEstimated = weight !== null && item.weightEstimated === true;
       return { species: known ? known.name : name, speciesId: known?.id || null, length, weight, weightEstimated, suspect: catchOutlier(known, length, weight, weightEstimated, plausibility) };
     });
-    const suspicious = catches.some((c) => c.suspect);
+    return { noCatch, catches, suspicious: catches.some((c) => c.suspect) };
+  }
+  function insertCatches(ticketId, catches) {
+    const insert = db.prepare("INSERT INTO catches (ticket_id, species, length_cm, weight_kg, weight_estimated, suspect) VALUES (?, ?, ?, ?, ?, ?)");
+    for (const c of catches) insert.run(ticketId, c.species, c.length, c.weight, c.weightEstimated ? 1 : 0, c.suspect);
+  }
+
+  function submitReturn(code, credentials, body = {}, user = null) {
+    const ticket = findTicket(code);
+    authorize(ticket, credentials, user);
+    const { noCatch, catches, suspicious } = parseCatches(ticket, body);
     return transaction(db, () => {
       const fresh = db.prepare("SELECT * FROM tickets WHERE id = ?").get(ticket.id);
       const now = time.now();
@@ -383,8 +392,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       if (state === "expired_returned") throw new ApiError(409, "already_returned", "Místenka už byla odevzdána.");
       if (state === "future") throw new ApiError(409, "too_early", "Místenku není možné odevzdat před dnem lovu.");
       if (state === "closed_unreturned") throw new ApiError(409, "return_closed", "Lhůta pro odevzdání uplynula, místenka byla uzavřena jako neodevzdaná. Kontaktujte hospodáře.");
-      const insert = db.prepare("INSERT INTO catches (ticket_id, species, length_cm, weight_kg, weight_estimated, suspect) VALUES (?, ?, ?, ?, ?, ?)");
-      for (const c of catches) insert.run(fresh.id, c.species, c.length, c.weight, c.weightEstimated ? 1 : 0, c.suspect);
+      insertCatches(fresh.id, catches);
       db.prepare("UPDATE tickets SET returned_at = ?, return_late = ?, no_catch = ?, rules_version = ?, suspicious = ? WHERE id = ?").run(iso(now), now >= windowOf(fresh).end ? 1 : 0, noCatch ? 1 : 0, settings ? settings.rulesVersion(fresh.revir_id) : null, suspicious ? 1 : 0, fresh.id);
       const returned = db.prepare("SELECT * FROM tickets WHERE id = ?").get(fresh.id);
       recordViolations(returned);
@@ -442,13 +450,16 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
   function activeBlock(memberId) {
     return db.prepare("SELECT * FROM member_blocks WHERE member_id = ? AND lifted_at IS NULL AND (until IS NULL OR until >= ?) ORDER BY id DESC").get(memberId, time.pragueToday()) || null;
   }
+  function insertViolations(ticket, exceeded) {
+    const now = iso(time.now());
+    const insert = db.prepare("INSERT INTO limit_violations (ticket_id, member_id, limit_id, label, period, period_from, period_to, count, max_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    for (const l of exceeded) insert.run(ticket.id, ticket.member_id, l.id, l.label, l.period, l.from, l.to, l.count, l.maxCount, now);
+  }
   // Při odevzdání: zapíše překročené limity, upozorní správce, případně automaticky zablokuje (limitPolicy).
   function recordViolations(ticket) {
     const exceeded = limitsFor(ticket).filter((l) => l.exceeded);
     if (!exceeded.length) return [];
-    const now = iso(time.now());
-    const insert = db.prepare("INSERT INTO limit_violations (ticket_id, member_id, limit_id, label, period, period_from, period_to, count, max_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    for (const l of exceeded) insert.run(ticket.id, ticket.member_id, l.id, l.label, l.period, l.from, l.to, l.count, l.maxCount, now);
+    insertViolations(ticket, exceeded);
     for (const to of noticeRecipients(db)) enqueueEmail(ticket, "limit_exceeded", null, { to, limits: exceeded });
     applyPenalty(ticket, "limits", { limits: exceeded });
     return exceeded;
@@ -792,7 +803,40 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
       const by = ticket.suspicion_cleared_by ? db.prepare("SELECT first_name, last_name FROM users WHERE id = ?").get(ticket.suspicion_cleared_by) : null;
       suspicionReview = { at: ticket.suspicion_cleared_at, by: by ? `${by.first_name} ${by.last_name}` : "", note: ticket.suspicion_note || "" };
     }
-    return { ticket: { ...ownerTicket(ticket), variableSymbol: ticket.variable_symbol, account: Boolean(ticket.user_id), rulesVersion: ticket.rules_version || null }, payments, checks, violations, emails: sentEmails, cancellation, suspicionReview, cancellable: ["pending_payment", "payment_expired", "future", "active", "expired_unreturned", "seized"].includes(stateOf(ticket)) };
+    const corrections = db.prepare("SELECT a.at, a.detail, u.first_name, u.last_name FROM audit_events a LEFT JOIN users u ON u.id = a.actor_user_id WHERE a.action = 'ticket_catches_corrected' AND a.target_type = 'ticket' AND a.target_id = ? ORDER BY a.id").all(ticket.code)
+      .map((a) => { const d = JSON.parse(a.detail || "{}"); return { at: a.at, by: a.first_name ? `${a.first_name} ${a.last_name}` : "", reason: d.reason || "", before: d.before || null, after: d.after || null }; });
+    const correctable = ticket.status === "issued" && Boolean(ticket.returned_at) && !ticket.anonymized_at;
+    return { ticket: { ...ownerTicket(ticket), variableSymbol: ticket.variable_symbol, account: Boolean(ticket.user_id), rulesVersion: ticket.rules_version || null }, payments, checks, violations, emails: sentEmails, cancellation, suspicionReview, corrections, correctable, cancellable: ["pending_payment", "payment_expired", "future", "active", "expired_unreturned", "seized"].includes(stateOf(ticket)) };
+  }
+  // Oprava úlovků odevzdané místenky správcem (typicky překlep ověřený s rybářem). Povinný důvod; původní a nové
+  // údaje jdou do auditu (detail: corrections), rybář dostane e-mail. Úlovky se znovu vyhodnotí (upozornění,
+  // odlehlá pozorování – příznak podezřelá se podle nich nastaví či zruší) a překročení limitů této místenky se
+  // přepočítá. E-mail správcům ani automatická blokace se znovu nespouští – proběhly při odevzdání; blokaci,
+  // která už vznikla, zruší správce ručně v Limitech a blokacích.
+  function correctCatches(actor, code, body = {}) {
+    const reason = String(body.reason || "").trim();
+    if (reason.length < 3 || reason.length > 300) throw new ApiError(400, "invalid_reason", "Uveďte důvod opravy (3–300 znaků).");
+    const ticket = findTicket(code);
+    const { noCatch, catches, suspicious } = parseCatches(ticket, body);
+    return transaction(db, () => {
+      const fresh = db.prepare("SELECT * FROM tickets WHERE id = ?").get(ticket.id);
+      if (fresh.status !== "issued" || !fresh.returned_at) throw new ApiError(409, "not_returned", "Opravit lze jen úlovky odevzdané místenky.");
+      if (fresh.anonymized_at) throw new ApiError(409, "anonymized", "Místenka je anonymizovaná, úlovky už nelze opravit.");
+      const before = { noCatch: Boolean(fresh.no_catch), catches: db.prepare("SELECT species, length_cm AS length, weight_kg AS weight FROM catches WHERE ticket_id = ? ORDER BY id").all(fresh.id) };
+      const after = { noCatch, catches: catches.map((c) => ({ species: c.species, length: c.length, weight: c.weight })) };
+      if (JSON.stringify(before) === JSON.stringify(after)) throw new ApiError(400, "no_change", "Úlovky se nezměnily.");
+      const now = iso(time.now());
+      db.prepare("DELETE FROM catches WHERE ticket_id = ?").run(fresh.id);
+      insertCatches(fresh.id, catches);
+      db.prepare("UPDATE tickets SET no_catch = ?, suspicious = ? WHERE id = ?").run(noCatch ? 1 : 0, suspicious ? 1 : 0, fresh.id);
+      if (fresh.suspicious && !suspicious) db.prepare("UPDATE tickets SET suspicion_cleared_at = ?, suspicion_cleared_by = ?, suspicion_note = ? WHERE id = ?").run(now, actor?.id ?? null, `Úlovky opraveny: ${reason}`.slice(0, 300), fresh.id);
+      const updated = db.prepare("SELECT * FROM tickets WHERE id = ?").get(fresh.id);
+      db.prepare("DELETE FROM limit_violations WHERE ticket_id = ?").run(fresh.id);
+      insertViolations(updated, limitsFor(updated).filter((l) => l.exceeded));
+      audit(actor, "ticket_catches_corrected", "ticket", fresh.code, { reason, before, after });
+      enqueueEmail(updated, "catches_corrected", null, { reason, before, after });
+      return ticketDetail(fresh.code);
+    });
   }
   // Zrušení příznaku podezřelá (hlídání nereálných měr a vah) po prověření správcem. Důvody u úlovků (catches.suspect)
   // zůstávají jako historie; kdo a kdy prověřil, je v detailu (suspicionReview) a v auditu.
@@ -1062,7 +1106,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     return { result: report.payments?.results?.[0] || null };
   }
 
-  return { availability, createOrder, getPublicTicket, getOwnerTicket, ticketsForUser, wardenCheck, seizeTicket, listTickets, ticketsCsv, ticketDetail, clearSuspicion, cancelByManager, listPayments, resolvePayment, listVouchers, generateVouchers, voidVoucher, listViolations, listBlocks, createBlock, liftBlock, limitsForMember, statsForUser, communityStats, cancelOrder, submitReturn, checkVoucher, createVoucher, runJobs, addJob, simulatePayment, processTransaction, stateOf };
+  return { availability, createOrder, getPublicTicket, getOwnerTicket, ticketsForUser, wardenCheck, seizeTicket, listTickets, ticketsCsv, ticketDetail, clearSuspicion, correctCatches, cancelByManager, listPayments, resolvePayment, listVouchers, generateVouchers, voidVoucher, listViolations, listBlocks, createBlock, liftBlock, limitsForMember, statsForUser, communityStats, cancelOrder, submitReturn, checkVoucher, createVoucher, runJobs, addJob, simulatePayment, processTransaction, stateOf };
 }
 
 module.exports = { createService, ApiError };

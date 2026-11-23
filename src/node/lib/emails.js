@@ -219,6 +219,19 @@ function ticketCancelled(config, { ticket, revir }) {
   };
 }
 
+// ---------- oprava úlovků správcem ----------
+const czNum = (n) => String(n).replace(".", ",");
+const catchesText = (part) => (part.noCatch ? "nic neponecháno" : part.catches.map((c) => `${c.species} ${czNum(c.length)} cm${c.weight ? ` · ${czNum(c.weight)} kg` : ""}`).join(", ") || "—");
+function catchesCorrected(config, { ticket, revir, reason, before, after }) {
+  const contact = [config.organization.contact?.email, config.organization.contact?.phone].filter(Boolean).join(", ");
+  const rows = [["Kód místenky", ticket.code], ["Revír", revir.name], ["Datum lovu", czDate(ticket.fishing_date)], ["Důvod opravy", reason], ["Původně", catchesText(before)], ["Nově", catchesText(after)]];
+  return {
+    subject: `Místenka ${ticket.code} – správce opravil úlovky`,
+    html: layout(config, "info", "Správce opravil úlovky", `<p>Správce organizace opravil úlovky, které jste uvedl/a při odevzdání místenky. Místenka zůstává odevzdaná, nic dalšího dělat nemusíte.</p>${table(rows)}<p>Pokud s opravou nesouhlasíte, ozvěte se hospodáři${contact ? ` (${esc(contact)})` : ""}.</p>`),
+    text: textBlock(["Správce organizace opravil úlovky, které jste uvedl/a při odevzdání místenky. Místenka zůstává odevzdaná.", ...rows.map(([k, v]) => `${k}: ${v}`), `Pokud s opravou nesouhlasíte, ozvěte se hospodáři${contact ? ` (${contact})` : ""}.`])
+  };
+}
+
 // ---------- mimořádné uzavření (B4) ----------
 function closureNotice(config, { ticket, revir, closure, links }) {
   const range = closure.dateFrom === closure.dateTo ? czDate(closure.dateFrom) : `${czDate(closure.dateFrom)} – ${czDate(closure.dateTo)}`;
@@ -288,7 +301,7 @@ function createFileMailer(dir) {
   };
 }
 
-const TEMPLATES = { bugReport, paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, ticketCancelled, paymentSettingsChanged, seasonReport, databaseAutoRestored, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, wardenRequest, wardenRequestDecided };
+const TEMPLATES = { bugReport, paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, ticketCancelled, catchesCorrected, paymentSettingsChanged, seasonReport, databaseAutoRestored, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, wardenRequest, wardenRequestDecided };
 // V testovacím režimu doplní „[TEST]“ do předmětu a varování do textové verze (HTML ho má z layoutu).
 const withTestNote = (fn) => (config, ...args) => {
   const mail = fn(config, ...args);
