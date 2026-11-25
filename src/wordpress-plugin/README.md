@@ -38,7 +38,7 @@ Produkční implementace Místenky. Chování je stejné jako u Node verze v `sr
 
    Nikdy nedávejte do produkce `MISTENKA_DEV`, `MISTENKA_RATE_LIMIT = false` ani `MISTENKA_MAIL_TRANSPORT = 'file'`.
 4. Nahrát ZIP (Pluginy → Instalace pluginů → Nahrát) a aktivovat.
-5. Po aktivaci se otevře **Nastavení → Místenka → Průvodce nastavením**: (1) adresa aplikace – uloží se a hned ověří (plugin si z ní stáhne `js/env.js`; upozorní na neexistující subdoménu, chybu HTTPS nebo jiný web), (2) pravidla .htaccess, (3) cron hostingu – průvodce ukáže čas posledního běhu, (4) tlačítkem **Vygenerovat odkaz** první admin Místenky (průvodce s 2FA, odkaz platí 60 minut). Záložka **Stav** shrnuje instalaci (konfigurace, datová složka, Fio, e-maily, mapa).
+5. Po aktivaci se otevře **Nastavení → Místenka → Průvodce nastavením**: (1) adresa aplikace – uloží se a hned ověří (plugin si z ní stáhne `js/env.js` s náhodnou výzvou, na kterou správně odpoví jen tato instalace; upozorní na neexistující subdoménu, chybu HTTPS, jiný web i Místenku jiné instalace – např. produkční adresu z ZIPu na testovacím webu). Adresa převzatá z konfigurace v ZIPu platí až po tomto ověření, (2) pravidla .htaccess, (3) cron hostingu – průvodce ukáže čas posledního běhu, (4) tlačítkem **Vygenerovat odkaz** první admin Místenky (průvodce s 2FA, odkaz platí 60 minut). Záložka **Stav** shrnuje instalaci (konfigurace, datová složka, Fio, e-maily, mapa).
 6. Cron hostingu každou minutu. Doporučená je **PHP úloha** (Websupport: typ „PHP 8.3 CRON“), PHP soubor `wp-content/plugins/mistenka/cron.php`. Klíč není potřeba, protože skript z webu vrací 404. Pokud hosting umí jen příkaz s POST:
 
    ```

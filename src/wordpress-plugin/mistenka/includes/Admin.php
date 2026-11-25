@@ -23,7 +23,7 @@ final class Admin
     {
         $screen = function_exists('get_current_screen') ? get_current_screen() : null;
         if (!$screen || !in_array($screen->id, ['plugins', 'dashboard'], true) || !current_user_can('manage_options') || !Plugin::appUrlNeedsSetup()) return;
-        echo '<div class="notice notice-warning"><p><b>Místenka:</b> dokončete nastavení – zadejte adresu aplikace v <a href="' . esc_url(self::url('pruvodce')) . '">průvodci</a>.</p></div>';
+        echo '<div class="notice notice-warning"><p><b>Místenka:</b> dokončete nastavení – zadejte nebo potvrďte adresu aplikace v <a href="' . esc_url(self::url('pruvodce')) . '">průvodci</a>.</p></div>';
     }
 
     private static function url(string $tab): string
@@ -158,7 +158,7 @@ final class Admin
                 </p>
             </form>
             <?php
-            if ($source === 'config') echo '<p class="description">Teď se používá adresa z konfigurace pluginu: <code>' . esc_html($appUrl) . '</code>' . ($done['url'] ? '. Uložením ji pevně nastavíte pro tuto instalaci.' : ' – je to vzorová adresa, zadejte vlastní.') . '</p>';
+            if ($source === 'config') echo '<p class="description">Teď se používá adresa z konfigurace pluginu: <code>' . esc_html($appUrl) . '</code>' . (str_ends_with(strtolower((string) wp_parse_url($appUrl, PHP_URL_HOST)), 'example.cz') ? ' – je to vzorová adresa, zadejte vlastní.' : ($done['url'] ? '. Uložením ji pevně nastavíte pro tuto instalaci.' : '. Potvrďte ji uložením – ověří se, že patří tomuto webu (ZIP může nést adresu jiné instalace, např. produkce na testovacím webu).')) . '</p>';
             if ($source === 'site') echo '<p class="description">Adresa zatím není nastavená – používá se adresa webu.</p>';
         }
         if ($source !== 'constant' && Plugin::sameHostAsSite($appUrl) && $source !== 'site') {

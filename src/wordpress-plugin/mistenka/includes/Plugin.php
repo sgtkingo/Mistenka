@@ -12,6 +12,7 @@ final class Plugin
     public const APP_URL_CHECK_OPTION = 'mistenka_app_url_check'; // výsledek posledního ověření adresy
     public const CRON_OPTION = 'mistenka_last_hosting_cron';      // čas posledního běhu z cronu hostingu (cron.php, /jobs/run)
     private const ACTIVATION_REDIRECT = 'mistenka_activation_redirect';
+    private const VERIFY_PARAM = 'mistenka_verify';
     private const HTACCESS_MARKER = 'Mistenka';
     private const STATIC_TYPES = ['html' => 'text/html; charset=utf-8', 'js' => 'text/javascript; charset=utf-8', 'css' => 'text/css; charset=utf-8', 'svg' => 'image/svg+xml', 'png' => 'image/png', 'ico' => 'image/x-icon', 'json' => 'application/json; charset=utf-8', 'txt' => 'text/plain; charset=utf-8'];
 
@@ -118,7 +119,10 @@ final class Plugin
         $source = self::appUrlSource();
         if ($source === 'constant' || $source === 'option') return false;
         if ($source === 'site') return true;
-        return str_ends_with(strtolower((string) wp_parse_url(self::appUrl(), PHP_URL_HOST)), 'example.cz');
+        if (str_ends_with(strtolower((string) wp_parse_url(self::appUrl(), PHP_URL_HOST)), 'example.cz')) return true;
+        // Adresa z konfigurace v ZIPu může patřit jiné instalaci (např. produkční adresa na testovacím webu) – platí až po ověření.
+        $check = self::lastAppUrlCheck();
+        return !($check && $check['ok']);
     }
 
     // Zadanou adresu převede na tvar https://host[:port]; při chybě vrátí text chyby v $error.
@@ -158,7 +162,9 @@ final class Plugin
     // Ověří, že adresa míří na tento WordPress s Místenkou: stáhne z ní js/env.js (generuje ho jen plugin).
     public static function verifyAppUrl(string $url): array
     {
-        $response = wp_remote_get($url . '/js/env.js', ['timeout' => 10, 'redirection' => 0, 'headers' => ['Cache-Control' => 'no-cache']]);
+        // Náhodná výzva: odpověď (HMAC s klíčem z wp-config) umí spočítat jen tato instalace – jiný web s Místenkou ne.
+        $nonce = wp_generate_password(24, false);
+        $response = wp_remote_get($url . '/js/env.js?' . self::VERIFY_PARAM . '=' . $nonce, ['timeout' => 10, 'redirection' => 0, 'headers' => ['Cache-Control' => 'no-cache']]);
         if (is_wp_error($response)) {
             $message = $response->get_error_message();
             $hint = stripos($message, 'ssl') !== false || stripos($message, 'certificate') !== false
@@ -168,7 +174,9 @@ final class Plugin
         } else {
             $code = (int) wp_remote_retrieve_response_code($response);
             $body = (string) wp_remote_retrieve_body($response);
-            if ($code === 200 && str_contains($body, 'MISTENKA_ENV')) $result = ['ok' => true, 'message' => 'Adresa funguje – odpovídá tento WordPress s Místenkou.'];
+            $proof = (string) wp_remote_retrieve_header($response, 'x-mistenka-proof');
+            if ($code === 200 && str_contains($body, 'MISTENKA_ENV') && hash_equals(self::verifyProof($nonce), $proof)) $result = ['ok' => true, 'message' => 'Adresa funguje – odpovídá tento WordPress s Místenkou.'];
+            elseif ($code === 200 && str_contains($body, 'MISTENKA_ENV')) $result = ['ok' => false, 'message' => 'Na adrese běží Místenka jiné instalace (jiný web) – zadejte adresu tohoto webu. Odkazy v e-mailech by jinak vedly na cizí instalaci.'];
             elseif ($code >= 300 && $code < 400) $result = ['ok' => false, 'message' => 'Adresa přesměrovává jinam (HTTP ' . $code . ': ' . wp_remote_retrieve_header($response, 'location') . ') – zkontrolujte přesměrování na hostingu, případně zadejte cílovou adresu.'];
             else $result = ['ok' => false, 'message' => 'Na adrese odpovídá jiný web (HTTP ' . $code . ') – subdoména musí mířit do složky tohoto WordPressu.'];
         }
@@ -183,6 +191,12 @@ final class Plugin
         update_option(self::APP_URL_OPTION, $url, true);
         if (self::htaccessStatus() !== 'not_needed') self::writeHtaccess();
         return self::verifyAppUrl($url);
+    }
+
+    // Odpověď na výzvu z ověření adresy. Klíč je odvozený ze solí wp-config.php a slouží jen k tomuto účelu.
+    private static function verifyProof(string $nonce): string
+    {
+        return hash_hmac('sha256', $nonce, hash_hmac('sha256', 'mistenka-app-url-verify', wp_salt('auth')));
     }
 
     public static function lastAppUrlCheck(): ?array
@@ -221,7 +235,11 @@ final class Plugin
         if ($home !== '/' && str_starts_with($path, rtrim($home, '/'))) $path = substr($path, strlen(rtrim($home, '/')));
         if (str_starts_with($path, '/wp-') || $path === '/index.php' || str_starts_with($path, '/xmlrpc')) return; // administrace a přihlášení WordPressu
         $file = $path === '/' || $path === '' ? 'index.html' : ltrim(rawurldecode($path), '/');
-        if ($file === 'js/env.js') self::sendStatic('js', self::envJs());
+        if ($file === 'js/env.js') {
+            $nonce = (string) ($_GET[self::VERIFY_PARAM] ?? '');
+            if ($nonce !== '' && strlen($nonce) <= 64) header('X-Mistenka-Proof: ' . self::verifyProof($nonce));
+            self::sendStatic('js', self::envJs());
+        }
         if (!preg_match('#^(?:[a-z0-9-]+\.html|[a-z0-9-]+\.css|(?:js|vendor)/[A-Za-z0-9._-]+\.(?:js|txt|LICENSE))$#i', $file)) self::notFound();
         $full = self::frontendDir() . '/' . $file;
         if (!is_file($full)) self::notFound();
