@@ -257,7 +257,7 @@ final class Admin
         $fio = $app && $app->config['payment']['provider'] === 'fio';
         // Falešná banka mimo vývojový režim = kdokoli může „zaplatit“ místenku přes /dev/payments.
         $fioSource = ['env' => 'token ve wp-config.php', 'portal' => 'token zadaný v portálu'][FioToken::status()['source'] ?? ''] ?? '';
-        echo self::row('Platby', $app ? esc_html($fio ? 'Fio API' . (FioToken::token() !== '' ? " ({$fioSource})" : ' – chybí token: zadejte ho v portálu (Bankovní spojení → Automatické párování), nebo MISTENKA_FIO_TOKEN ve wp-config.php') : 'falešná banka – jen pro vývoj, platby jde simulovat!') : '—', $app ? ($fio ? FioToken::token() !== '' : Env::dev()) : null);
+        echo self::row('Platby', $app ? esc_html($fio ? 'Fio API' . (FioToken::token() !== '' ? " ({$fioSource})" : ' – chybí token: zadejte ho v portálu (Bankovní spojení → Párování s bankou), nebo MISTENKA_FIO_TOKEN ve wp-config.php') : 'falešná banka – jen pro vývoj, platby jde simulovat!') : '—', $app ? ($fio ? FioToken::token() !== '' : Env::dev()) : null);
         echo self::row('Podklad mapy revíru', Env::mapyApiKey() !== '' ? 'Mapy.com (MISTENKA_MAPY_API_KEY)' : 'OpenStreetMap – pro Mapy.com doplňte konstantu <code>MISTENKA_MAPY_API_KEY</code> ve wp-config.php', Env::mapyApiKey() !== '' ? true : null);
         echo self::row('Klíč pro cron', Env::cronKey() !== '' ? 'nastaven' : 'není (stačí PHP cron; pro volání přes URL doplňte <code>MISTENKA_CRON_KEY</code> ve wp-config.php)', Env::cronKey() !== '' ? true : null);
         $cronAt = (int) get_option(Plugin::CRON_OPTION, 0);

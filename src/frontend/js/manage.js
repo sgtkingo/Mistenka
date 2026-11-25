@@ -813,7 +813,7 @@ async function loadTesting() {
       <fieldset class="test-settings"${dis}>
         <h2 class="test-heading">Platby v testu</h2>
         <label class="test-choice"><input type="radio" name="testPayments" value="fake"${s.payments === "fake" ? " checked" : ""}> <span><b>Simulované</b> – na stránce platby je tlačítko „Simulovat platbu“, nikdo nic neplatí.</span></label>
-        <label class="test-choice${s.fioAvailable ? "" : " unavailable"}"><input type="radio" name="testPayments" value="fio"${s.payments === "fio" ? " checked" : ""}${s.fioAvailable ? "" : " disabled"}> <span><b>Ostré přes Fio</b> – skutečný převod na účet MO s testovacím variabilním symbolem (začíná 9). Banku dál stahuje provoz a testovací platby předá testu.${s.fioAvailable ? "" : " <em>Vyžaduje token Fio (Bankovní spojení → Automatické párování).</em>"}</span></label>
+        <label class="test-choice${s.fioAvailable ? "" : " unavailable"}"><input type="radio" name="testPayments" value="fio"${s.payments === "fio" ? " checked" : ""}${s.fioAvailable ? "" : " disabled"}> <span><b>Ostré přes Fio</b> – skutečný převod na účet MO s testovacím variabilním symbolem (začíná 9). Banku dál stahuje provoz a testovací platby předá testu.${s.fioAvailable ? "" : " <em>Vyžaduje Fio banku a token API (Bankovní spojení → Párování s bankou).</em>"}</span></label>
         <h2 class="test-heading">Testovací databáze</h2>
         <p class="field-help">${s.seededAt ? `Založena ${esc(czDateTime(s.seededAt))} kopií provozu. Při dalším zapnutí se použije znovu (s dosavadními testovacími daty).` : "Zatím není – vznikne kopií provozu při prvním zapnutí."}</p>
         ${s.seededAt ? '<button class="secondary-button" type="button" id="testReset">Založit znovu z provozu</button>' : ""}

@@ -2,7 +2,7 @@
 // Token Fio API (jen pro čtení) pro automatické párování plateb (odpovídá src/node/lib/fio-token.js).
 //
 // Zdroj tokenu: konstanta MISTENKA_FIO_TOKEN ve wp-config.php (má přednost, v portálu ji nejde změnit), jinak token
-// zadaný adminem v portálu (Bankovní spojení → Automatické párování). Ten je v provozní databázi jen zašifrovaný
+// zadaný adminem v portálu (Bankovní spojení → Párování s bankou). Ten je v provozní databázi jen zašifrovaný
 // (meta fio_token, klíč MISTENKA_SECRET_KEY / secret.key v datové složce) a server ho nikdy nevrací. Testovací
 // databáze ho nedostane – banku stahuje vždy jen provoz (viz TestMode).
 namespace Mistenka;

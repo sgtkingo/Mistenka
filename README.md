@@ -87,7 +87,7 @@ Správce v portálu (Revíry → Mapy revírů) zakreslí nad mapou hranice rev�
 
 ## Platby
 
-Rybář platí převodem podle QR platby (SPAYD) s jedinečným variabilním symbolem. Místenka se vystaví po spárování platby. Napojení na skutečný účet: `"provider": "fio"` v konfiguraci a token Fio API (jen pro čtení) – zadá ho admin v portálu (Bankovní spojení → Automatické párování), nebo proměnná `FIO_TOKEN`. Adaptér pro Fio je připravený, ale zatím neověřený proti skutečnému účtu.
+Rybář platí převodem podle QR platby (SPAYD) s jedinečným variabilním symbolem. Místenka se vystaví po spárování platby. Napojení na skutečný účet: `"provider": "fio"` v konfiguraci a token Fio API (jen pro čtení) – zadá ho admin v portálu (Bankovní spojení → Párování s bankou), nebo proměnná `FIO_TOKEN`. Adaptér pro Fio je připravený, ale zatím neověřený proti skutečnému účtu.
 
 ## WordPress
 

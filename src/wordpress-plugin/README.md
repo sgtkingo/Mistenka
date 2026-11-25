@@ -25,7 +25,7 @@ Produkční implementace Místenky. Chování je stejné jako u Node verze v `sr
 
    ```php
    define('MISTENKA_CRON_KEY', '…dlouhý náhodný řetězec…');   // POST /jobs/run z cronu hostingu
-   // define('MISTENKA_FIO_TOKEN', '…token Fio jen pro čtení…');  // volitelné – jinak admin zadá token v portálu (Bankovní spojení → Automatické párování, uloží se zašifrovaný)
+   // define('MISTENKA_FIO_TOKEN', '…token Fio jen pro čtení…');  // volitelné – jinak admin zadá token v portálu (Bankovní spojení → Párování s bankou, uloží se zašifrovaný)
    define('MISTENKA_SECRET_KEY', '…dlouhý náhodný řetězec…');  // šifrování hesel SMTP účtů a tokenu Fio z portálu (doporučeno; jinak soubor v datové složce)
    // volitelně:
    // define('MISTENKA_APP_URL', 'https://mistenka.rybarikarvina.cz');  // pevná adresa aplikace (jinak průvodce)

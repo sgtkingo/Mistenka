@@ -2,7 +2,7 @@
 // Token Fio API (jen pro čtení) pro automatické párování plateb (stejně ve WordPressu, includes/FioToken.php).
 //
 // Zdroj tokenu: proměnná prostředí FIO_TOKEN (má přednost, v portálu ji nejde změnit), jinak token zadaný adminem
-// v portálu (Bankovní spojení → Automatické párování). Ten je v provozní databázi jen zašifrovaný (meta fio_token,
+// v portálu (Bankovní spojení → Párování s bankou). Ten je v provozní databázi jen zašifrovaný (meta fio_token,
 // klíč MISTENKA_SECRET_KEY / DATA_DIR/secret.key) a server ho nikdy nevrací. Testovací databáze ho nedostane –
 // banku stahuje vždy jen provoz (viz test-mode.js).
 const time = require("./time");

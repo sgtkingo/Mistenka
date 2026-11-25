@@ -44,7 +44,7 @@
   }
 
   // Formuláře se vykreslují do jednoho panelu, který se přesune do aktivní sekce (Revíry / Nastavení / Bankovní spojení).
-  const BANK_TABS = ["payment", "fio", "gateway"];
+  const BANK_TABS = ["payment", "gateway"];
   async function load(initialTab, nextMode = "settings") {
     mode = nextMode;
     const host = qs(`.settings-host[data-host="${mode}"]`);
@@ -65,7 +65,7 @@
   function renderTabs() {
     const tabs = mode === "reviry"
       ? [...view.reviry.map((r) => [`revir:${r.id}`, r.data.name]), ["new-revir", "+ Nový revír"]]
-      : mode === "bank" ? [["payment", "Bankovní převody a QR platby"], ["fio", "Automatické párování (Fio)"], ["gateway", "Platební brána"]]
+      : mode === "bank" ? [["payment", "Bankovní převody a QR platby"], ["gateway", "Platební brána"]]
         : mode === "species" ? [["species", "Míry, váhy a hájení"]] : [["organization", "Organizace"]];
     if (!tabs.some(([key]) => key === tab)) tab = tabs[0][0];
     qs("#settingsTabs").innerHTML = tabs.map(([key, label]) => `<button type="button" class="tab${key === tab ? " active" : ""}" data-tab="${esc(key)}">${esc(label)}</button>`).join("");
@@ -75,9 +75,8 @@
   function render() {
     const panel = qs("#settingsPanel");
     if (tab === "organization") panel.innerHTML = organizationForm();
-    else if (tab === "payment") panel.innerHTML = paymentForm();
+    else if (tab === "payment") { panel.innerHTML = paymentForm(); initBankMatching(); }
     else if (tab === "gateway") panel.innerHTML = gatewayForm();
-    else if (tab === "fio") { panel.innerHTML = '<div class="settings-form" id="fioPanel"><p class="muted">Načítám…</p></div>'; loadFio(); }
     else if (tab === "species") panel.innerHTML = speciesForm();
     else if (tab === "new-revir") panel.innerHTML = newRevirForm();
     else panel.innerHTML = revirForm(view.reviry.find((r) => `revir:${r.id}` === tab));
@@ -131,30 +130,50 @@
       <div class="info-box">${view.canEditPayment ? "Změnu účtu dostanou e-mailem všichni admini. Nové objednávky se budou platit na nový účet, rozpracované zůstávají na původním." : "Platební údaje smí měnit jen admin."}</div>
       <div class="form-two-col">${field("pAccount", "Číslo účtu (s předčíslím: 19-123456789)", p.accountNumber, ro)}${field("pBank", "Kód banky", p.bankCode, `${ro} maxlength="4"`)}</div>
       <p class="field-help">IBAN: <b>${esc(view.payment.iban)}</b> · zdroj plateb: <b>${esc(view.payment.provider)}</b> (mění se jen v konfiguraci serveru)</p>
+      <div class="bank-matching hidden" id="bankMatching"></div>
       <div class="form-two-col">${field("pRecipient", "Příjemce (do QR platby, bez diakritiky)", p.recipientName, ro)}${field("pMessage", "Zpráva pro příjemce – předpona", p.messagePrefix, ro)}</div>
       <div class="form-two-col">${field("pReservation", "Rezervace místa před platbou (minuty)", p.reservationMinutes, `${ro} type="number" min="10" max="1440"`)}<div></div></div>
       ${footer("payment", view.payment, { canEdit: view.canEditPayment })}</form>`;
   }
-  // Token Fio API pro automatické párování plateb (jen admin). Server token nikdy nevrací – jen zda je nastaven.
+  // Párování s bankou: podle kódu banky (zatím jen Fio – token API), u jiných bank jasné upozornění.
+  const FIO_BANK_CODE = "2010";
+  function initBankMatching() {
+    const input = qs("#pBank");
+    if (!input) return;
+    let shown = null; // "", "fio", nebo kód jiné banky – překreslí se jen při změně
+    const update = () => {
+      const code = input.value.trim();
+      const kind = !/^\d{4}$/.test(code) ? "" : code === FIO_BANK_CODE ? "fio" : code;
+      if (kind === shown) return;
+      shown = kind;
+      const box = qs("#bankMatching");
+      box.classList.toggle("hidden", !kind);
+      if (!kind) { box.innerHTML = ""; return; }
+      const heading = `<h3>Párování s bankou${infoTip("Server sám stahuje příchozí platby z banky a podle variabilního symbolu a částky vystaví místenky. Každá banka má jiné rozhraní; zatím podporujeme Fio banku. Bez automatického párování se platby řeší ručně v sekci Platby.")}</h3>`;
+      if (kind === "fio") { box.innerHTML = `${heading}<div id="fioPanel"><p class="muted">Načítám…</p></div>`; loadFio(); return; }
+      box.innerHTML = `${heading}<div class="info-box info-warning"><b>Pro banku s kódem ${esc(code)} automatické párování plateb nepodporujeme.</b> Rybáři mohou platit i na tento účet, ale každou platbu bude potřeba spárovat ručně v sekci Platby (podle variabilního symbolu). Automaticky zatím umíme jen Fio banku (kód ${FIO_BANK_CODE}).</div>`;
+    };
+    input.addEventListener("input", update);
+    update();
+  }
+  // Token Fio API (jen admin). Server token nikdy nevrací – jen zda je nastaven.
   async function loadFio() {
     const box = qs("#fioPanel");
     if (!box) return;
     try {
       const s = await api("/manage/settings/fio-token");
-      const state = s.source === "env" ? "nastaven v konfiguraci serveru (wp-config.php / FIO_TOKEN) – v portálu ho nejde změnit"
-        : s.configured ? `nastaven${s.updatedAt ? ` ${czDateTime(s.updatedAt)}` : ""}${s.updatedBy ? ` (${s.updatedBy})` : ""}`
-          : s.unreadable ? "uložený token nejde přečíst (změnil se šifrovací klíč serveru) – zadejte ho znovu" : "nenastaven – platby se nepárují automaticky";
       const editable = s.source !== "env";
-      box.innerHTML = `<h3>Automatické párování plateb (Fio API)${infoTip("Server každou půlminutu stáhne z Fio nové příchozí platby a podle variabilního symbolu a částky vystaví místenky. Bez tokenu se platby musí řešit ručně v sekci Platby.")}</h3>
-        <div class="info-box ${s.configured ? "info-success" : "info-warning"}">Token: <b>${esc(state)}</b>${s.provider !== "fio" ? `<br>Server teď nepoužívá platby přes Fio (zdroj plateb: ${esc(s.provider)}) – token se uplatní až s nimi.` : ""}</div>
-        <p class="field-help">Token vygenerujte v internetovém bankovnictví Fio (Nastavení → API) <b>jen pro čtení</b>. Uloží se zašifrovaný, server ho už nikdy nezobrazí. Uložení i smazání potvrdíte kódem 2FA a dozví se o něm e-mailem všichni admini. Testovací režim token nepoužívá – banku stahuje vždy jen provoz.</p>
-        ${editable ? `<div class="form-two-col"><div><label class="field-label" for="fioToken">${s.configured ? "Nový token" : "Token"}</label><input id="fioToken" type="password" autocomplete="off" spellcheck="false"></div><div></div></div>` : ""}
-        <div class="test-actions">
-          ${editable ? '<button class="primary-button" type="button" id="fioSave">Uložit token</button>' : ""}
-          ${s.configured ? '<button class="secondary-button" type="button" id="fioVerify">Ověřit token</button>' : ""}
-          ${s.source === "portal" ? '<button class="text-button" type="button" id="fioRemove">Smazat token</button>' : ""}
-        </div>
-        <p class="field-help" id="fioResult"></p>`;
+      const [badge, tone] = s.source === "env" ? ["v konfiguraci serveru", "ok"] : s.configured ? ["nastaven", "ok"] : s.unreadable ? ["nejde přečíst", "bad"] : ["nenastaven", "warn"];
+      const meta = s.source === "env" ? "Token je ve wp-config.php (FIO_TOKEN) – v portálu ho nejde změnit."
+        : s.configured ? `Uložen ${esc(czDateTime(s.updatedAt))}${s.updatedBy ? ` · ${esc(s.updatedBy)}` : ""}`
+          : s.unreadable ? "Změnil se šifrovací klíč serveru – zadejte token znovu." : "Bez tokenu se platby párují ručně v sekci Platby.";
+      box.innerHTML = `<div class="fio-card">
+          <div class="fio-head"><b>Fio banka</b><span class="badge badge-${tone}">Token API: ${badge}</span></div>
+          <p class="fio-meta">${meta}${s.provider !== "fio" ? `<br>Server teď platby z Fio nestahuje (zdroj plateb: ${esc(s.provider)}) – token se uplatní až s nimi.` : ""}</p>
+          ${editable ? `<div class="fio-row"><input id="fioToken" type="password" autocomplete="off" spellcheck="false" placeholder="${s.configured ? "Nový token (nahradí uložený)" : "Vložte token API z Fio"}" aria-label="Token API Fio" onkeydown="if(event.key==='Enter')event.preventDefault()"><button class="primary-button" type="button" id="fioSave">Uložit token</button></div>` : ""}
+          ${s.configured || s.source === "portal" ? `<div class="fio-links">${s.configured ? '<button class="text-button" type="button" id="fioVerify">Ověřit token</button>' : ""}${s.source === "portal" ? '<button class="text-button danger-text" type="button" id="fioRemove">Smazat token</button>' : ""}<span id="fioResult"></span></div>` : ""}
+          <p class="fio-help">Token vygenerujte v internetovém bankovnictví Fio (Nastavení → API) <b>jen pro čtení</b>. Uloží se zašifrovaný a už se nezobrazí; uložení i smazání potvrdíte kódem 2FA a admini dostanou e-mail.</p>
+        </div>`;
       const withOtp = async (button, token, message) => {
         const otp = window.prompt("Kód z ověřovací aplikace (2FA):");
         if (otp === null) return;
