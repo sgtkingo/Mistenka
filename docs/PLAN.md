@@ -15,7 +15,7 @@ Cílová platforma se mění z Cloudflare Workers + D1 na **WordPress plugin** n
 | Test | `test.rybarikarvina.cz` – samostatná kopie webu a DB (`rybarikarv_test`), neindexovaná; každou změnu ověřit nejdřív zde |
 | REST API | WordPress nemá „hezké“ trvalé odkazy → volat `/?rest_route=/mistenka/v1/...`, ne `/wp-json/...` |
 | E-mail | WP Mail SMTP, odesílatel `mistenka@rybarikarvina.cz` (`smtp.websupport.cz:465`, SSL); SPF, DKIM a DMARC nastaveny; doručení do Gmailu ověřeno. Plugin volá jen `wp_mail()` |
-| Ověřovací plugin | `src/wordpress-plugin/mistenka-demo` (v0.2.0) – subdoména, REST, zápis do DB a e-mail ověřeny na ostrém webu |
+| Ověřovací plugin | `mistenka-demo` (v0.2.0, 11/2026) – subdoména, REST, zápis do DB a e-mail ověřeny na ostrém webu; po nasazení `mistenka` odstraněn z repozitáře (je v historii gitu) |
 | Sestavení | `python scripts/build-plugin.py [plugin]` → `dist/<plugin>.zip` |
 
 ### Způsob vývoje: dvojí implementace

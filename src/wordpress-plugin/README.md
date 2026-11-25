@@ -4,8 +4,7 @@ Produkční implementace Místenky. Chování je stejné jako u Node verze v `sr
 
 | Plugin | Stav |
 | --- | --- |
-| `mistenka/` | plný plugin (v1.0.0) |
-| `mistenka-demo/` | ověřovací plugin z 11/2026 (subdoména, REST, DB, e-mail) – po nasazení `mistenka` odinstalovat |
+| `mistenka/` | plný plugin |
 
 ## Jak plugin funguje
 
