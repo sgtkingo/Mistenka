@@ -78,7 +78,7 @@ final class Settings
         foreach ($overrides as $scope => $data) $docs[$scope] = $data;
         $raw = $this->source['raw'];
         if (isset($docs['organization'])) foreach (self::ORG_KEYS as $key) if (array_key_exists($key, $docs['organization'])) $raw[$key] = $docs['organization'][$key];
-        if (isset($docs['payment'])) $raw['payment'] = array_merge($docs['payment'], ['provider' => $this->source['raw']['payment']['provider'] ?? 'fake']);
+        if (isset($docs['payment'])) $raw['payment'] = array_merge($docs['payment'], ['provider' => $this->source['raw']['payment']['provider'] ?? 'fake', 'testMode' => !empty($this->source['raw']['payment']['testMode'])]);
         foreach ($docs as $scope => $data) {
             if (!str_starts_with($scope, 'revir:')) continue;
             $revir = array_merge(is_array($data) ? $data : [], ['id' => substr($scope, 6)]);

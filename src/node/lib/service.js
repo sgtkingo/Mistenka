@@ -59,7 +59,9 @@ function catchOutlier(species, length, weight, weightEstimated, plausibility) {
   return null;
 }
 
-function createService({ db, config, provider, mailer, appUrl, operations, settings, mailAccounts }) {
+// vsRange: rozsah variabilních symbolů [od, do) – provoz a testovací režim se nepřekrývají (test-mode.js).
+// forwardTransaction(tx): provoz předá transakci testovací databázi (vrátí výsledek), jinak null.
+function createService({ db, config, provider, mailer, appUrl, operations, settings, mailAccounts, vsRange = [1_000_000_000, 9_000_000_000], forwardTransaction = null }) {
   // ---------- pomocné ----------
   function makeCode() {
     for (;;) {
@@ -70,7 +72,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
   }
   function makeVariableSymbol() {
     for (;;) {
-      const vs = String(crypto.randomInt(1_000_000_000, 10_000_000_000));
+      const vs = String(crypto.randomInt(vsRange[0], vsRange[1]));
       if (!db.prepare("SELECT 1 FROM tickets WHERE variable_symbol = ?").get(vs)) return vs;
     }
   }
@@ -1017,7 +1019,7 @@ function createService({ db, config, provider, mailer, appUrl, operations, setti
     if (!force && Date.now() - lastSync < provider.minIntervalMs) return { skipped: true, results: [] };
     lastSync = Date.now();
     const transactions = await provider.fetchTransactions();
-    return { skipped: false, results: transactions.map(processTransaction) };
+    return { skipped: false, results: transactions.map((tx) => { const forwarded = forwardTransaction ? forwardTransaction(tx) : null; return forwarded ? `test:${forwarded}` : processTransaction(tx); }) };
   }
 
   function expireReservations() {

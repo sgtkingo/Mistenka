@@ -16,14 +16,18 @@ interface PaymentProvider
 // Falešná banka pro vývoj: transakce se vkládají přes /dev/payments (fronta v options, PHP nemá stav mezi požadavky).
 final class FakeProvider implements PaymentProvider
 {
-    private const OPTION = 'mistenka_fake_bank_queue';
+    // Fronta je pro provoz a testovací režim zvlášť.
+    private static function option(): string
+    {
+        return 'mistenka_fake_bank_queue' . (Db::isTest() ? '_test' : '');
+    }
 
     public function name(): string { return 'fake'; }
     public function minIntervalMs(): int { return 0; }
 
     public function push(array $tx): void
     {
-        $queue = get_option(self::OPTION, []);
+        $queue = get_option(self::option(), []);
         if (!is_array($queue)) $queue = [];
         $queue[] = [
             'transactionId' => 'FAKE-' . (int) (microtime(true) * 1000) . '-' . wp_rand(1000, 9999),
@@ -35,13 +39,13 @@ final class FakeProvider implements PaymentProvider
             'counterName' => 'Testovací plátce',
             'message' => '',
         ];
-        update_option(self::OPTION, $queue, false);
+        update_option(self::option(), $queue, false);
     }
 
     public function fetchTransactions(): array
     {
-        $queue = get_option(self::OPTION, []);
-        delete_option(self::OPTION);
+        $queue = get_option(self::option(), []);
+        delete_option(self::option());
         return is_array($queue) ? $queue : [];
     }
 }
@@ -89,11 +93,20 @@ final class FioProvider implements PaymentProvider
     }
 }
 
+// Ostré platby v testovacím režimu: test banku sám nestahuje, transakce mu předává provoz (TestMode::forward).
+final class ForwardedProvider implements PaymentProvider
+{
+    public function name(): string { return 'fio'; }
+    public function minIntervalMs(): int { return 0; }
+    public function fetchTransactions(): array { return []; }
+}
+
 final class Payments
 {
     public static function provider(array $config): PaymentProvider
     {
         $name = $config['payment']['provider'];
+        if ($name === 'fio' && !empty($config['payment']['testMode'])) return new ForwardedProvider();
         if ($name === 'fio') return new FioProvider(Env::fioToken());
         if ($name === 'fake') return new FakeProvider();
         throw new \RuntimeException("Neznámý poskytovatel plateb: {$name}");

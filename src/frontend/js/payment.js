@@ -43,6 +43,7 @@ function renderPending() {
   qs("#bankVs").textContent = p.variableSymbol;
   qs("#bankMessage").textContent = p.message;
   qs("#simulatePayment").classList.toggle("hidden", config.payment.mode !== "fake");
+  if (config.testMode && config.payment.mode === "fio" && !qs("#testRealPayments")) qs("#testModeBanner").insertAdjacentHTML("beforeend", ' <b id="testRealPayments">Platby jsou v tomto testu skutečné</b> – plaťte jen testovací částky.');
   const updateCountdown = () => {
     const minutes = Math.max(0, Math.ceil((new Date(p.reservedUntil) - Date.now()) / 60000));
     qs("#reservationNote").textContent = `Místo držíme do ${czDateTime(p.reservedUntil)} (zbývá ${minutes} min). Zaplaťte prosím přesnou částku se správným variabilním symbolem.`;
@@ -140,7 +141,7 @@ qs("#downloadTicket").addEventListener("click", () => {
   const revir = revirOf(ticket);
   // Má-li revír zakreslenou mapu, PDF obsahuje klikací odkaz na interaktivní mapu.
   const mapUrl = revir.map?.features ? new URL(`map.html?revir=${encodeURIComponent(revir.id)}`, location.href).href : "";
-  window.MistenkaPdf.download({ ticket, revir, organization: config.organization, checkUrl: ticketCheckUrl(ticket.code), hours: fishingHours(revir, ticket.date), testMode: config.payment.mode === "fake", mapUrl });
+  window.MistenkaPdf.download({ ticket, revir, organization: config.organization, checkUrl: ticketCheckUrl(ticket.code), hours: fishingHours(revir, ticket.date), testMode: config.testMode || config.payment.mode === "fake", mapUrl });
 });
 qs("#printTicket").addEventListener("click", () => window.print());
 
@@ -149,7 +150,7 @@ qs("#printTicket").addEventListener("click", () => window.print());
     config = await loadConfig();
     applyBranding(config);
     // Falešná banka (testovací web): jasně říct, že místenky nejsou platné.
-    qs("#testModeBanner").classList.toggle("hidden", config.payment.mode !== "fake");
+    qs("#testModeBanner").classList.toggle("hidden", !(config.testMode || config.payment.mode === "fake"));
     if (!/^[A-Z0-9]{6}$/.test(code)) throw new Error("Chybí platný kód objednávky.");
     if (!credentials.token && !credentials.memberId && !(await loadSession())) throw new Error("Objednávku otevřete odkazem z e-mailu, nebo ji zkontrolujte na stránce kontroly místenky.");
     ticket = await api(`/orders/${code}`, credentials);

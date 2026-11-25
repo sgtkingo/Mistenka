@@ -1,6 +1,6 @@
 """Sestaví instalační ZIP WordPress pluginu, případně balíček Node verze.
 
-  python scripts/build-plugin.py [nazev-pluginu] [--fake-bank] [--example]   WP plugin (výchozí Fio, nebo falešná banka)
+  python scripts/build-plugin.py [nazev-pluginu] [--example]                 WP plugin (ostrý i testovací web)
   python scripts/build-plugin.py --node                                      dist/mistenka-node.zip (Node verze)
   python scripts/build-plugin.py --release                                   obecné balíčky pro GitHub release
 
@@ -11,9 +11,10 @@ ji zabalí (balíček pro vlastní MO); --example a --release použijí vzor con
 Výchozí plugin je `mistenka`. Do archivu se kromě PHP převezme:
   - frontend (src/frontend → mistenka/frontend), js/env.js s prefixem API WordPressu,
   - výchozí konfigurace MO v jednotném tvaru: config/organization.json, config/reviry/<id>.json,
-    config/maps/<id>.json a config/species/<soubor> (odkazy se přepíšou na tyto cesty). ZIP je produkční
-    balíček, proto má organization.json vždy payment.provider = "fio" (repo nechává "fake" pro lokální Node;
-    falešnou banku, kde může platbu „zaplatit“ kdokoli, do ZIPu dá jen --fake-bank),
+    config/maps/<id>.json a config/species/<soubor> (odkazy se přepíšou na tyto cesty). ZIP je jeden pro ostrý
+    i testovací web, proto má organization.json vždy payment.provider = "fio" (repo nechává "fake" pro lokální
+    Node). Testovací web zapne testovací režim v portálu (Admin → Testování: oddělená databáze, simulované
+    nebo ostré platby) – zvláštní balíček s falešnou bankou už není,
   - LICENSE.md a ochranné .htaccess (config a includes nejsou z webu dostupné).
 
 Používá zipfile, takže výsledek nezávisí na tom, jaký `tar` je v systému,
@@ -32,7 +33,9 @@ sys.stderr.reconfigure(encoding="utf-8")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 args = [a for a in sys.argv[1:] if not a.startswith("--")]
 flags = {a for a in sys.argv[1:] if a.startswith("--")}
-unknown = flags - {"--fake-bank", "--node", "--release", "--example"}
+unknown = flags - {"--node", "--release", "--example"}
+if "--fake-bank" in flags:
+    sys.exit("--fake-bank už není: balíček je jeden, testovací web zapne testovací režim v portálu (Admin → Testování).")
 if unknown:
     sys.exit(f"Neznámý přepínač: {', '.join(sorted(unknown))}")
 name = args[0] if args else "mistenka"
@@ -73,7 +76,7 @@ ORG_LOCAL = os.path.join(ROOT, "config", "organization.json")
 ORG_EXAMPLE = os.path.join(ROOT, "config", "example", "organization.json")
 
 
-def build_wp(fake_bank, listing=True, example=False):
+def build_wp(listing=True, example=False):
     src = os.path.join(ROOT, "src", "wordpress-plugin", name)
     if not os.path.isdir(src):
         sys.exit(f"Plugin nenalezen: {src}")
@@ -81,10 +84,12 @@ def build_wp(fake_bank, listing=True, example=False):
     if not os.path.exists(org_file):
         sys.exit("Chybí config/organization.json (konfigurace MO je jen lokální). Zkopírujte vzor z config/example "
                  "(organization.json, reviry/, maps/) a upravte, nebo sestavte obecný balíček se vzorem: --example")
-    # Testovací balíček s falešnou bankou má jiný název souboru, aby se nezaměnil s produkčním.
-    out = os.path.join(out_dir, f"{name}-fake-bank.zip" if fake_bank else f"{name}.zip")
+    out = os.path.join(out_dir, f"{name}.zip")
+    stale = os.path.join(out_dir, f"{name}-fake-bank.zip")
+    if os.path.exists(stale):
+        os.remove(stale)  # starý testovací balíček (do 1.6.x) – ať se omylem nenahraje
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-        write_wp(z, src, fake_bank, org_file)
+        write_wp(z, src, org_file)
     with zipfile.ZipFile(out) as z:
         bad = z.testzip()
         if bad:
@@ -93,7 +98,7 @@ def build_wp(fake_bank, listing=True, example=False):
         plugin_file = os.path.join(src, f"{name}.php")
         print(f"OK {out} · verze {version(plugin_file) if os.path.exists(plugin_file) else '?'} · {len(names)} souborů")
         if name == "mistenka":
-            print(f"  platby: {'fake (POZOR: jen pro test, platby jde simulovat)' if fake_bank else 'fio (nutný MISTENKA_FIO_TOKEN ve wp-config.php)'}")
+            print("  platby: fio (nutný MISTENKA_FIO_TOKEN ve wp-config.php); testovací web: Admin → Testování v portálu")
             print(f"  konfigurace: {'vzor config/example (obecný balíček)' if example else 'lokální config/organization.json'}")
         if listing:
             for n in names:
@@ -115,7 +120,7 @@ def build_node():
         print("  spuštění: rozbalit, npm run seed && npm start (Node >= 22.13, bez závislostí)")
 
 
-def bundle_config(z, org_file, fake_bank):
+def bundle_config(z, org_file):
     """Konfigurace MO do ZIPu v jednotném tvaru (organizace → revíry → mapy, pravidla druhů ryb).
     Odkazy ve zdroji jsou relativní ke složce organization.json; revír může být i přímo objekt v seznamu
     a mapa bez odkazu se hledá v maps/<id>.json (stejně jako při načítání v Node/PHP)."""
@@ -166,11 +171,11 @@ def bundle_config(z, org_file, fake_bank):
         z.writestr(f"{name}/config/reviry/{rid}.json", dump(revir))
         entries.append(f"reviry/{rid}.json")
     org["reviry"] = entries
-    org["payment"]["provider"] = "fake" if fake_bank else "fio"
+    org["payment"]["provider"] = "fio"
     z.writestr(f"{name}/config/organization.json", dump(org))
 
 
-def write_wp(z, src, fake_bank, org_file):
+def write_wp(z, src, org_file):
     for path, rel in walk(src):
         z.write(path, f"{name}/{rel}")
     if name == "mistenka":
@@ -180,7 +185,7 @@ def write_wp(z, src, fake_bank, org_file):
             else:
                 z.write(path, f"{name}/frontend/{rel}")
         z.writestr(f"{name}/frontend/.htaccess", FRONTEND_HTACCESS)
-        bundle_config(z, org_file, fake_bank)
+        bundle_config(z, org_file)
         z.writestr(f"{name}/config/.htaccess", DENY)
         z.writestr(f"{name}/includes/.htaccess", DENY)
         z.write(os.path.join(ROOT, "LICENSE.md"), f"{name}/LICENSE.md")
@@ -188,10 +193,9 @@ def write_wp(z, src, fake_bank, org_file):
 
 if "--release" in flags:
     # Obecný release: konfigurace ze vzoru (žádné údaje konkrétní MO).
-    build_wp(False, listing=False, example=True)
-    build_wp(True, listing=False, example=True)
+    build_wp(listing=False, example=True)
     build_node()
 elif "--node" in flags:
     build_node()
 else:
-    build_wp("--fake-bank" in flags, example="--example" in flags)
+    build_wp(example="--example" in flags)

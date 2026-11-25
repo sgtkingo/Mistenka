@@ -22,7 +22,9 @@ final class Admin
     public static function pluginsNotice(): void
     {
         $screen = function_exists('get_current_screen') ? get_current_screen() : null;
-        if (!$screen || !in_array($screen->id, ['plugins', 'dashboard'], true) || !current_user_can('manage_options') || !Plugin::appUrlNeedsSetup()) return;
+        if (!$screen || !in_array($screen->id, ['plugins', 'dashboard'], true) || !current_user_can('manage_options')) return;
+        if (!TestMode::answered()) echo '<div class="notice notice-warning"><p><b>Místenka:</b> je tento web ostrý, nebo testovací? Odpovězte v <a href="' . esc_url(self::url('stav')) . '">Nastavení → Místenka</a>.</p></div>';
+        if (!Plugin::appUrlNeedsSetup()) return;
         echo '<div class="notice notice-warning"><p><b>Místenka:</b> dokončete nastavení – zadejte nebo potvrďte adresu aplikace v <a href="' . esc_url(self::url('pruvodce')) . '">průvodci</a>.</p></div>';
     }
 
@@ -82,6 +84,14 @@ final class Admin
             $check = Plugin::verifyAppUrl(Plugin::appUrl());
             $notice = self::notice($check['ok'] ? 'success' : 'warning', esc_html($check['message']));
         }
+        if (isset($_POST['mistenka_site_kind']) && check_admin_referer('mistenka_admin')) {
+            try {
+                TestMode::answer($_POST['mistenka_site_kind'] === 'test');
+                $notice = self::notice('success', $_POST['mistenka_site_kind'] === 'test' ? 'Testovací režim zapnut – web běží nad testovací databází (kopie nastavení a účtů správců z provozu).' : 'Uloženo: ostrý web.');
+            } catch (ApiError $e) {
+                $notice = self::notice('error', esc_html($e->getMessage()));
+            }
+        }
         if (isset($_POST['mistenka_htaccess']) && check_admin_referer('mistenka_admin')) {
             $notice = Plugin::writeHtaccess()
                 ? self::notice('success', 'Pravidla .htaccess zapsána.')
@@ -118,6 +128,16 @@ final class Admin
             <?php echo $notice; // phpcs:ignore -- sestaveno výše s escapováním ?>
             <?php if ($appError) : ?>
                 <div class="notice notice-error"><p><b>Aplikace se nenačetla:</b> <?php echo esc_html($appError); ?></p></div>
+            <?php endif; ?>
+            <?php if (!TestMode::answered()) : ?>
+                <div class="notice notice-warning" style="padding:10px 12px">
+                    <p><b>Je tento web ostrý, nebo testovací?</b> Místenka už nemá zvláštní balíček s falešnou bankou – testovací web zapne <b>testovací režim</b> (oddělená testovací databáze, simulované nebo ostré platby; přepíná ho pak admin v portálu, Admin → Testování).</p>
+                    <form method="post" style="display:flex;gap:8px;flex-wrap:wrap">
+                        <?php wp_nonce_field('mistenka_admin'); ?>
+                        <button class="button button-primary" name="mistenka_site_kind" value="production">Ostrý web</button>
+                        <button class="button" name="mistenka_site_kind" value="test"<?php echo TestMode::locked() ? ' disabled' : ''; ?>>Testovací web – zapnout testovací režim</button>
+                    </form>
+                </div>
             <?php endif; ?>
             <nav class="nav-tab-wrapper" style="margin-bottom:16px">
                 <a href="<?php echo esc_url(self::url('pruvodce')); ?>" class="nav-tab<?php echo $tab === 'pruvodce' ? ' nav-tab-active' : ''; ?>">Průvodce nastavením<?php echo $allDone ? '' : ' (' . count(array_filter($done)) . '/' . count($done) . ')'; ?></a>
@@ -240,6 +260,11 @@ final class Admin
         $missing = Mailer::missing();
         echo self::row('Odesílání e-mailů', esc_html((Env::mailTransport() === 'file' ? 'jen do datové složky (MISTENKA_MAIL_TRANSPORT = file)' : 'vlastní SMTP klient přes účty z portálu (Admin → Emailoví klienti)') . ($missing ? ' – nenastaveno: chybí odesílatelé nebo příjemci upozornění' : ' – nastaveno')), !$missing);
         echo self::row('Spuštění služby', Db::serviceLaunched() ? 'spuštěno' : 'zatím ne – rybáři vidí uzavřenou sezonu; službu spustí otevření první sezony v portálu (po nastavení e-mailů)', Db::serviceLaunched());
+        $tm = TestMode::state();
+        $tmText = TestMode::locked() ? 'zakázaný na tomto webu (MISTENKA_TEST_MODE ve wp-config.php)'
+            : ($tm['enabled'] ? '<b>zapnutý</b> – web běží nad testovací databází, platby v testu: ' . ($tm['payments'] === 'fio' ? 'ostré přes Fio' : 'simulované') : 'vypnutý')
+            . (TestMode::locked() ? '' : ' <span class="description">(přepíná admin v portálu: Admin → Testování)</span>');
+        echo self::row('Testovací režim', $tmText, $tm['enabled'] ? false : null);
         echo self::row('Vývojový režim', Env::dev() ? '<b>zapnutý</b> (MISTENKA_DEV) – jen pro testovací web!' : 'vypnutý', !Env::dev());
         $labels = ['not_needed' => 'nepoužívají se (frontend mimo složku webu)', 'ok' => 'v pořádku', 'outdated' => 'zastaralá – zapište znovu v průvodci', 'absent' => 'chybí – zapište v průvodci', 'missing' => 'soubor .htaccess neexistuje'];
         echo self::row('Pravidla .htaccess', esc_html($labels[$htaccess]), in_array($htaccess, ['ok', 'not_needed'], true));

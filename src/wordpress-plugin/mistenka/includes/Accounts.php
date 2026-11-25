@@ -481,6 +481,15 @@ final class Accounts
     }
 
     // Citlivá akce (obnova databáze): znovu ověřit kód 2FA.
+    // Testovací režim zapnut / vypnut / změněn: audit a e-mail všem adminům (volá se nad provozní databází).
+    public function notifyTestMode(?array $actor, string $action, array $detail): void
+    {
+        $this->audit($actor['id'] ?? null, $action, 'test_mode', null, $detail);
+        if ($action !== 'test_mode_enabled' && $action !== 'test_mode_disabled') return; // změna plateb a obnova jen do auditu
+        $mail = Emails::testModeChanged($this->app->config, ['enabled' => $action === 'test_mode_enabled', 'actorName' => $detail['by'] ?? 'systém', 'payments' => $detail['payments'] ?? null, 'at' => Time::nowIso(), 'appUrl' => $this->app->appUrl]);
+        foreach (Db::all("SELECT email FROM {p}users WHERE CONCAT(',', roles, ',') LIKE '%,admin,%'") as $admin) $this->queueEmail($admin['email'], 'test_mode_changed', $mail);
+    }
+
     public function confirmOtp(?array $ctx, $otp): array
     {
         $user = $this->requireAdmin($ctx);

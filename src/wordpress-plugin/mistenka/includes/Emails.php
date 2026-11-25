@@ -63,7 +63,7 @@ final class Emails
     {
         $c = self::C;
         // layout() se vyhodnotí jako argument mail(), takže mail() pak ví, jestli jde o testovací verzi.
-        self::$testMode = ($config['payment']['provider'] ?? '') === 'fake';
+        self::$testMode = !empty($config['payment']['testMode']) || ($config['payment']['provider'] ?? '') === 'fake';
         $testHtml = self::$testMode ? '<p style="margin:0 0 18px;padding:12px 14px;background:' . $c['warnBg'] . ';border:1px solid #f3d9a4;border-radius:8px;font-size:14px;color:' . $c['warn'] . '"><b>' . self::esc(self::TEST_NOTE) . '</b></p>' : '';
         [$toneBg, $toneSub] = self::TONES[$tone] ?? self::TONES['info'];
         $org = $config['organization'];
@@ -343,6 +343,23 @@ final class Emails
             "Místenka – nahlášená chyba #{$r['id']}",
             self::layout($config, 'warning', 'Nahlášená chyba', '<p style="margin:0 0 16px;white-space:pre-wrap">' . self::esc($r['description']) . '</p>' . self::table($rows) . self::button($x['link'], 'Otevřít v portálu')),
             self::text(array_merge(['Nahlášená chyba', '', $r['description'], ''], self::rowsText($rows), ["Portál: {$x['link']}"]))
+        );
+    }
+
+    // Testovací režim zapnut / vypnut (všem adminům, z provozu).
+    public static function testModeChanged(array $config, array $x): array
+    {
+        $enabled = !empty($x['enabled']);
+        $rows = [['Kdy', self::czDateTime($x['at'])], ['Kdo', $x['actorName']]];
+        if ($enabled) $rows[] = ['Platby v testu', ($x['payments'] ?? '') === 'fio' ? 'ostré přes Fio (testovací variabilní symboly)' : 'simulované'];
+        $intro = $enabled
+            ? '<p>Web teď běží nad <b>testovací databází</b>. Rybáři vidí testovací verzi – místenky z ní neopravňují k lovu a provozní místenky v ní nejsou (ani pro kontrolu porybným). Platby a e-maily provozu se zpracovávají dál.</p>'
+            : '<p>Web zase běží nad <b>provozní databází</b>. Testovací data zůstávají odděleně pro příští test.</p>';
+        $link = $x['appUrl'] . '/manage.html#testing';
+        return self::mail(
+            $enabled ? 'Místenka – zapnut testovací režim' : 'Místenka – testovací režim vypnut',
+            self::layout($config, $enabled ? 'warning' : 'success', $enabled ? 'Zapnut testovací režim' : 'Testovací režim vypnut', $intro . self::table($rows) . self::button($link, 'Otevřít Testování')),
+            self::text(array_merge([$enabled ? 'Web teď běží nad testovací databází – místenky z ní neopravňují k lovu, provozní místenky v ní nejsou.' : 'Web zase běží nad provozní databází.'], self::rowsText($rows), [$link]))
         );
     }
 

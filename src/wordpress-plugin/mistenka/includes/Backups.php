@@ -22,7 +22,7 @@ final class Backups
 
     private function dir(): string
     {
-        $dir = Env::dataDir() . '/backups';
+        $dir = Env::modeDataDir() . '/backups';
         if (!is_dir($dir)) wp_mkdir_p($dir);
         return $dir;
     }

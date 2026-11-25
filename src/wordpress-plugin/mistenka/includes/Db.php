@@ -16,11 +16,27 @@ final class Db
     private const FLOAT = ['length_cm', 'weight_kg', 'kg'];
 
     private static int $depth = 0;
+    private static bool $test = false; // testovací režim: tabulky {prefix}mistenka_test_* (viz TestMode)
 
     public static function prefix(): string
     {
+        return self::prefixFor(self::$test);
+    }
+
+    public static function prefixFor(bool $test): string
+    {
         global $wpdb;
-        return $wpdb->prefix . 'mistenka_';
+        return $wpdb->prefix . ($test ? 'mistenka_test_' : 'mistenka_');
+    }
+
+    public static function useTest(bool $test): void
+    {
+        self::$test = $test;
+    }
+
+    public static function isTest(): bool
+    {
+        return self::$test;
     }
 
     public static function table(string $name): string
@@ -174,7 +190,7 @@ final class Db
     private static function lockName(string $name): string
     {
         global $wpdb;
-        return substr('mistenka_' . $name . '_' . DB_NAME . '_' . $wpdb->prefix, 0, 64);
+        return substr('mistenka_' . $name . '_' . DB_NAME . '_' . self::prefix(), 0, 64);
     }
 
     public static function metaGet(string $name): ?string

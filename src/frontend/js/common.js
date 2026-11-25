@@ -81,8 +81,21 @@
 
   let configPromise = null;
   function loadConfig() {
-    configPromise ||= api("/config");
+    configPromise ||= api("/config").then((config) => { if (config.testMode) showTestModeStrip(config); return config; });
     return configPromise;
+  }
+  // Testovací režim: pruh nahoře na každé stránce (web běží nad testovací databází, místenky neplatí).
+  function showTestModeStrip(config) {
+    const show = () => {
+      if (document.getElementById("testModeStrip")) return;
+      const strip = document.createElement("div");
+      strip.id = "testModeStrip";
+      strip.className = "test-mode-strip";
+      strip.setAttribute("role", "status");
+      strip.innerHTML = `<b>Testovací režim</b> – místenky z tohoto webu neopravňují k lovu. ${config.payment?.mode === "fio" ? "Platby jsou skutečné (test ostrých plateb)." : "Platby se jen simulují."}`;
+      document.body.prepend(strip);
+    };
+    if (document.body) show(); else document.addEventListener("DOMContentLoaded", show);
   }
 
   // Výběr revíru: ?revir=<id>, jinak jediný revír v konfiguraci.

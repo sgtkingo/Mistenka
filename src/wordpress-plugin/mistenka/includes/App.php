@@ -12,7 +12,9 @@ final class App
     // Endpointy, které relaci vytvářejí nebo ji nepotřebují (bez kontroly CSRF).
     private const CSRF_EXEMPT = ['/auth/login', '/auth/register', '/auth/verify', '/auth/magic-link', '/auth/magic', '/auth/password-reset', '/auth/password-reset/confirm', '/auth/email/confirm', '/jobs/run', '/setup', '/setup/2fa', '/requests/view', '/requests/decide'];
 
-    private static ?App $instance = null;
+    private static array $instances = [];
+    private static ?App $requestApp = null; // instance, která obsloužila požadavek (e-maily po odeslání odpovědi)
+    private static bool $requestTest = false;
 
     public array $config;
     public string $appUrl;
@@ -29,7 +31,8 @@ final class App
 
     public static function get(): App
     {
-        return self::$instance ??= new App();
+        // Jedna instance pro provoz a jedna pro testovací režim (podle Db::isTest()).
+        return self::$instances[Db::isTest() ? 'test' : 'prod'] ??= new App();
     }
 
     private function __construct()
@@ -38,6 +41,7 @@ final class App
         $wpdb->suppress_errors(true);
         Plugin::maybeUpgrade();
         $source = Config::readSource();
+        if (Db::isTest()) $source['raw']['payment'] = array_merge($source['raw']['payment'], ['provider' => TestMode::payments(), 'testMode' => true]);
         $this->settings = new Settings($this, $source);
         $this->config = $this->settings->boot();
         $this->appUrl = self::appUrlFrom($this->config);
@@ -74,6 +78,14 @@ final class App
         if (!$this->outboxDirty) return;
         $this->outboxDirty = false;
         try { $this->mailer->deliverOutbox(); } catch (\Throwable $e) { error_log('[Místenka e-maily] ' . $e->getMessage()); }
+    }
+
+    // Úlohy provozu (vždy – platby, rezervace, e-maily) a při zapnutém testovacím režimu i testovací databáze.
+    public static function runAllJobs(bool $force = false): array
+    {
+        $report = TestMode::withMode(false, fn() => self::get()->runJobs($force));
+        if (TestMode::enabled()) $report['test'] = TestMode::withMode(true, fn() => self::get()->runJobs($force));
+        return $report;
     }
 
     // Plánované úlohy v pořadí podle docs/API.md. Cron hostingu je spouští přes POST /jobs/run.
@@ -136,7 +148,9 @@ final class App
         $path = substr($route, strlen('/' . self::NS));
         $path = $path === '' ? '/' : $path;
         try {
-            $app = self::get();
+            Db::useTest(TestMode::enabled()); // testovací režim: celý požadavek nad testovací databází
+            self::$requestTest = Db::isTest();
+            $app = self::$requestApp = self::get();
             $response = $app->handle($request, $path);
         } catch (ApiError $e) {
             $response = self::json($e->status, ['error' => $e->getMessage(), 'code' => $e->apiCode]);
@@ -151,9 +165,10 @@ final class App
     // Po odeslání odpovědi (PHP-FPM) odešle e-maily vzniklé během požadavku – rybář nečeká na SMTP.
     public static function afterResponse(): void
     {
-        if (!self::$instance) return;
+        if (!self::$requestApp) return;
         if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
-        self::$instance->deliverPending();
+        $app = self::$requestApp;
+        TestMode::withMode(self::$requestTest, fn() => $app->deliverPending());
     }
 
     private static function json(int $status, $body, array $headers = []): \WP_REST_Response
@@ -381,6 +396,10 @@ final class App
             return self::json(200, $this->backups->restore($admin, $m[1], $body));
         }
         if ($match('#^/manage/backups/(\d+)$#') && $method === 'DELETE') return self::json(200, $this->backups->remove($acc->requireAdmin($ctx), $m[1]));
+        // Testovací režim (jen admin): stav, přepnutí (s kódem 2FA) a nové založení testovací databáze z provozu.
+        if ($path === '/manage/test-mode' && $method === 'GET') { $acc->requireAdmin($ctx); return self::json(200, TestMode::view()); }
+        if ($path === '/manage/test-mode' && $method === 'PUT') { $body = self::body($request); return self::json(200, TestMode::set($acc->confirmOtp($ctx, $body['otp'] ?? null), $body)); }
+        if ($path === '/manage/test-mode/reset' && $method === 'POST') { $body = self::body($request); return self::json(200, TestMode::reset($acc->confirmOtp($ctx, $body['otp'] ?? null))); }
         if ($path === '/manage/audit' && $method === 'GET') return self::json(200, $acc->listAudit($ctx, $q('limit'), $q('action')));
 
         // E-mailoví klienti: účty spravuje admin, odesílatele skupin vybírá správce i admin.
@@ -449,14 +468,25 @@ final class App
             $key = Env::cronKey();
             if ($key === '' || !hash_equals($key, $header('X-Mistenka-Cron-Key'))) throw new ApiError(404, 'not_found', 'Nenalezeno.');
             update_option(Plugin::CRON_OPTION, time(), false);
-            return self::json(200, $this->runJobs());
+            return self::json(200, self::runAllJobs());
         }
-        if ($path === '/dev/payments' && $method === 'POST') return self::json(200, $svc->simulatePayment(self::body($request)));
+        if ($path === '/dev/payments' && $method === 'POST') {
+            $body = self::body($request);
+            if (Db::isTest() && TestMode::payments() === 'fio') {
+                // Ostré platby v testu: příchozí platbu simuluje falešná banka provozu (jen vývoj) a provoz ji předá testu.
+                $prodProvider = TestMode::withMode(false, fn() => self::get()->service->provider());
+                if (!Env::dev() || !$prodProvider instanceof FakeProvider) throw new ApiError(404, 'not_found', 'Simulace plateb je dostupná jen s falešnou bankou.');
+                $ticket = Js::truthy($body['code'] ?? null) ? Db::row('SELECT variable_symbol, amount_due_halere FROM {p}tickets WHERE code = ?', strtoupper(Js::str($body['code']))) : null;
+                $input = ['variableSymbol' => Js::truthy($body['variableSymbol'] ?? null) ? $body['variableSymbol'] : ($ticket['variable_symbol'] ?? ''), 'amountHalere' => $body['amountHalere'] ?? ($ticket['amount_due_halere'] ?? null), 'currency' => $body['currency'] ?? null];
+                return self::json(200, TestMode::withMode(false, fn() => self::get()->service->simulatePayment($input)));
+            }
+            return self::json(200, $svc->simulatePayment($body));
+        }
         if (Env::dev()) {
             if ($path === '/dev/clock' && $method === 'POST') {
                 $body = self::body($request);
                 try { Time::setClock(Js::truthy($body['now'] ?? null) ? Js::str($body['now']) : null); } catch (\Throwable $e) { throw new ApiError(400, 'invalid_time', 'Neplatný čas.'); }
-                $this->runJobs(true);
+                self::runAllJobs(true);
                 return self::json(200, ['now' => Time::nowIso(), 'today' => Time::pragueToday()]);
             }
             if ($path === '/dev/vouchers' && $method === 'POST') return self::json(201, $svc->createVoucher(self::body($request)));
@@ -470,7 +500,7 @@ final class App
                 $rows = Db::all('SELECT kind, to_email, subject, body_text, body_html, created_at FROM {p}email_outbox WHERE LOWER(to_email) = ? ORDER BY id DESC LIMIT 20', Js::lower($q('to')));
                 return self::json(200, ['emails' => array_map(fn($r) => ['kind' => $r['kind'], 'to' => $r['to_email'], 'subject' => $r['subject'], 'text' => $r['body_text'], 'html' => $r['body_html'], 'createdAt' => $r['created_at']], $rows)]);
             }
-            if ($path === '/dev/jobs' && $method === 'POST') return self::json(200, $this->runJobs(true));
+            if ($path === '/dev/jobs' && $method === 'POST') return self::json(200, self::runAllJobs(true));
         }
         throw new ApiError(404, 'not_found', 'Nenalezeno.');
     }

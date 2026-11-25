@@ -24,8 +24,8 @@ const GROUPS = [
     kinds: ["payment_instructions", "ticket_issued", "return_reminder", "ticket_closed", "ticket_seized", "ticket_cancelled", "catches_corrected", "closure_notice", "member_blocked"] },
   { id: "accounts", label: "Účty", help: "registrace, přihlášení odkazem, obnova hesla, změna e-mailu, pozvánka do správy, vyřízení žádosti o porybného, smazání účtu",
     kinds: ["account_verify", "account_exists", "magic_link", "password_reset", "email_change", "staff_invite", "account_deleted", "warden_request_approved", "warden_request_rejected"] },
-  { id: "notices", label: "Upozornění správců", help: "žádosti „Jsem porybný“, zadržení, překročené limity, uzávěrka sezony, změna platebních údajů, obnova databáze",
-    kinds: ["seizure_notice", "limit_exceeded", "season_report", "payment_settings_changed", "database_auto_restored", "warden_request"] },
+  { id: "notices", label: "Upozornění správců", help: "žádosti „Jsem porybný“, zadržení, překročené limity, uzávěrka sezony, změna platebních údajů, obnova databáze, testovací režim",
+    kinds: ["seizure_notice", "limit_exceeded", "season_report", "payment_settings_changed", "database_auto_restored", "warden_request", "test_mode_changed"] },
   { id: "bugs", label: "Hlášení chyb", help: "nahlášené chyby z webu (tlačítko s broukem) – přijdou všem adminům",
     kinds: ["bug_report"] }
 ];

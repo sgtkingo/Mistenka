@@ -23,6 +23,7 @@ qsa(".manage-nav-item").forEach((item) => item.addEventListener("click", () => {
   if (section === "tickets") loadTickets();
   if (section === "backups") loadBackups();
   if (section === "audit") loadAudit();
+  if (section === "testing") loadTesting();
   if (section === "stocking") window.MistenkaReports.loadStocking();
   if (section === "reports") window.MistenkaReports.loadReports(location.hash.startsWith("#reports/") ? location.hash.split("/")[1] : "");
   if (section === "settings") window.MistenkaSettings.load(decodeURIComponent(location.hash.split("/")[1] || ""), "settings");
@@ -795,7 +796,54 @@ qs("#createBackup").addEventListener("click", async (event) => {
   button.disabled = true;
   try { await api("/manage/backups", { method: "POST", body: { note } }); showToast("Záloha vytvořena.", "success"); loadBackups(); } catch (error) { showToast(error.message, "error"); } finally { button.disabled = false; }
 });
-const ACTION_LABELS = { roles_changed: "změna rolí", roles_forced: "role (příkazová řádka)", staff_invited: "pozvání do správy", admin_setup: "založení admina", settings_changed: "nastavení", ticket_seized: "zadržení místenky", ticket_cancelled: "zrušení místenky", ticket_catches_corrected: "oprava úlovků", ticket_suspicion_cleared: "zrušení příznaku podezřelá",
+// ---------- testovací režim (jen admin) ----------
+async function loadTesting() {
+  const panel = qs("#testingPanel");
+  try {
+    const s = await api("/manage/test-mode");
+    const status = s.enabled
+      ? `<div class="info-box info-warning"><b>Testovací režim je zapnutý</b>${s.since ? ` od ${esc(czDateTime(s.since))}` : ""}${s.by ? ` (${esc(s.by)})` : ""}. Web běží nad testovací databází, platby v testu: ${s.payments === "fio" ? "ostré přes Fio" : "simulované"}.</div>`
+      : '<div class="info-box info-success"><b>Provoz</b> – web běží nad provozní databází.</div>';
+    const locked = s.locked ? '<div class="info-box info-error">Testovací režim je na tomto serveru zakázaný (<code>MISTENKA_TEST_MODE</code> ve wp-config.php, v Node proměnná prostředí).</div>' : "";
+    panel.innerHTML = `${status}${locked}
+      <h2 class="test-heading">Platby v testu</h2>
+      <label class="test-choice"><input type="radio" name="testPayments" value="fake"${s.payments === "fake" ? " checked" : ""}> <span><b>Simulované</b> – na stránce platby je tlačítko „Simulovat platbu“, nikdo nic neplatí.</span></label>
+      <label class="test-choice${s.fioAvailable ? "" : " disabled"}"><input type="radio" name="testPayments" value="fio"${s.payments === "fio" ? " checked" : ""}${s.fioAvailable ? "" : " disabled"}> <span><b>Ostré přes Fio</b> – skutečný převod na účet MO s testovacím variabilním symbolem (začíná 9). Banku dál stahuje provoz a testovací platby předá testu.${s.fioAvailable ? "" : " <em>Vyžaduje platby přes Fio (token).</em>"}</span></label>
+      <p class="field-help">Testovací databáze: ${s.seededAt ? `založena ${esc(czDateTime(s.seededAt))} kopií provozu. Při dalším zapnutí se použije znovu (s dosavadními testovacími daty).` : "zatím není – vznikne kopií provozu při prvním zapnutí."}</p>
+      <div class="test-actions">
+        <button class="primary-button" type="button" id="testToggle"${s.locked && !s.enabled ? " disabled" : ""}>${s.enabled ? "Vypnout testovací režim" : "Zapnout testovací režim"}</button>
+        ${s.enabled ? '<button class="secondary-button" type="button" id="testSavePayments">Uložit platby</button>' : ""}
+        ${s.seededAt ? '<button class="text-button" type="button" id="testReset">Založit testovací databázi znovu z provozu</button>' : ""}
+      </div>`;
+    const payments = () => qs('input[name="testPayments"]:checked', panel)?.value || s.payments;
+    const askOtp = () => { const otp = window.prompt("Kód z ověřovací aplikace (2FA):"); return otp === null ? null : otp.trim(); };
+    const run = async (button, path, method, body, message) => {
+      const otp = askOtp();
+      if (otp === null) return;
+      button.disabled = true;
+      try {
+        await api(path, { method, body: { ...body, otp } });
+        showToast(message, "success");
+        setTimeout(() => location.reload(), 900); // celý portál teď běží nad druhou databází
+      } catch (error) { showToast(error.message, "error"); button.disabled = false; }
+    };
+    qs("#testToggle", panel).addEventListener("click", (event) => {
+      const enable = !s.enabled;
+      const text = enable
+        ? `Zapnout testovací režim?\n\nCelý web přejde na testovací databázi: rybáři uvidí testovací verzi a provozní místenky v ní nebudou (ani pro kontrolu porybným). Platby v testu: ${payments() === "fio" ? "OSTRÉ přes Fio" : "simulované"}.\n\nZapněte jen na testovacím webu, nebo na nezbytně krátkou dobu.`
+        : "Vypnout testovací režim?\n\nWeb se vrátí na provozní databázi. Testovací data zůstanou odděleně pro příští test.";
+      if (!window.confirm(text)) return;
+      run(event.currentTarget, "/manage/test-mode", "PUT", { enabled: enable, payments: payments() }, enable ? "Testovací režim zapnut." : "Testovací režim vypnut.");
+    });
+    qs("#testSavePayments", panel)?.addEventListener("click", (event) => run(event.currentTarget, "/manage/test-mode", "PUT", { payments: payments() }, "Platby v testu uloženy."));
+    qs("#testReset", panel)?.addEventListener("click", (event) => {
+      if (!window.confirm("Založit testovací databázi znovu z provozu?\n\nVšechna testovací data (místenky, platby, testovací účty) se smažou a nahradí kopií aktuálního nastavení a účtů správců z provozu.")) return;
+      run(event.currentTarget, "/manage/test-mode/reset", "POST", {}, "Testovací databáze založena znovu z provozu.");
+    });
+  } catch (error) { panel.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
+}
+
+const ACTION_LABELS = { test_mode_enabled: "zapnutí testovacího režimu", test_mode_disabled: "vypnutí testovacího režimu", test_mode_payments: "platby v testu", test_mode_reset: "nová testovací databáze", roles_changed: "změna rolí", roles_forced: "role (příkazová řádka)", staff_invited: "pozvání do správy", admin_setup: "založení admina", settings_changed: "nastavení", ticket_seized: "zadržení místenky", ticket_cancelled: "zrušení místenky", ticket_catches_corrected: "oprava úlovků", ticket_suspicion_cleared: "zrušení příznaku podezřelá",
   payment_resolved: "vyřešení platby", member_blocked: "blokace člena", member_blocked_auto: "automatická blokace", member_unblocked: "zrušení blokace", backup_created: "záloha", backup_deleted: "smazání zálohy", season_created: "sezona", season_updated: "úprava sezony", season_deleted: "smazání sezony",
   closure_created: "uzavření revíru", closure_deleted: "zrušení uzavření", announcement_created: "nová zpráva", announcement_updated: "úprava zprávy", announcement_deleted: "smazání zprávy", vouchers_created: "nové poukazy", voucher_voided: "zneplatnění poukazu",
   stocking_created: "zarybnění", stocking_updated: "úprava zarybnění", stocking_deleted: "smazání zarybnění", stocking_budget_set: "rozpočet zarybnění", report_created: "uzávěrka", season_report_created: "uzávěrka sezony",

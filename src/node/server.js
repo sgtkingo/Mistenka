@@ -13,6 +13,7 @@
 //   MISTENKA_JOBS_INTERVAL_MS interval plánovaných úloh (0 = vypnuto)
 //   MISTENKA_RATE_LIMIT=0     vypne omezení počtu požadavků (jen pro testy)
 //   FIO_TOKEN=...             token Fio API (jen při payment.provider = "fio")
+//   MISTENKA_TEST_MODE=0      zakáže testovací režim (Admin → Testování) – ostrý server
 //   MISTENKA_GITHUB_TOKEN, MISTENKA_GITHUB_REPO   hlášení chyb → GitHub issues (token s právem issues, "vlastník/repozitář")
 //   MISTENKA_SECRET_KEY=...   klíč pro šifrování hesel SMTP účtů (jinak se vygeneruje DATA_DIR/secret.key)
 const http = require("node:http");
@@ -20,7 +21,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { loadConfig, publicConfig, getRevir } = require("./lib/config");
 const { openDatabase, serviceLaunched, seasonOpen } = require("./lib/db");
-const { createProvider } = require("./lib/payments");
+const { createProvider, createFakeProvider } = require("./lib/payments");
+const { PAYMENTS, VS_RANGES, isTestVs, createTestModeState, seedTestDatabase, copySessions, createForwardedProvider, testDir } = require("./lib/test-mode");
 const { createFileMailer } = require("./lib/emails");
 const { createService, ApiError } = require("./lib/service");
 const { createAccounts } = require("./lib/accounts");
@@ -41,28 +43,95 @@ const DEV = process.env.MISTENKA_DEV === "1";
 const CRON_KEY = process.env.MISTENKA_CRON_KEY || "";
 const FRONTEND = path.join(__dirname, "..", "frontend");
 
-const config = loadConfig();
-const db = openDatabase(DATA_DIR);
-const provider = createProvider(config);
-// E-maily: vlastní SMTP klient přes účty z portálu; ve vývoji (MISTENKA_DEV) jen soubory v data/outbox.
+// E-maily: vlastní SMTP klient přes účty z portálu; ve vývoji (MISTENKA_DEV) jen soubory v <data>/outbox.
 const MAIL_TRANSPORT = process.env.MISTENKA_MAIL_TRANSPORT || (DEV ? "file" : "smtp");
-const mailer = MAIL_TRANSPORT === "file" ? createFileMailer(path.join(DATA_DIR, "outbox")) : createSmtpMailer();
-const settings = createSettings({ db, config }); // nastavení z portálu (B5) přepíše hodnoty ze souboru
-const operations = createOperations({ db, config, appUrl: APP_URL });
-const mailAccounts = createMailAccounts({ db, config, dataDir: DATA_DIR, mailer }); // SMTP účty (Admin → Emailoví klienti)
-const service = createService({ db, config, provider, mailer, appUrl: APP_URL, operations, settings, mailAccounts });
-const accounts = createAccounts({ db, config, appUrl: APP_URL });
-const reports = createReports({ db, config, appUrl: APP_URL });
-// Hlášení chyb; GitHub issue jen s MISTENKA_GITHUB_TOKEN a MISTENKA_GITHUB_REPO (vlastník/repozitář).
-const bugs = createBugs({ db, config, appUrl: APP_URL, github: { token: process.env.MISTENKA_GITHUB_TOKEN || "", repo: process.env.MISTENKA_GITHUB_REPO || "" } });
-const backups = createBackups({ db, dataDir: DATA_DIR, onRestored: () => settings.reload() });
-if (db.autoRestored) accounts.notifyAutoRestore(db.autoRestored);
-reports.onSeasonReport((report) => backups.afterSeasonReport(report)); // trvalá záloha po každé uzávěrce
-service.addJob("seasons", () => reports.closeSeasons()); // automatická uzávěrka po skončení sezony
-service.addJob("backups", () => backups.daily()); // denní záloha během sezony (drží se 2)
-const retention = createRetention({ db, config, backups });
-service.addJob("retention", () => retention.run()); // GDPR: anonymizace a mazání po uplynutí lhůt
-service.addJob("accounts", () => accounts.cleanup());
+
+// Kontext = databáze se všemi službami nad ní. Provoz běží vždy (DATA_DIR), testovací kontext (DATA_DIR/test)
+// jen při zapnutém testovacím režimu – pak obslouží všechny požadavky (viz lib/test-mode.js).
+function buildContext({ dataDir, test = false, payments = "fake" }) {
+  const config = loadConfig();
+  if (test) for (const target of [config.source.raw.payment, config.payment]) Object.assign(target, { provider: payments, testMode: true });
+  const db = openDatabase(dataDir);
+  const provider = test ? (payments === "fio" ? createForwardedProvider() : createFakeProvider()) : createProvider(config);
+  const mailer = MAIL_TRANSPORT === "file" ? createFileMailer(path.join(dataDir, "outbox")) : createSmtpMailer();
+  const settings = createSettings({ db, config }); // nastavení z portálu (B5) přepíše hodnoty ze souboru
+  const operations = createOperations({ db, config, appUrl: APP_URL });
+  // SMTP účty (Admin → Emailoví klienti); klíč k heslům je společný – testovací databáze má kopie účtů z provozu.
+  const mailAccounts = createMailAccounts({ db, config, dataDir: DATA_DIR, mailer });
+  const service = createService({ db, config, provider, mailer, appUrl: APP_URL, operations, settings, mailAccounts, vsRange: VS_RANGES[test ? "test" : "production"], forwardTransaction: test ? null : forwardToTest });
+  const accounts = createAccounts({ db, config, appUrl: APP_URL });
+  const reports = createReports({ db, config, appUrl: APP_URL });
+  // Hlášení chyb; GitHub issue jen s MISTENKA_GITHUB_TOKEN a MISTENKA_GITHUB_REPO (vlastník/repozitář).
+  const bugs = createBugs({ db, config, appUrl: APP_URL, github: { token: process.env.MISTENKA_GITHUB_TOKEN || "", repo: process.env.MISTENKA_GITHUB_REPO || "" } });
+  const backups = createBackups({ db, dataDir, onRestored: () => settings.reload() });
+  if (db.autoRestored) accounts.notifyAutoRestore(db.autoRestored);
+  reports.onSeasonReport((report) => backups.afterSeasonReport(report)); // trvalá záloha po každé uzávěrce
+  service.addJob("seasons", () => reports.closeSeasons()); // automatická uzávěrka po skončení sezony
+  service.addJob("backups", () => backups.daily()); // denní záloha během sezony (drží se 2)
+  const retention = createRetention({ db, config, backups });
+  service.addJob("retention", () => retention.run()); // GDPR: anonymizace a mazání po uplynutí lhůt
+  service.addJob("accounts", () => accounts.cleanup());
+  return { test, payments, config, db, provider, settings, operations, mailAccounts, service, accounts, reports, bugs, backups };
+}
+
+const testMode = createTestModeState(DATA_DIR);
+const prod = buildContext({ dataDir: DATA_DIR });
+let testCtx = null;
+// Testovací kontext (otevře se při prvním použití; změna plateb v testu ho sestaví znovu).
+function testContext() {
+  const state = testMode.get();
+  if (testCtx && testCtx.payments === state.payments) return testCtx;
+  if (testCtx) testCtx.db.close();
+  if (!testMode.testDatabaseExists()) { seedTestDatabase(prod.db, DATA_DIR); testMode.save({ seededAt: new Date().toISOString() }); }
+  testCtx = buildContext({ dataDir: testDir(DATA_DIR), test: true, payments: state.payments });
+  return testCtx;
+}
+const current = () => (testMode.get().enabled ? testContext() : prod);
+
+// Ostré platby v testu: provoz stahuje z Fio i během testu a transakci s testovacím VS předá testovací databázi.
+function forwardToTest(tx) {
+  const state = testMode.get();
+  if (!state.enabled || state.payments !== "fio" || !isTestVs(tx.variableSymbol)) return null;
+  const vs = String(tx.variableSymbol).replace(/^0+/, "");
+  if (prod.db.prepare("SELECT 1 FROM tickets WHERE variable_symbol = ?").get(vs)) return null; // starší provozní místenka s VS na 9
+  return testContext().service.processTransaction(tx);
+}
+// Plánované úlohy: provoz vždy (platby, rezervace, e-maily), test jen při zapnutém režimu.
+async function runAllJobs(options = {}) {
+  const report = await prod.service.runJobs(options);
+  if (testMode.get().enabled) report.test = await testContext().service.runJobs(options);
+  return report;
+}
+
+const actorName = (user) => `${user.first_name || ""} ${user.last_name || ""}`.trim() || user.email; // uživatel relace (řádek tabulky users)
+// Ostré platby v testu potřebují Fio v provozu; ve vývoji je zastoupí falešná banka provozu (/dev/payments).
+const fioAvailable = () => prod.provider.name === "fio" || DEV;
+function testModeView() {
+  const state = testMode.get();
+  return { enabled: state.enabled, payments: state.payments, locked: testMode.locked, since: state.enabled ? state.since : null, by: state.enabled ? state.by : null,
+    seededAt: testMode.testDatabaseExists() ? state.seededAt : null, fioAvailable: fioAvailable() };
+}
+function setTestMode(actor, body = {}) {
+  const before = testMode.get();
+  const enabled = body.enabled === undefined ? before.enabled : body.enabled === true;
+  const payments = body.payments === undefined ? before.payments : String(body.payments);
+  if (!PAYMENTS.includes(payments)) throw new ApiError(400, "invalid_payments", "Platby v testu musí být „fake“ (simulované) nebo „fio“ (ostré).");
+  if (payments === "fio" && !fioAvailable()) throw new ApiError(400, "fio_unavailable", "Ostré platby v testu potřebují platby přes Fio (FIO_TOKEN).");
+  if (enabled && testMode.locked) throw new ApiError(403, "test_mode_locked", "Testovací režim je na tomto serveru zakázaný (MISTENKA_TEST_MODE=0).");
+  const now = new Date().toISOString();
+  testMode.save({ enabled, payments, ...(enabled && !before.enabled ? { since: now, by: actorName(actor) } : {}) });
+  if (enabled && !before.enabled) copySessions(path.join(DATA_DIR, "mistenka.sqlite"), testContext().db);
+  if (enabled !== before.enabled) prod.accounts.notifyTestMode(actor, enabled ? "test_mode_enabled" : "test_mode_disabled", { payments, by: actorName(actor) });
+  else if (payments !== before.payments) prod.accounts.notifyTestMode(actor, "test_mode_payments", { payments, by: actorName(actor) });
+  return testModeView();
+}
+function resetTestDatabase(actor) {
+  if (testCtx) { testCtx.db.close(); testCtx = null; }
+  seedTestDatabase(prod.db, DATA_DIR);
+  testMode.save({ seededAt: new Date().toISOString() });
+  prod.accounts.notifyTestMode(actor, "test_mode_reset", { by: actorName(actor) });
+  return testModeView();
+}
 
 // ---------- omezení počtu požadavků (v paměti, na IP) ----------
 const RATE_LIMITS = process.env.MISTENKA_RATE_LIMIT !== "0"; // testy limity vypínají
@@ -134,6 +203,9 @@ async function handleApi(req, res, url, ip) {
   const { pathname } = url;
   const method = req.method;
   let m;
+  // Databáze podle režimu (provoz / testovací režim); požadavek ji drží až do konce, i když se režim mezitím přepne.
+  const c = current();
+  const { config, db, service, accounts, operations, settings, mailAccounts, reports, bugs, backups } = c;
 
   // Přihlášený uživatel (nebo null). Měnící požadavky s relací musí nést CSRF token z /auth/me.
   const ctx = accounts.resolveSession(cookieOf(req, SESSION_COOKIE));
@@ -321,6 +393,10 @@ async function handleApi(req, res, url, ip) {
   }
   if ((m = pathname.match(/^\/api\/manage\/email\/accounts\/(\d+)\/verify$/)) && method === "POST") return send(res, 200, await mailAccounts.verify(accounts.requireManager(ctx), m[1], await readBody(req)));
   if (pathname === "/api/manage/email/senders" && method === "PUT") return send(res, 200, mailAccounts.setSenders(accounts.requireManager(ctx), await readBody(req)));
+  // Testovací režim (jen admin): stav, přepnutí (s kódem 2FA) a nové založení testovací databáze z provozu.
+  if (pathname === "/api/manage/test-mode" && method === "GET") { accounts.requireAdmin(ctx); return send(res, 200, testModeView()); }
+  if (pathname === "/api/manage/test-mode" && method === "PUT") { const body = await readBody(req); return send(res, 200, setTestMode(accounts.confirmOtp(ctx, body.otp), body)); }
+  if (pathname === "/api/manage/test-mode/reset" && method === "POST") { const body = await readBody(req); return send(res, 200, resetTestDatabase(accounts.confirmOtp(ctx, body.otp))); }
   if (pathname === "/api/manage/audit" && method === "GET") return send(res, 200, accounts.listAudit(ctx, { limit: url.searchParams.get("limit"), action: url.searchParams.get("action") || "" }));
 
   // Zarybnění, přehledy, uzávěrky (B6).
@@ -371,15 +447,22 @@ async function handleApi(req, res, url, ip) {
 
   if (pathname === "/api/jobs/run" && method === "POST") {
     if (!CRON_KEY || req.headers["x-mistenka-cron-key"] !== CRON_KEY) throw new ApiError(404, "not_found", "Nenalezeno.");
-    return send(res, 200, await service.runJobs());
+    return send(res, 200, await runAllJobs());
   }
   if (pathname === "/api/dev/payments" && method === "POST") {
-    return send(res, 200, await service.simulatePayment(await readBody(req)));
+    const body = await readBody(req);
+    if (c.test && c.payments === "fio") {
+      // Ostré platby v testu: příchozí platbu simuluje falešná banka provozu (jen vývoj) a provoz ji předá testu.
+      if (!DEV || prod.provider.name !== "fake") throw new ApiError(404, "not_found", "Simulace plateb je dostupná jen s falešnou bankou.");
+      const ticket = body.code ? db.prepare("SELECT variable_symbol, amount_due_halere FROM tickets WHERE code = ?").get(String(body.code).toUpperCase()) : null;
+      return send(res, 200, await prod.service.simulatePayment({ variableSymbol: body.variableSymbol || ticket?.variable_symbol, amountHalere: body.amountHalere ?? ticket?.amount_due_halere, currency: body.currency }));
+    }
+    return send(res, 200, await service.simulatePayment(body));
   }
   if (pathname === "/api/dev/clock" && method === "POST" && DEV) {
     const body = await readBody(req);
     try { time.setClock(body.now || null); } catch { throw new ApiError(400, "invalid_time", "Neplatný čas."); }
-    await service.runJobs({ force: true });
+    await runAllJobs({ force: true });
     return send(res, 200, { now: time.now().toISOString(), today: time.pragueToday() });
   }
   if (pathname === "/api/dev/vouchers" && method === "POST" && DEV) {
@@ -400,7 +483,7 @@ async function handleApi(req, res, url, ip) {
     return send(res, 200, { emails: rows.map((r) => ({ kind: r.kind, to: r.to_email, subject: r.subject, text: r.body_text, html: r.body_html, createdAt: r.created_at })) });
   }
   if (pathname === "/api/dev/jobs" && method === "POST" && DEV) {
-    return send(res, 200, await service.runJobs({ force: true }));
+    return send(res, 200, await runAllJobs({ force: true }));
   }
   throw new ApiError(404, "not_found", "Nenalezeno.");
 }
@@ -420,17 +503,18 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-const interval = Number(process.env.MISTENKA_JOBS_INTERVAL_MS ?? (provider.name === "fio" ? 31_000 : 10_000));
-if (interval > 0) setInterval(() => { service.runJobs().catch((error) => console.error("[úlohy]", error)); }, interval).unref();
+const interval = Number(process.env.MISTENKA_JOBS_INTERVAL_MS ?? (prod.provider.name === "fio" ? 31_000 : 10_000));
+if (interval > 0) setInterval(() => { runAllJobs().catch((error) => console.error("[úlohy]", error)); }, interval).unref();
 
 server.listen(PORT, () => {
-  console.log(`Místenka (${config.organization.shortName}) běží na ${APP_URL} · port ${server.address().port} · platby: ${provider.name}${DEV ? " · DEV" : ""}`);
+  const state = testMode.get();
+  console.log(`Místenka (${prod.config.organization.shortName}) běží na ${APP_URL} · port ${server.address().port} · platby: ${prod.provider.name}${DEV ? " · DEV" : ""}${state.enabled ? ` · TESTOVACÍ REŽIM (platby ${state.payments})` : ""}`);
   printSetupLink();
 });
 
 // Dokud neexistuje admin, vypíše jednorázový odkaz na průvodce založením (platí 60 minut, nový při každém startu).
 function printSetupLink() {
-  const setup = accounts.createSetupToken();
+  const setup = prod.accounts.createSetupToken();
   if (!setup) return;
   console.log("");
   console.log("  Zatím neexistuje žádný admin. Založte ho průvodcem (odkaz platí " + setup.minutes + " minut, jen jednou):");

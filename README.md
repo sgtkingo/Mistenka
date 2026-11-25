@@ -93,7 +93,7 @@ Rybář platí převodem podle QR platby (SPAYD) s jedinečným variabilním sym
 
 Produkční plugin je v `src/wordpress-plugin/mistenka`: `python scripts/build-plugin.py` → `dist/mistenka.zip` s vaší lokální `config/organization.json` (balíček pro vlastní MO; `--example` místo ní zabalí vzor).
 
-Obecné balíčky pro GitHub release (konfigurace ze vzoru, bez údajů konkrétní MO): `python scripts/build-plugin.py --release` → `dist/mistenka.zip` (WP, Fio), `dist/mistenka-fake-bank.zip` (WP, testovací web) a `dist/mistenka-node.zip` (Node verze z commitu HEAD; samotný `--node`). Instalace, konstanty ve wp-config.php, cron a lokální Docker: [src/wordpress-plugin/README.md](src/wordpress-plugin/README.md).
+Obecné balíčky pro GitHub release (konfigurace ze vzoru, bez údajů konkrétní MO): `python scripts/build-plugin.py --release` → `dist/mistenka.zip` (WP – ostrý i testovací web; testovací web zapne v portálu testovací režim, Admin → Testování) a `dist/mistenka-node.zip` (Node verze z commitu HEAD; samotný `--node`). Instalace, konstanty ve wp-config.php, cron a lokální Docker: [src/wordpress-plugin/README.md](src/wordpress-plugin/README.md).
 
 ```bash
 cd dev/wordpress && docker compose up -d && sh setup.sh && sh reset.sh

@@ -22,7 +22,7 @@ function showError(message) {
 }
 
 // Falešná banka (testovací web): varování, že místenky neplatí.
-loadConfig().then((config) => qs("#testModeBanner").classList.toggle("hidden", config.payment?.mode !== "fake")).catch(() => {});
+loadConfig().then((config) => qs("#testModeBanner").classList.toggle("hidden", !(config.testMode || config.payment?.mode === "fake"))).catch(() => {});
 
 async function loadStatus() {
   if (!/^[A-Z0-9]{6}$/.test(code)) return showError("Chybí platný šestimístný kód místenky.");

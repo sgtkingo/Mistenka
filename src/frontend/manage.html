@@ -47,6 +47,7 @@
         <button class="manage-nav-item admin-only hidden" type="button" data-section="bugs">Hlášení chyb <span class="nav-count hidden" id="bugCount"></span></button>
         <button class="manage-nav-item admin-only hidden" type="button" data-section="backups">Zálohy</button>
         <button class="manage-nav-item admin-only hidden" type="button" data-section="audit">Audit změn</button>
+        <button class="manage-nav-item admin-only hidden" type="button" data-section="testing">Testování</button>
       </nav>
 
       <section class="panel-card manage-section" id="section-tickets">
@@ -277,6 +278,12 @@
         <div class="panel-heading"><div><span class="section-kicker">Admin</span><h1>Audit změn</h1></div></div>
         <p class="panel-intro">Posledních 300 změn: role, nastavení, platby, zadržení, blokace, zálohy …</p>
         <div id="auditList"></div>
+      </section>
+
+      <section class="panel-card manage-section hidden" id="section-testing">
+        <div class="panel-heading"><div><span class="section-kicker">Admin</span><h1>Testování</h1></div></div>
+        <p class="panel-intro">V testovacím režimu běží celý web nad <b>oddělenou testovací databází</b>: rybáři vidí testovací verzi s upozorněním, místenky z ní neopravňují k lovu a provozní data zůstávají nedotčená (provozní místenky v testu nejsou – ani pro kontrolu porybným). Testovací databáze vzniká kopií nastavení, revírů, map, sezon, e-mailových účtů a účtů správců z provozu – bez místenek, plateb a rybářských účtů. Platby a e-maily provozu se během testu zpracovávají dál. Zapnutí a vypnutí se potvrzuje kódem 2FA, dostanou o něm e-mail všichni admini a zapíše se do auditu.</p>
+        <div id="testingPanel"></div>
       </section>
     </div>
   </main>

@@ -403,6 +403,13 @@ function createAccounts({ db, config, appUrl }) {
     const mail = emails.databaseAutoRestored(config, info);
     for (const admin of db.prepare("SELECT email FROM users WHERE ',' || roles || ',' LIKE '%,admin,%'").all()) queueEmail(admin.email, "database_auto_restored", mail);
   }
+  // Testovací režim zapnut / vypnut / obnoven: audit a e-mail všem adminům (volá se nad provozní databází).
+  function notifyTestMode(actor, action, detail) {
+    audit(actor?.id ?? null, action, "test_mode", null, detail);
+    if (action !== "test_mode_enabled" && action !== "test_mode_disabled") return; // změna plateb a obnova jen do auditu
+    const mail = emails.testModeChanged(config, { enabled: action === "test_mode_enabled", actorName: detail?.by || "systém", payments: detail?.payments, at: iso(time.now()), appUrl });
+    for (const admin of db.prepare("SELECT email FROM users WHERE ',' || roles || ',' LIKE '%,admin,%'").all()) queueEmail(admin.email, "test_mode_changed", mail);
+  }
   // Audit změn (jen admin): role, platby, nastavení, zálohy, zadržení, blokace …
   function listAudit(ctx, { limit = 200, action = "" } = {}) {
     requireAdmin(ctx);
@@ -625,7 +632,7 @@ function createAccounts({ db, config, appUrl }) {
   return {
     resolveSession, register, verifyEmail, login, requestMagicLink, magicLogin, requestPasswordReset, resetPassword, logout,
     me, updateProfile, confirmEmailChange, changePassword, deleteAccount, twoFactorSetup, twoFactorEnable, twoFactorDisable,
-    listUsers, setRoles, inviteStaff, requireWarden, requireManager, requireAdmin, listAudit, confirmOtp, notifyAutoRestore, forceRoles, cleanup, requireUser,
+    listUsers, setRoles, inviteStaff, requireWarden, requireManager, requireAdmin, listAudit, confirmOtp, notifyAutoRestore, notifyTestMode, forceRoles, cleanup, requireUser,
     setupStatus, createSetupToken, setupTwoFactor, completeSetup,
     requestWarden, listNotifications, decideNotification, viewRequestByToken, decideRequestByToken
   };

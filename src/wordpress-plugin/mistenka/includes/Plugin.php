@@ -38,7 +38,9 @@ final class Plugin
 
     public static function activate(): void
     {
+        $fresh = !get_option(self::DB_OPTION); // nová instalace = ostrý web; po aktualizaci se průvodce zeptá (TestMode::answered)
         Db::install();
+        if ($fresh && !TestMode::answered()) TestMode::answer(false);
         update_option(self::DB_OPTION, Db::SCHEMA_VERSION, false);
         Env::dataDir();
         self::writeHtaccess();
@@ -65,8 +67,13 @@ final class Plugin
     public static function maybeUpgrade(): void
     {
         if ((int) get_option(self::DB_OPTION, 0) !== Db::SCHEMA_VERSION) {
-            Db::install();
+            TestMode::withMode(false, fn() => Db::install());
             update_option(self::DB_OPTION, Db::SCHEMA_VERSION, false);
+        }
+        // Testovací databáze (pokud existuje) dostane stejné schéma.
+        if ((int) get_option(TestMode::DB_OPTION, Db::SCHEMA_VERSION) !== Db::SCHEMA_VERSION && TestMode::testDatabaseExists()) {
+            TestMode::withMode(true, fn() => Db::install());
+            update_option(TestMode::DB_OPTION, Db::SCHEMA_VERSION, false);
         }
     }
 
@@ -79,7 +86,7 @@ final class Plugin
     // Záloha za cron hostingu (WP-cron běží jen při návštěvě webu); souběhu brání zámek v App::runJobs.
     public static function wpCronJobs(): void
     {
-        try { App::get()->runJobs(); } catch (\Throwable $e) { error_log('[Místenka WP-cron] ' . $e->getMessage()); }
+        try { App::runAllJobs(); } catch (\Throwable $e) { error_log('[Místenka WP-cron] ' . $e->getMessage()); }
     }
 
     // ---------- aplikace na subdoméně ----------

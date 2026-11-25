@@ -21,7 +21,7 @@ Produkční implementace Místenky. Chování je stejné jako u Node verze v `sr
 ## Instalace
 
 1. `python scripts/build-plugin.py` → `dist/mistenka.zip` (PHP + frontend + konfigurace MO z lokálního `config/organization.json`, který není v repu – vytvořte ho z `config/organization.json.example`). Obecný balíček se vzorem: `--example` (tak se staví GitHub release).
-2. Adresu subdomény stačí zadat po aktivaci v průvodci (`organization.appUrl` v konfiguraci je jen výchozí hodnota; obecný balíček má vzorovou `mistenka.example.cz`, kterou průvodce označí k přepsání). Ostatní údaje (účet, e-maily, GDPR) jdou změnit i v portálu. ZIP má vždy `payment.provider: "fio"`, i když repo nechává `fake` pro lokální Node. Falešnou banku, kde může místenku „zaplatit“ kdokoli, dá do ZIPu jen `--fake-bank` (testovací web s `MISTENKA_DEV`).
+2. Adresu subdomény stačí zadat po aktivaci v průvodci (`organization.appUrl` v konfiguraci je jen výchozí hodnota; obecný balíček má vzorovou `mistenka.example.cz`, kterou průvodce označí k přepsání). Ostatní údaje (účet, e-maily, GDPR) jdou změnit i v portálu. ZIP má vždy `payment.provider: "fio"`, i když repo nechává `fake` pro lokální Node. Balíček je jeden pro ostrý i testovací web: **testovací web** zapne v portálu testovací režim (Admin → Testování – oddělená testovací databáze, simulované nebo ostré platby; viz [docs/API.md](../../docs/API.md#testovací-režim)). Na ostrém webu ho lze úplně zakázat konstantou `MISTENKA_TEST_MODE` (níže).
 3. wp-config.php (nad řádek „That's all, stop editing!“):
 
    ```php
@@ -32,6 +32,7 @@ Produkční implementace Místenky. Chování je stejné jako u Node verze v `sr
    // define('MISTENKA_APP_URL', 'https://mistenka.rybarikarvina.cz');  // pevná adresa aplikace (jinak průvodce)
    // define('MISTENKA_GITHUB_TOKEN', '…');  // hlášení chyb → GitHub issues (s MISTENKA_GITHUB_REPO)
    // define('MISTENKA_GITHUB_REPO', 'vlastnik/repozitar');
+   // define('MISTENKA_TEST_MODE', false);  // ostrý web: testovací režim nejde zapnout
    // define('MISTENKA_MAPY_API_KEY', '…');  // podklad interaktivní mapy revíru z Mapy.com (jinak OpenStreetMap); omezte klíč na doménu
    // define('MISTENKA_DATA_DIR', '/cesta/mimo/web/mistenka-data');  // výchozí wp-content/mistenka-data (+ .htaccess deny)
    ```

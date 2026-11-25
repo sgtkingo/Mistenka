@@ -438,6 +438,7 @@ final class Config
             ],
             'privacy' => $config['privacy'],
             'payment' => ['mode' => $config['payment']['provider'], 'reservationMinutes' => $config['payment']['reservationMinutes']],
+            'testMode' => !empty($config['payment']['testMode']), // testovací režim: oddělená databáze, místenky neplatí
             'reviry' => $reviry,
             // Podklad interaktivní mapy: Mapy.com s API klíčem (MISTENKA_MAPY_API_KEY ve wp-config.php), jinak OpenStreetMap.
             'mapTiles' => Env::mapyApiKey() !== '' ? ['provider' => 'mapy', 'apiKey' => Env::mapyApiKey()] : ['provider' => 'osm'],

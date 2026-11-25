@@ -130,7 +130,7 @@ Není součástí API. Frontend ji načítá přímo z [Open-Meteo](https://open
 ## Endpointy
 
 ### `GET /config`
-Veřejná konfigurace: `organization` (`name`, `shortName`, `web`, `privacyUrl`, `contact`), `payment` (`mode`: `fake` | `fio`, `reservationMinutes`), `reviry[]` (včetně `species`), `today` (Praha), `now`, `devMode`, `service: { launched, seasonOpen }` (viz Spuštění služby; `seasonOpen` = dnes je otevřená některá sezona). Nikdy neobsahuje číslo účtu, IBAN ani tokeny.
+Veřejná konfigurace: `organization` (`name`, `shortName`, `web`, `privacyUrl`, `contact`), `payment` (`mode`: `fake` | `fio`, `reservationMinutes`), `reviry[]` (včetně `species`), `today` (Praha), `now`, `devMode`, `testMode` (testovací režim – viz Testovací režim), `service: { launched, seasonOpen }` (viz Spuštění služby; `seasonOpen` = dnes je otevřená některá sezona). Nikdy neobsahuje číslo účtu, IBAN ani tokeny.
 
 GPS: revír bez podrevírů má společnou `gps: { lat, lon, label? }`; revír s podrevíry má `gps` u každé položky `subdistrictList` (společná GPS je pak jen pro počasí a jako náhradní poloha podrevíru bez GPS). Server kontroluje rozsah (šířka −90 až 90, délka −180 až 180). E-mail `ticket_issued`, PDF i rekapitulace zvýrazní **místo lovu** – podrevír místenky s jeho GPS, jinak celý revír s GPS revíru.
 
@@ -572,9 +572,26 @@ Připomínka odevzdání chodí i zadrženým místenkám (po skončení dne lov
 
 Zobrazení jména a počtu viditelných znaků lístku ve veřejné kontrole řídí konfigurace `publicCheck` (`showFullName`, `memberIdVisibleChars`).
 
+## Testovací režim
+
+Jeden balíček pro ostrý i testovací web. V testovacím režimu běží **celý web nad oddělenou testovací databází** (Node `DATA_DIR/test/mistenka.sqlite`, WordPress tabulky `{prefix}mistenka_test_*`; zálohy a e-maily v podsložce `test/` datové složky). Provozní data test nevidí ani nemění: provozní místenky v testu nejsou (ani pro porybného) a testovací místenky po vypnutí v provozu nejsou. Stav přepínače je mimo obě databáze (Node `DATA_DIR/test-mode.json`, WordPress option `mistenka_test_mode`).
+
+- **Testovací databáze** vzniká při prvním zapnutí kopií provozu: nastavení, revíry, mapy, sezony a uzavření, zarybnění, vývěska, e-mailové účty a účty správců (admin, správce, porybný) i s relacemi. Nekopírují se místenky, platby, úlovky, kontroly, poukazy, blokace, uzávěrky, zálohy, hlášení chyb, audit, rybářské účty ani jednorázové odkazy. Při dalším zapnutí se použije znovu (relace správců se doplní z provozu); `POST /manage/test-mode/reset` ji založí znovu.
+- **Platby v testu**: `fake` (simulované – `/dev/payments`, tlačítko „Simulovat platbu“) nebo `fio` (ostré). Fio vydá každou transakci jen jednou (endpoint `last`), proto banku stahuje **jen provoz, i během testu**, a transakci s testovacím variabilním symbolem předá testovací databázi (výsledek v úloze plateb `test:<výsledek>`). Variabilní symboly: provoz `1000000000–8999999999`, test `9000000000–9999999999`; VS na 9, který patří starší provozní místence, zpracuje provoz. `fio` jde jen s platbami přes Fio v provozu (ve vývoji je zastoupí falešná banka provozu: `/dev/payments` v testu s `fio` vloží platbu do provozní fronty).
+- Plánované úlohy běží pro provoz vždy, pro test jen při zapnutém režimu. E-maily z testu mají `[TEST]` v předmětu a upozornění v textu, PDF má testovací značku, každá stránka pruh „Testovací režim“.
+- Zapnutí, vypnutí, změna plateb a nová testovací databáze: jen admin s kódem 2FA (`401 otp_required` / `invalid_otp`); audit v provozní databázi (`test_mode_enabled`, `test_mode_disabled`, `test_mode_payments`, `test_mode_reset`), při zapnutí a vypnutí e-mail všem adminům (`test_mode_changed`, skupina Upozornění správců).
+- **Zákaz na ostrém webu**: WordPress `define('MISTENKA_TEST_MODE', false)` ve wp-config.php, Node `MISTENKA_TEST_MODE=0` → zapnutí `403 test_mode_locked`, případně už zapnutý režim se ignoruje.
+- WordPress po aktualizaci ze starší verze (dřív zvláštní balíček s falešnou bankou) se jednou zeptá v Nastavení → Místenka, jestli jde o ostrý, nebo testovací web; nová instalace je ostrá.
+
+| Endpoint | Tělo | Odpověď |
+| --- | --- | --- |
+| `GET /manage/test-mode` | – | `{ enabled, payments: "fake" \| "fio", locked, since, by, seededAt, fioAvailable }` |
+| `PUT /manage/test-mode` | `{ enabled?, payments?, otp }` | stav jako `GET`; chyby `400 invalid_payments`, `400 fio_unavailable`, `403 test_mode_locked` |
+| `POST /manage/test-mode/reset` | `{ otp }` | stav jako `GET` (testovací databáze znovu z provozu) |
+
 ## Platby převodem
 
-- Variabilní symbol: náhodné 10místné číslo, unikátní, nikdy se neopakuje. QR platba ve formátu SPAYD; IBAN se počítá z čísla účtu a kódu banky v konfiguraci. Texty v QR jsou bez diakritiky.
+- Variabilní symbol: náhodné 10místné číslo, unikátní, nikdy se neopakuje (provoz nezačíná 9 – viz Testovací režim). QR platba ve formátu SPAYD; IBAN se počítá z čísla účtu a kódu banky v konfiguraci. Texty v QR jsou bez diakritiky.
 - Zdroj plateb (`payment.provider`): `fake` (vývoj; platby se vkládají přes `/dev/payments`) nebo `fio` (Fio API Bankovnictví, endpoint `last`, token jen pro čtení v proměnné prostředí / `wp-config.php`, max. 1 dotaz za 30 s).
 - Párování každé příchozí transakce (deduplikace podle ID transakce):
 
@@ -639,7 +656,7 @@ Jen pro vývoj a testy. Na produkci musí být nedostupné (`404`).
 
 | Endpoint | Dostupnost | Účel |
 | --- | --- | --- |
-| `POST /dev/payments` `{ code }` nebo `{ variableSymbol, amountHalere, currency? }` | `payment.provider = fake` | simulace příchozí platby → `{ result }` |
+| `POST /dev/payments` `{ code }` nebo `{ variableSymbol, amountHalere, currency? }` | `payment.provider = fake`, nebo testovací režim se simulovanými platbami (v testu s ostrými platbami jen ve vývojovém režimu přes falešnou banku provozu) | simulace příchozí platby → `{ result }` |
 | `POST /dev/clock` `{ now: ISO \| null }` | vývojový režim | posun času serveru (a spuštění úloh) |
 | `POST /dev/vouchers` `{ code?, revirId? }` | vývojový režim | vytvoření poukazu |
 | `POST /dev/jobs` | vývojový režim | okamžité spuštění plánovaných úloh |

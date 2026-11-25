@@ -544,3 +544,12 @@ th .info-tip::after{bottom:auto;top:calc(100% + 8px);left:auto;right:-6px;transf
 .bug-counter #bugCount.near-limit{color:#c2610c;font-weight:600}
 .bug-log-details{margin-top:18px}
 .bug-log-details summary{cursor:pointer;font-weight:700;font-size:15px;margin-bottom:8px}
+
+/* Testovací režim: pruh nahoře na každé stránce, sekce Admin → Testování */
+.test-mode-strip{position:sticky;top:0;z-index:2000;background:#c2610c;color:#fff;text-align:center;padding:7px 16px;font-size:13.5px;line-height:1.4}
+.test-mode-strip b{font-weight:700}
+.test-heading{font-size:15px;margin:18px 0 6px}
+.test-choice{display:flex;gap:10px;align-items:flex-start;margin:8px 0;font-size:13.5px;line-height:1.45;cursor:pointer}
+.test-choice input{margin-top:3px;flex:none}
+.test-choice.disabled{opacity:.55;cursor:not-allowed}
+.test-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:16px}

@@ -13,7 +13,8 @@ defined('ABSPATH') || exit;
 //   MISTENKA_CONFIG        cesta ke konfiguraci MO (jinak config/organization.json pluginu)
 //   MISTENKA_DATA_DIR      složka pro zálohy a soubory (jinak wp-content/mistenka-data)
 //   MISTENKA_MAIL_TRANSPORT  smtp (výchozí) | file – e-maily jen do datové složky (vývoj, testy)
-//   MISTENKA_DEV           true = vývojové endpointy /dev/* (jen testovací web!)
+//   MISTENKA_DEV           true = vývojové endpointy /dev/* (jen vývoj!)
+//   MISTENKA_TEST_MODE     false = testovací režim (Admin → Testování) nejde zapnout – ostrý web
 //   MISTENKA_RATE_LIMIT    false = vypnout omezení počtu požadavků (jen testy)
 final class Env
 {
@@ -57,6 +58,15 @@ final class Env
     public static function configFile(): string
     {
         return (string) self::constant('MISTENKA_CONFIG', MISTENKA_DIR . 'config/organization.json');
+    }
+
+    // Datová složka podle režimu: testovací režim má zálohy a e-maily v podsložce test/ (klíč hesel je společný).
+    public static function modeDataDir(): string
+    {
+        $dir = self::dataDir();
+        if (!Db::isTest()) return $dir;
+        if (!is_dir($dir . '/test')) wp_mkdir_p($dir . '/test');
+        return $dir . '/test';
     }
 
     public static function dataDir(): string

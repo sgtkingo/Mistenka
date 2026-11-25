@@ -128,7 +128,8 @@ final class Service
     private function makeVariableSymbol(): string
     {
         for (;;) {
-            $vs = (string) random_int(1000000000, 9999999999);
+            [$min, $max] = TestMode::VS_RANGES[Db::isTest() ? 'test' : 'production']; // provoz a test se nepřekrývají
+            $vs = (string) random_int($min, $max);
             if (!Db::row('SELECT 1 AS x FROM {p}tickets WHERE variable_symbol = ?', $vs)) return $vs;
         }
     }
@@ -1261,11 +1262,15 @@ final class Service
     {
         $provider = $this->provider();
         $nowMs = (int) (microtime(true) * 1000);
-        $last = (int) get_option('mistenka_last_payment_sync', 0);
+        $option = 'mistenka_last_payment_sync' . (Db::isTest() ? '_test' : '');
+        $last = (int) get_option($option, 0);
         if (!$force && $nowMs - $last < $provider->minIntervalMs()) return ['skipped' => true, 'results' => []];
-        update_option('mistenka_last_payment_sync', $nowMs, false);
+        update_option($option, $nowMs, false);
         $results = [];
-        foreach ($provider->fetchTransactions() as $tx) $results[] = $this->processTransaction($tx);
+        foreach ($provider->fetchTransactions() as $tx) {
+            $forwarded = TestMode::forward($tx); // ostré platby v testu: transakci s testovacím VS zpracuje testovací databáze
+            $results[] = $forwarded !== null ? 'test:' . $forwarded : $this->processTransaction($tx);
+        }
         return ['skipped' => false, 'results' => $results];
     }
 

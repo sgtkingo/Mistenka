@@ -330,6 +330,7 @@ function publicConfig(config, extra = {}) {
     organization: { id: org.id, name: org.name, shortName: org.shortName, web: org.web || "", privacyUrl: org.privacyUrl || "", contact: org.contact || {}, address: org.address || "", ico: org.ico || "" },
     privacy: config.privacy,
     payment: { mode: config.payment.provider, reservationMinutes: config.payment.reservationMinutes },
+    testMode: Boolean(config.payment.testMode), // testovací režim: oddělená databáze, místenky neplatí
     reviry: config.reviry.map((revir) => {
       const { fishRules, speciesRules, speciesOverrides, ...rest } = revir;
       return { ...rest, fishRules, map: mapSummary(config.maps?.[revir.id]) };

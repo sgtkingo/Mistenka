@@ -44,7 +44,7 @@ function createSettings({ db, config }) {
     Object.assign(docs, overrides);
     const raw = structuredClone(source.raw);
     if (docs.organization) for (const key of ORG_KEYS) if (key in docs.organization) raw[key] = docs.organization[key];
-    if (docs.payment) raw.payment = { ...docs.payment, provider: source.raw.payment.provider }; // zdroj plateb (fake/fio) jen ze souboru
+    if (docs.payment) raw.payment = { ...docs.payment, provider: source.raw.payment.provider, testMode: source.raw.payment.testMode }; // zdroj plateb (fake/fio) a testovací režim jen ze souboru / přepínače
     for (const [scope, data] of Object.entries(docs)) {
       if (!scope.startsWith("revir:")) continue;
       const revir = { ...data, id: scope.slice(6) };

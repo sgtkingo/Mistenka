@@ -1957,3 +1957,67 @@ test("pozvání správce: admin pozve správce, účet jen pro správu, heslo z 
   assert.equal(withFisher.data.user.staffOnly, false, "správce si může rybářské údaje doplnit");
   assert.equal((await call("PATCH", "/me", { body: { memberId: "" }, session: member.session })).data.code, "invalid_member_id");
 });
+
+test("testovací režim: oddělená databáze (provozní místenky v testu nejsou a naopak), VS na 9, ostré platby přes provoz, jen admin s 2FA", async () => {
+  const t0 = Date.parse("2026-06-10T10:00:00Z");
+  await setClock(new Date(t0).toISOString());
+  const admin = await verifiedAccount();
+  await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: ["admin"] } });
+  const secret = await enableTwoFactor(admin.session, t0 + 30_000);
+  const session = admin.session;
+  let step = 1;
+  const otp = async () => { step += 1; const at = t0 + step * 30_000; await setClock(new Date(at).toISOString()); return totp(secret, at); };
+  const mode = (body) => call("PUT", "/manage/test-mode", { body, session });
+
+  const prodTicket = await paidTicket({ date: "2026-06-12" });
+  assert.equal((await call("GET", "/manage/test-mode")).status, 401, "jen přihlášený admin");
+  const initial = (await call("GET", "/manage/test-mode", { session })).data;
+  assert.equal(initial.enabled, false);
+  assert.equal(initial.locked, false);
+  assert.equal((await mode({ enabled: true })).data.code, "otp_required");
+  assert.equal((await mode({ enabled: true, payments: "kreditka", otp: await otp() })).data.code, "invalid_payments");
+
+  const on = await mode({ enabled: true, payments: "fake", otp: await otp() });
+  assert.equal(on.status, 200, JSON.stringify(on.data));
+  assert.equal(on.data.enabled, true);
+  assert.ok(on.data.seededAt, "testovací databáze vznikla");
+  assert.equal((await call("GET", "/config")).data.testMode, true);
+  assert.equal((await call("GET", "/auth/me", { session })).data.user.email, admin.email, "admin zůstane přihlášený");
+  assert.equal((await call("GET", `/tickets/${prodTicket.code}`)).status, 404, "provozní místenka v testu není");
+
+  const testOrder = await order({ date: "2026-06-12" });
+  assert.match(testOrder.ticket.payment.variableSymbol, /^9\d{9}$/, "testovací VS začíná 9");
+  assert.equal((await pay({ code: testOrder.ticket.code })).data.result, "matched", "simulovaná platba v testu");
+  assert.notEqual((await call("GET", `/tickets/${testOrder.ticket.code}`)).data.state, "pending_payment", "místenka v testu vystavena");
+
+  // Ostré platby v testu: transakci stáhne provoz a podle VS ji předá testovací databázi.
+  const fio = await mode({ payments: "fio", otp: await otp() });
+  assert.equal(fio.status, 200, JSON.stringify(fio.data));
+  assert.equal(fio.data.payments, "fio");
+  const fioOrder = await order({ date: "2026-06-12" });
+  assert.match(fioOrder.ticket.payment.variableSymbol, /^9\d{9}$/);
+  assert.equal((await pay({ code: fioOrder.ticket.code })).data.result, "test:matched", "platbu zpracoval provoz a předal testu");
+  assert.notEqual((await call("GET", `/tickets/${fioOrder.ticket.code}`)).data.state, "pending_payment", "místenka v testu vystavena");
+
+  const off = await mode({ enabled: false, otp: await otp() });
+  assert.equal(off.data.enabled, false);
+  assert.equal((await call("GET", "/config")).data.testMode, false);
+  assert.equal((await call("GET", `/tickets/${prodTicket.code}`)).status, 200, "provozní místenka zase vidět");
+  assert.equal((await call("GET", `/tickets/${testOrder.ticket.code}`)).status, 404, "testovací místenka v provozu není");
+  const prodOrder = await order({ date: "2026-06-12" });
+  assert.doesNotMatch(prodOrder.ticket.payment.variableSymbol, /^9/, "provozní VS nezačíná 9");
+  assert.ok((await call("GET", "/manage/audit?action=test_mode_enabled", { session })).data.events.length >= 1, "audit zapnutí");
+  const notice = await lastEmail(admin.email, "test_mode_changed");
+  assert.ok(notice && /testovací režim/i.test(notice.subject), "e-mail adminům");
+
+  // Opětovné zapnutí použije stávající testovací data; obnova z provozu je smaže.
+  await mode({ enabled: true, payments: "fake", otp: await otp() });
+  assert.equal((await call("GET", `/tickets/${testOrder.ticket.code}`)).status, 200, "testovací data zůstala");
+  const reset = await call("POST", "/manage/test-mode/reset", { body: { otp: await otp() }, session });
+  assert.equal(reset.status, 200, JSON.stringify(reset.data));
+  assert.equal((await call("GET", `/tickets/${testOrder.ticket.code}`)).status, 404, "obnova z provozu smaže testovací místenky");
+  assert.equal((await mode({ enabled: false, otp: await otp() })).data.enabled, false);
+
+  await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: [] } });
+  await setClock("2026-06-10T08:00:00Z");
+});

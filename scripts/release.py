@@ -15,7 +15,7 @@ Postup:
   3. git add (sledované změny + nové soubory v src, docs, test, config, scripts) a commit; --co-author přidá
      řádek „Co-Authored-By: …“
   4. git push
-  5. python scripts/build-plugin.py --release → gh release create vX.Y.Z se 3 balíčky
+  5. python scripts/build-plugin.py --release → gh release create vX.Y.Z se 2 balíčky (WordPress, Node)
   6. python scripts/build-plugin.py → dist/mistenka.zip s lokální konfigurací MO
 
 --dry-run jen vypíše, co by se stalo (nic nemění).
@@ -34,7 +34,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PLUGIN = os.path.join(ROOT, "src", "wordpress-plugin", "mistenka", "mistenka.php")
 DB_PHP = "src/wordpress-plugin/mistenka/includes/Db.php"
 STAGE_DIRS = ["src", "docs", "test", "config", "scripts"]
-ASSETS = ["dist/mistenka.zip", "dist/mistenka-fake-bank.zip", "dist/mistenka-node.zip"]
+ASSETS = ["dist/mistenka.zip", "dist/mistenka-node.zip"]
 
 
 def run(cmd, *, capture=False, check=True, dry=False):
@@ -91,8 +91,7 @@ def release_notes(changes_md, prev_tag):
 
 | Soubor | K čemu |
 | --- | --- |
-| `mistenka.zip` | WordPress plugin pro ostrý provoz – platby přes Fio API. |
-| `mistenka-fake-bank.zip` | WordPress plugin jen pro testovací web – platby se simulují. |
+| `mistenka.zip` | WordPress plugin – ostrý provoz s platbami přes Fio API; testovací web zapne v portálu testovací režim (Admin → Testování). |
 | `mistenka-node.zip` | Node.js verze (Node ≥ 22.13, bez závislostí). |
 
 Balíčky jsou obecné se vzorovou konfigurací (`config/example`); údaje své MO upravte v portálu, nebo plugin sestavte s vlastní konfigurací. {update}

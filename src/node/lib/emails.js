@@ -21,9 +21,9 @@ const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial
 // Barva hlavičky podle typu zprávy: info modrá, success zelená (vystaveno, uloženo),
 // warning oranžová (upozornění, je potřeba něco udělat), danger červená (zrušeno, zadrženo, blokace).
 const TONES = { info: ["#0075de", "#cfe5fb"], success: ["#1a8245", "#d3f0dc"], warning: ["#c2610c", "#fde3c8"], danger: ["#c8302a", "#f9d2cf"] };
-// Falešná banka (testovací web): každý e-mail nese varování, předmět začíná „[TEST]“.
+// Testovací režim nebo falešná banka: každý e-mail nese varování, předmět začíná „[TEST]“.
 const TEST_NOTE = "Testovací verze Místenky – platby se jen simulují a vystavené místenky neopravňují k lovu.";
-const testMode = (config) => config.payment?.provider === "fake";
+const testMode = (config) => Boolean(config.payment?.testMode) || config.payment?.provider === "fake";
 // layout(config, typ, nadpis, obsah, patička, { preheader }) – preheader = náhled v seznamu zpráv.
 function layout(config, tone, title, rowsHtml, footerHtml = "", { preheader = "" } = {}) {
   const [toneBg, toneSub] = TONES[tone] || TONES.info;
@@ -186,6 +186,19 @@ function databaseAutoRestored(config, info) {
   };
 }
 
+// Testovací režim zapnut / vypnut (všem adminům, z provozu).
+function testModeChanged(config, { enabled, actorName, payments, at, appUrl }) {
+  const rows = [["Kdy", czDateTime(at)], ["Kdo", actorName], ...(enabled ? [["Platby v testu", payments === "fio" ? "ostré přes Fio (testovací variabilní symboly)" : "simulované"]] : [])];
+  const intro = enabled
+    ? "<p>Web teď běží nad <b>testovací databází</b>. Rybáři vidí testovací verzi – místenky z ní neopravňují k lovu a provozní místenky v ní nejsou (ani pro kontrolu porybným). Platby a e-maily provozu se zpracovávají dál.</p>"
+    : "<p>Web zase běží nad <b>provozní databází</b>. Testovací data zůstávají odděleně pro příští test.</p>";
+  return {
+    subject: enabled ? "Místenka – zapnut testovací režim" : "Místenka – testovací režim vypnut",
+    html: layout(config, enabled ? "warning" : "success", enabled ? "Zapnut testovací režim" : "Testovací režim vypnut", `${intro}${table(rows)}${button(`${appUrl}/manage.html#testing`, "Otevřít Testování")}`),
+    text: textBlock([enabled ? "Web teď běží nad testovací databází – místenky z ní neopravňují k lovu, provozní místenky v ní nejsou." : "Web zase běží nad provozní databází.", ...rows.map(([k, v]) => `${k}: ${v}`), `${appUrl}/manage.html#testing`])
+  };
+}
+
 // ---------- nastavení (B5) ----------
 function paymentSettingsChanged(config, { actorName, before, after, at }) {
   const labels = { accountNumber: "Číslo účtu", bankCode: "Kód banky", iban: "IBAN", recipientName: "Příjemce", reservationMinutes: "Rezervace (min)", messagePrefix: "Zpráva pro příjemce" };
@@ -301,7 +314,7 @@ function createFileMailer(dir) {
   };
 }
 
-const TEMPLATES = { bugReport, paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, ticketCancelled, catchesCorrected, paymentSettingsChanged, seasonReport, databaseAutoRestored, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, wardenRequest, wardenRequestDecided };
+const TEMPLATES = { bugReport, paymentInstructions, ticketIssued, returnReminder, ticketClosed, ticketSeized, seizureNotice, limitExceeded, memberBlocked, closureNotice, ticketCancelled, catchesCorrected, paymentSettingsChanged, seasonReport, databaseAutoRestored, testModeChanged, accountVerify, accountExists, magicLink, passwordReset, emailChange, staffInvite, accountDeleted, wardenRequest, wardenRequestDecided };
 // V testovacím režimu doplní „[TEST]“ do předmětu a varování do textové verze (HTML ho má z layoutu).
 const withTestNote = (fn) => (config, ...args) => {
   const mail = fn(config, ...args);
