@@ -1,6 +1,7 @@
 // Manažerský portál – Nastavení (B5): organizace, revíry, ryby a limity, platby. Každé uložení = nová verze.
 (function () {
-  const { qs, qsa, esc, api, showToast, czDateTime, loadSession, hasRole, infoTip } = window.Mistenka;
+  const { qs, qsa, esc, api, showToast, czDateTime, loadSession, hasRole, infoTip, loadConfig } = window.Mistenka;
+  let testMode = false; // web běží v testovacím režimu (nastavení se ukládá do testovací databáze)
   let view = null;
   let tab = "organization";
   let mode = "settings"; // settings = organizace; species = míry, váhy a hájení; bank = platby; reviry = jednotlivé revíry
@@ -58,6 +59,7 @@
     try {
       isAdmin = hasRole(await loadSession(), "admin");
       view = await api("/manage/settings");
+      testMode = Boolean((await loadConfig().catch(() => null))?.testMode);
       renderTabs();
       render();
     } catch (error) { panel.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
@@ -127,13 +129,21 @@
     const ro = view.canEditPayment ? "" : "disabled";
     return `<form class="settings-form" data-scope="payment" novalidate>
       <h3>Podklady pro bankovní převody a QR platby${infoTip("Z těchto údajů se skládá QR platba (SPAYD) a pokyny k platbě v e-mailu; platby se párují podle variabilního symbolu.")}</h3>
+      ${testMode ? '<div class="info-box info-warning"><b>Testovací režim:</b> upravujete údaje v testovací databázi – provozní bankovní spojení se nezmění. Provozní údaje uvidíte po vypnutí testovacího režimu.</div>' : ""}
       <div class="info-box">${view.canEditPayment ? "Změnu účtu dostanou e-mailem všichni admini. Nové objednávky se budou platit na nový účet, rozpracované zůstávají na původním." : "Platební údaje smí měnit jen admin."}</div>
       <div class="form-two-col">${field("pAccount", "Číslo účtu (s předčíslím: 19-123456789)", p.accountNumber, ro)}${field("pBank", "Kód banky", p.bankCode, `${ro} maxlength="4"`)}</div>
-      <p class="field-help">IBAN: <b>${esc(view.payment.iban)}</b> · zdroj plateb: <b>${esc(view.payment.provider)}</b> (mění se jen v konfiguraci serveru)</p>
+      <p class="field-help">IBAN: <b>${esc(view.payment.iban)}</b> · ${paymentSource()}</p>
       <div class="bank-matching hidden" id="bankMatching"></div>
       <div class="form-two-col">${field("pRecipient", "Příjemce (do QR platby, bez diakritiky)", p.recipientName, ro)}${field("pMessage", "Zpráva pro příjemce – předpona", p.messagePrefix, ro)}</div>
       <div class="form-two-col">${field("pReservation", "Rezervace místa před platbou (minuty)", p.reservationMinutes, `${ro} type="number" min="10" max="1440"`)}<div></div></div>
       ${footer("payment", view.payment, { canEdit: view.canEditPayment })}</form>`;
+  }
+  // Odkud se berou platby: v testovacím režimu podle Admin → Testování, v provozu Fio API (falešná banka jen při vývoji).
+  function paymentSource() {
+    const link = `<a class="text-link" href="#testing" onclick="document.querySelector('[data-section=testing]').click();return false">Admin → Testování</a>`;
+    if (testMode) return `platby v testu: <b>${view.payment.provider === "fio" ? "ostré přes Fio" : "simulované"}</b> (přepíná se v ${link})`;
+    if (view.payment.provider === "fio") return "platby: <b>Fio API – automatické párování</b> (token v Párování s bankou)";
+    return '<b class="fio-bad">platby: falešná banka</b> – konfigurace serveru jen pro vývoj, platby nejsou skutečné';
   }
   // Párování s bankou: podle kódu banky (zatím jen Fio – token API), u jiných bank jasné upozornění.
   const FIO_BANK_CODE = "2010";
@@ -169,7 +179,7 @@
           : s.unreadable ? "Změnil se šifrovací klíč serveru – zadejte token znovu." : "Bez tokenu se platby párují ručně v sekci Platby.";
       box.innerHTML = `<div class="fio-card">
           <div class="fio-head"><b>Fio banka</b><span class="badge badge-${tone}">Token API: ${badge}</span></div>
-          <p class="fio-meta">${meta}${s.provider !== "fio" ? `<br>Server teď platby z Fio nestahuje (zdroj plateb: ${esc(s.provider)}) – token se uplatní až s nimi.` : ""}</p>
+          <p class="fio-meta">${meta}${s.provider !== "fio" ? `<br>Server teď platby z Fio nestahuje (v konfiguraci serveru je falešná banka pro vývoj) – token se uplatní až s platbami přes Fio.` : ""}</p>
           ${editable ? `<div class="fio-row"><input id="fioToken" type="password" autocomplete="off" spellcheck="false" placeholder="${s.configured ? "Nový token (nahradí uložený)" : "Vložte token API z Fio"}" aria-label="Token API Fio" onkeydown="if(event.key==='Enter')event.preventDefault()"><button class="primary-button" type="button" id="fioSave">Uložit token</button></div>` : ""}
           ${s.configured || s.source === "portal" ? `<div class="fio-links">${s.configured ? '<button class="text-button" type="button" id="fioVerify">Ověřit token</button>' : ""}${s.source === "portal" ? '<button class="text-button danger-text" type="button" id="fioRemove">Smazat token</button>' : ""}<span id="fioResult"></span></div>` : ""}
           <p class="fio-help">Token vygenerujte v internetovém bankovnictví Fio (Nastavení → API) <b>jen pro čtení</b>. Uloží se zašifrovaný a už se nezobrazí; uložení i smazání potvrdíte kódem 2FA a admini dostanou e-mail.</p>
