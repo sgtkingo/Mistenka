@@ -551,6 +551,22 @@ th .info-tip::after{bottom:auto;top:calc(100% + 8px);left:auto;right:-6px;transf
 .test-heading{font-size:15px;margin:18px 0 6px}
 .test-choice{display:flex;gap:10px;align-items:flex-start;margin:8px 0;font-size:13.5px;line-height:1.45;cursor:pointer}
 .test-choice input{margin-top:3px;flex:none}
-.test-choice.disabled{opacity:.55;cursor:not-allowed}
+.test-choice.unavailable{opacity:.55;cursor:not-allowed}
 .test-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:16px}
+.test-switch-row{display:flex;align-items:center;padding:14px 16px;border:1px solid var(--line, #e6e3de);border-radius:10px;background:#faf9f7;margin:0 0 18px}
+.test-switch-row.on{background:#fff4e8;border-color:#f5c99a}
+.switch.switch-lg{gap:14px;white-space:normal;font-size:14px}
+.switch-lg .switch-track{width:48px;height:26px;border-radius:13px;flex:none}
+.switch-lg .switch-track::after{width:22px;height:22px}
+.switch-lg input:checked+.switch-track{background:#c2610c}
+.switch-lg input:checked+.switch-track::after{transform:translateX(22px)}
+.switch-lg input:disabled+.switch-track{opacity:.5;cursor:not-allowed}
+.test-switch-label{display:flex;flex-direction:column;gap:2px;line-height:1.35}
+.test-switch-label small{color:var(--muted);font-size:12.5px}
+.test-switch-row.on .test-switch-label b{color:#a8520a}
+.test-settings{border:0;padding:0;margin:0;min-width:0}
+.test-settings:disabled{opacity:.45}
+.test-settings:disabled .test-choice{cursor:not-allowed}
+.test-off-hint{margin-top:12px}
+#testingPanel.busy{pointer-events:none;opacity:.6}
 .fio-ok{color:#17803f}.fio-bad{color:#b52f27}

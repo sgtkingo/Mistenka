@@ -801,44 +801,54 @@ async function loadTesting() {
   const panel = qs("#testingPanel");
   try {
     const s = await api("/manage/test-mode");
-    const status = s.enabled
-      ? `<div class="info-box info-warning"><b>Testovací režim je zapnutý</b>${s.since ? ` od ${esc(czDateTime(s.since))}` : ""}${s.by ? ` (${esc(s.by)})` : ""}. Web běží nad testovací databází, platby v testu: ${s.payments === "fio" ? "ostré přes Fio" : "simulované"}.</div>`
-      : '<div class="info-box info-success"><b>Provoz</b> – web běží nad provozní databází.</div>';
-    const locked = s.locked ? '<div class="info-box info-error">Testovací režim je na tomto serveru zakázaný (<code>MISTENKA_TEST_MODE</code> ve wp-config.php, v Node proměnná prostředí).</div>' : "";
-    panel.innerHTML = `${status}${locked}
-      <h2 class="test-heading">Platby v testu</h2>
-      <label class="test-choice"><input type="radio" name="testPayments" value="fake"${s.payments === "fake" ? " checked" : ""}> <span><b>Simulované</b> – na stránce platby je tlačítko „Simulovat platbu“, nikdo nic neplatí.</span></label>
-      <label class="test-choice${s.fioAvailable ? "" : " disabled"}"><input type="radio" name="testPayments" value="fio"${s.payments === "fio" ? " checked" : ""}${s.fioAvailable ? "" : " disabled"}> <span><b>Ostré přes Fio</b> – skutečný převod na účet MO s testovacím variabilním symbolem (začíná 9). Banku dál stahuje provoz a testovací platby předá testu.${s.fioAvailable ? "" : " <em>Vyžaduje platby přes Fio (token).</em>"}</span></label>
-      <p class="field-help">Testovací databáze: ${s.seededAt ? `založena ${esc(czDateTime(s.seededAt))} kopií provozu. Při dalším zapnutí se použije znovu (s dosavadními testovacími daty).` : "zatím není – vznikne kopií provozu při prvním zapnutí."}</p>
-      <div class="test-actions">
-        <button class="primary-button" type="button" id="testToggle"${s.locked && !s.enabled ? " disabled" : ""}>${s.enabled ? "Vypnout testovací režim" : "Zapnout testovací režim"}</button>
-        ${s.enabled ? '<button class="secondary-button" type="button" id="testSavePayments">Uložit platby</button>' : ""}
-        ${s.seededAt ? '<button class="text-button" type="button" id="testReset">Založit testovací databázi znovu z provozu</button>' : ""}
-      </div>`;
-    const payments = () => qs('input[name="testPayments"]:checked', panel)?.value || s.payments;
+    const off = !s.enabled;
+    const dis = off ? " disabled" : "";
+    const since = s.enabled ? `od ${esc(czDateTime(s.since))}${s.by ? ` (${esc(s.by)})` : ""} · web běží nad testovací databází` : "web běží nad provozní databází";
+    panel.innerHTML = `
+      <div class="test-switch-row${s.enabled ? " on" : ""}">
+        <label class="switch switch-lg"><input type="checkbox" id="testToggle"${s.enabled ? " checked" : ""}${s.locked && !s.enabled ? " disabled" : ""}><span class="switch-track" aria-hidden="true"></span>
+          <span class="test-switch-label"><b>Testovací režim ${s.enabled ? "zapnutý" : "vypnutý"}</b><small>${since}</small></span></label>
+      </div>
+      ${s.locked ? '<div class="info-box info-error">Testovací režim je na tomto serveru zakázaný (<code>MISTENKA_TEST_MODE</code> ve wp-config.php, v Node proměnná prostředí).</div>' : ""}
+      <fieldset class="test-settings"${dis}>
+        <h2 class="test-heading">Platby v testu</h2>
+        <label class="test-choice"><input type="radio" name="testPayments" value="fake"${s.payments === "fake" ? " checked" : ""}> <span><b>Simulované</b> – na stránce platby je tlačítko „Simulovat platbu“, nikdo nic neplatí.</span></label>
+        <label class="test-choice${s.fioAvailable ? "" : " unavailable"}"><input type="radio" name="testPayments" value="fio"${s.payments === "fio" ? " checked" : ""}${s.fioAvailable ? "" : " disabled"}> <span><b>Ostré přes Fio</b> – skutečný převod na účet MO s testovacím variabilním symbolem (začíná 9). Banku dál stahuje provoz a testovací platby předá testu.${s.fioAvailable ? "" : " <em>Vyžaduje token Fio (Bankovní spojení → Automatické párování).</em>"}</span></label>
+        <h2 class="test-heading">Testovací databáze</h2>
+        <p class="field-help">${s.seededAt ? `Založena ${esc(czDateTime(s.seededAt))} kopií provozu. Při dalším zapnutí se použije znovu (s dosavadními testovacími daty).` : "Zatím není – vznikne kopií provozu při prvním zapnutí."}</p>
+        ${s.seededAt ? '<button class="secondary-button" type="button" id="testReset">Založit znovu z provozu</button>' : ""}
+      </fieldset>
+      ${off ? '<p class="field-help test-off-hint">Nastavení testu jde měnit po zapnutí testovacího režimu.</p>' : ""}`;
     const askOtp = () => { const otp = window.prompt("Kód z ověřovací aplikace (2FA):"); return otp === null ? null : otp.trim(); };
-    const run = async (button, path, method, body, message) => {
+    // Akce s kódem 2FA; po úspěchu se portál načte znovu (běží teď nad druhou databází), jinak se ovládání vrátí.
+    const run = async (path, method, body, message, revert) => {
       const otp = askOtp();
-      if (otp === null) return;
-      button.disabled = true;
+      if (otp === null) { revert(); return; }
+      panel.classList.add("busy");
       try {
         await api(path, { method, body: { ...body, otp } });
         showToast(message, "success");
-        setTimeout(() => location.reload(), 900); // celý portál teď běží nad druhou databází
-      } catch (error) { showToast(error.message, "error"); button.disabled = false; }
+        setTimeout(() => location.reload(), 900);
+      } catch (error) { showToast(error.message, "error"); revert(); panel.classList.remove("busy"); }
     };
-    qs("#testToggle", panel).addEventListener("click", (event) => {
-      const enable = !s.enabled;
+    const toggle = qs("#testToggle", panel);
+    toggle.addEventListener("change", () => {
+      const enable = toggle.checked;
+      const revert = () => { toggle.checked = !enable; };
       const text = enable
-        ? `Zapnout testovací režim?\n\nCelý web přejde na testovací databázi: rybáři uvidí testovací verzi a provozní místenky v ní nebudou (ani pro kontrolu porybným). Platby v testu: ${payments() === "fio" ? "OSTRÉ přes Fio" : "simulované"}.\n\nZapněte jen na testovacím webu, nebo na nezbytně krátkou dobu.`
+        ? `Zapnout testovací režim?\n\nCelý web přejde na testovací databázi: rybáři uvidí testovací verzi a provozní místenky v ní nebudou (ani pro kontrolu porybným). Platby v testu: ${s.payments === "fio" ? "OSTRÉ přes Fio" : "simulované"} (změníte po zapnutí).\n\nZapněte jen na testovacím webu, nebo na nezbytně krátkou dobu.`
         : "Vypnout testovací režim?\n\nWeb se vrátí na provozní databázi. Testovací data zůstanou odděleně pro příští test.";
-      if (!window.confirm(text)) return;
-      run(event.currentTarget, "/manage/test-mode", "PUT", { enabled: enable, payments: payments() }, enable ? "Testovací režim zapnut." : "Testovací režim vypnut.");
+      if (!window.confirm(text)) { revert(); return; }
+      run("/manage/test-mode", "PUT", { enabled: enable }, enable ? "Testovací režim zapnut." : "Testovací režim vypnut.", revert);
     });
-    qs("#testSavePayments", panel)?.addEventListener("click", (event) => run(event.currentTarget, "/manage/test-mode", "PUT", { payments: payments() }, "Platby v testu uloženy."));
-    qs("#testReset", panel)?.addEventListener("click", (event) => {
+    qsa('input[name="testPayments"]', panel).forEach((radio) => radio.addEventListener("change", () => {
+      const revert = () => { qs(`input[name="testPayments"][value="${s.payments}"]`, panel).checked = true; };
+      if (radio.value === "fio" && !window.confirm("Přepnout na OSTRÉ platby přes Fio?\n\nRybáři v testu budou platit skutečné peníze na účet MO (s testovacím variabilním symbolem).")) { revert(); return; }
+      run("/manage/test-mode", "PUT", { payments: radio.value }, radio.value === "fio" ? "Platby v testu: ostré přes Fio." : "Platby v testu: simulované.", revert);
+    }));
+    qs("#testReset", panel)?.addEventListener("click", () => {
       if (!window.confirm("Založit testovací databázi znovu z provozu?\n\nVšechna testovací data (místenky, platby, testovací účty) se smažou a nahradí kopií aktuálního nastavení a účtů správců z provozu.")) return;
-      run(event.currentTarget, "/manage/test-mode/reset", "POST", {}, "Testovací databáze založena znovu z provozu.");
+      run("/manage/test-mode/reset", "POST", {}, "Testovací databáze založena znovu z provozu.", () => {});
     });
   } catch (error) { panel.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
 }
