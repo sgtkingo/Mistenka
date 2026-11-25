@@ -9,7 +9,7 @@ defined('ABSPATH') || exit;
 //   MISTENKA_CRON_KEY      tajný klíč pro POST /jobs/run (cron hostingu)
 //   MISTENKA_FIO_TOKEN     token Fio API jen pro čtení (payment.provider = "fio")
 //   MISTENKA_SECRET_KEY    klíč pro šifrování hesel SMTP účtů (jinak se vygeneruje do datové složky)
-//   MISTENKA_APP_URL       adresa aplikace (jinak organization.appUrl z konfigurace)
+//   MISTENKA_APP_URL       adresa aplikace – volitelné; jinak průvodce ve wp-admin, pak organization.appUrl
 //   MISTENKA_CONFIG        cesta ke konfiguraci MO (jinak config/organization.json pluginu)
 //   MISTENKA_DATA_DIR      složka pro zálohy a soubory (jinak wp-content/mistenka-data)
 //   MISTENKA_MAIL_TRANSPORT  smtp (výchozí) | file – e-maily jen do datové složky (vývoj, testy)

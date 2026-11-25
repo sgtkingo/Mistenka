@@ -36,6 +36,7 @@ if (!class_exists(\Mistenka\App::class)) {
 }
 
 try {
+    update_option(\Mistenka\Plugin::CRON_OPTION, time(), false);
     $result = \Mistenka\App::get()->runJobs(); // souběhu s WP-cronem a /jobs/run brání zámek v runJobs
     echo wp_json_encode($result), "\n";
 } catch (\Throwable $e) {

@@ -4,7 +4,7 @@
 // Zálohy v datové složce zůstávají vždy.
 defined('WP_UNINSTALL_PLUGIN') || exit;
 
-foreach (['mistenka_db_version', 'mistenka_dev_clock', 'mistenka_fake_bank_queue', 'mistenka_last_payment_sync'] as $option) delete_option($option);
+foreach (['mistenka_db_version', 'mistenka_dev_clock', 'mistenka_fake_bank_queue', 'mistenka_last_payment_sync', 'mistenka_app_url', 'mistenka_app_url_check', 'mistenka_last_hosting_cron'] as $option) delete_option($option);
 wp_clear_scheduled_hook('mistenka_jobs');
 
 if (defined('MISTENKA_UNINSTALL_DELETE_DATA') && MISTENKA_UNINSTALL_DELETE_DATA) {

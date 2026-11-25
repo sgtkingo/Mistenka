@@ -9,7 +9,7 @@ Produkční implementace Místenky. Chování je stejné jako u Node verze v `sr
 
 ## Jak plugin funguje
 
-- **Aplikace na subdoméně.** Na hostu z `organization.appUrl` (nebo `MISTENKA_APP_URL`) plugin místo webu vykreslí frontend. Při aktivaci zapíše na začátek `.htaccess` blok `# BEGIN Mistenka`, který se týká jen tohoto hostu: stránky, styly a skripty servíruje Apache přímo ze složky `frontend/` pluginu, `js/env.js` (prefix API) a REST jdou přes WordPress. Bez pravidel aplikace funguje také, jen soubory servíruje PHP. Stav a pravidla pro ruční vložení: **Nastavení → Místenka**.
+- **Aplikace na subdoméně.** Na hostu adresy aplikace plugin místo webu vykreslí frontend. Adresa se zadává v **průvodci** (Nastavení → Místenka, otevře se sám po aktivaci) a ukládá se do `wp_options`; pořadí: konstanta `MISTENKA_APP_URL` (volitelné pevné nastavení) → průvodce → `organization.appUrl` z konfigurace → adresa webu. Při aktivaci zapíše na začátek `.htaccess` blok `# BEGIN Mistenka`, který se týká jen tohoto hostu: stránky, styly a skripty servíruje Apache přímo ze složky `frontend/` pluginu, `js/env.js` (prefix API) a REST jdou přes WordPress. Bez pravidel aplikace funguje také, jen soubory servíruje PHP. Stav a pravidla pro ruční vložení: **Nastavení → Místenka**. Změna adresy v průvodci pravidla přepíše pro nový host.
 - **REST** `mistenka/v1` (`/?rest_route=/mistenka/v1/...`, web nemá „hezké“ trvalé odkazy). Požadavky obslouží vlastní router dřív, než je WordPress zpracuje (chyby mají tvar `{ error, code }`); CORS hlavičky WordPressu se pro aplikaci vypínají.
 - **Účty jsou vlastní** (tabulky `{prefix}mistenka_*`): rybáři ani správci nejsou uživateli WordPressu a nedostanou se do wp-admin. Relace v cookie `mistenka_session` + hlavička `X-Mistenka-Csrf`, hesla `password_hash()`, 2FA (TOTP).
 - **Databáze**: tabulky `{prefix}mistenka_*` vytvoří `dbDelta()` při aktivaci a po aktualizaci pluginu (verze schématu v `Db::SCHEMA_VERSION`). Zápisy, které hlídají kapacitu, poukazy a párování plateb, běží v transakci se zámkem `GET_LOCK`.
@@ -21,7 +21,7 @@ Produkční implementace Místenky. Chování je stejné jako u Node verze v `sr
 ## Instalace
 
 1. `python scripts/build-plugin.py` → `dist/mistenka.zip` (PHP + frontend + konfigurace MO z lokálního `config/organization.json`, který není v repu – vytvořte ho z `config/organization.json.example`). Obecný balíček se vzorem: `--example` (tak se staví GitHub release).
-2. Před sestavením zkontrolujte `config/organization.json`, hlavně `organization.appUrl` (adresa subdomény). Ostatní údaje (účet, e-maily, GDPR) jdou změnit i v portálu. ZIP má vždy `payment.provider: "fio"`, i když repo nechává `fake` pro lokální Node. Falešnou banku, kde může místenku „zaplatit“ kdokoli, dá do ZIPu jen `--fake-bank` (testovací web s `MISTENKA_DEV`).
+2. Adresu subdomény stačí zadat po aktivaci v průvodci (`organization.appUrl` v konfiguraci je jen výchozí hodnota; obecný balíček má vzorovou `mistenka.example.cz`, kterou průvodce označí k přepsání). Ostatní údaje (účet, e-maily, GDPR) jdou změnit i v portálu. ZIP má vždy `payment.provider: "fio"`, i když repo nechává `fake` pro lokální Node. Falešnou banku, kde může místenku „zaplatit“ kdokoli, dá do ZIPu jen `--fake-bank` (testovací web s `MISTENKA_DEV`).
 3. wp-config.php (nad řádek „That's all, stop editing!“):
 
    ```php
@@ -29,7 +29,7 @@ Produkční implementace Místenky. Chování je stejné jako u Node verze v `sr
    define('MISTENKA_FIO_TOKEN', '…token Fio jen pro čtení…');   // jen při provider = "fio"
    define('MISTENKA_SECRET_KEY', '…dlouhý náhodný řetězec…');  // šifrování hesel SMTP účtů (doporučeno; jinak soubor v datové složce)
    // volitelně:
-   // define('MISTENKA_APP_URL', 'https://mistenka.rybarikarvina.cz');
+   // define('MISTENKA_APP_URL', 'https://mistenka.rybarikarvina.cz');  // pevná adresa aplikace (jinak průvodce)
    // define('MISTENKA_GITHUB_TOKEN', '…');  // hlášení chyb → GitHub issues (s MISTENKA_GITHUB_REPO)
    // define('MISTENKA_GITHUB_REPO', 'vlastnik/repozitar');
    // define('MISTENKA_MAPY_API_KEY', '…');  // podklad interaktivní mapy revíru z Mapy.com (jinak OpenStreetMap); omezte klíč na doménu
@@ -38,7 +38,7 @@ Produkční implementace Místenky. Chování je stejné jako u Node verze v `sr
 
    Nikdy nedávejte do produkce `MISTENKA_DEV`, `MISTENKA_RATE_LIMIT = false` ani `MISTENKA_MAIL_TRANSPORT = 'file'`.
 4. Nahrát ZIP (Pluginy → Instalace pluginů → Nahrát) a aktivovat.
-5. **Nastavení → Místenka**: zkontrolovat stav (konfigurace, datová složka, .htaccess, cron, Fio) a tlačítkem **Vygenerovat odkaz** založit prvního admina Místenky (průvodce s 2FA, odkaz platí 60 minut).
+5. Po aktivaci se otevře **Nastavení → Místenka → Průvodce nastavením**: (1) adresa aplikace – uloží se a hned ověří (plugin si z ní stáhne `js/env.js`; upozorní na neexistující subdoménu, chybu HTTPS nebo jiný web), (2) pravidla .htaccess, (3) cron hostingu – průvodce ukáže čas posledního běhu, (4) tlačítkem **Vygenerovat odkaz** první admin Místenky (průvodce s 2FA, odkaz platí 60 minut). Záložka **Stav** shrnuje instalaci (konfigurace, datová složka, Fio, e-maily, mapa).
 6. Cron hostingu každou minutu. Doporučená je **PHP úloha** (Websupport: typ „PHP 8.3 CRON“), PHP soubor `wp-content/plugins/mistenka/cron.php`. Klíč není potřeba, protože skript z webu vrací 404. Pokud hosting umí jen příkaz s POST:
 
    ```

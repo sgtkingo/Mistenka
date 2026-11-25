@@ -52,10 +52,12 @@ final class App
         $this->operations->importNotices();
     }
 
-    // Adresa aplikace (odkazy v e-mailech, detekce subdomény): MISTENKA_APP_URL, jinak organization.appUrl, jinak web.
+    // Adresa aplikace (odkazy v e-mailech, detekce subdomény): konstanta MISTENKA_APP_URL, jinak adresa z průvodce
+    // ve wp-admin (Nastavení → Místenka), jinak organization.appUrl z konfigurace, jinak adresa webu.
     public static function appUrlFrom(array $config): string
     {
-        $url = defined('MISTENKA_APP_URL') ? (string) MISTENKA_APP_URL : (string) ($config['organization']['appUrl'] ?? '');
+        $url = Plugin::configuredAppUrl();
+        if ($url === '') $url = (string) ($config['organization']['appUrl'] ?? '');
         return rtrim($url !== '' ? $url : home_url(), '/');
     }
 
@@ -446,6 +448,7 @@ final class App
         if ($path === '/jobs/run' && $method === 'POST') {
             $key = Env::cronKey();
             if ($key === '' || !hash_equals($key, $header('X-Mistenka-Cron-Key'))) throw new ApiError(404, 'not_found', 'Nenalezeno.');
+            update_option(Plugin::CRON_OPTION, time(), false);
             return self::json(200, $this->runJobs());
         }
         if ($path === '/dev/payments' && $method === 'POST') return self::json(200, $svc->simulatePayment(self::body($request)));

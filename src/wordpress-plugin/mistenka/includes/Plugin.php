@@ -8,6 +8,10 @@ defined('ABSPATH') || exit;
 final class Plugin
 {
     private const DB_OPTION = 'mistenka_db_version';
+    public const APP_URL_OPTION = 'mistenka_app_url';            // adresa aplikace z průvodce (nastavení instalace, ne MO)
+    public const APP_URL_CHECK_OPTION = 'mistenka_app_url_check'; // výsledek posledního ověření adresy
+    public const CRON_OPTION = 'mistenka_last_hosting_cron';      // čas posledního běhu z cronu hostingu (cron.php, /jobs/run)
+    private const ACTIVATION_REDIRECT = 'mistenka_activation_redirect';
     private const HTACCESS_MARKER = 'Mistenka';
     private const STATIC_TYPES = ['html' => 'text/html; charset=utf-8', 'js' => 'text/javascript; charset=utf-8', 'css' => 'text/css; charset=utf-8', 'svg' => 'image/svg+xml', 'png' => 'image/png', 'ico' => 'image/x-icon', 'json' => 'application/json; charset=utf-8', 'txt' => 'text/plain; charset=utf-8'];
 
@@ -21,6 +25,8 @@ final class Plugin
         add_action('mistenka_jobs', [self::class, 'wpCronJobs']);
         add_action('admin_menu', [Admin::class, 'menu']);
         add_action('admin_init', [self::class, 'maybeUpgrade']);
+        add_action('admin_init', [self::class, 'activationRedirect']);
+        add_action('admin_notices', [Admin::class, 'pluginsNotice']);
     }
 
     // Trasa jen kvůli přehledu v /wp-json – požadavky obslouží App::preDispatch dřív.
@@ -36,6 +42,17 @@ final class Plugin
         Env::dataDir();
         self::writeHtaccess();
         if (!wp_next_scheduled('mistenka_jobs')) wp_schedule_event(time() + 60, 'mistenka_5min', 'mistenka_jobs');
+        set_transient(self::ACTIVATION_REDIRECT, 1, 60);
+    }
+
+    // Po aktivaci jednou otevře průvodce nastavením (ne při hromadné aktivaci více pluginů).
+    public static function activationRedirect(): void
+    {
+        if (!get_transient(self::ACTIVATION_REDIRECT)) return;
+        delete_transient(self::ACTIVATION_REDIRECT);
+        if (wp_doing_ajax() || is_network_admin() || isset($_GET['activate-multi']) || !current_user_can('manage_options')) return;
+        wp_safe_redirect(admin_url('options-general.php?page=mistenka&tab=pruvodce'));
+        exit;
     }
 
     public static function deactivate(): void
@@ -65,13 +82,113 @@ final class Plugin
     }
 
     // ---------- aplikace na subdoméně ----------
+    // Adresa nastavená pro tuto instalaci: konstanta ve wp-config.php, jinak průvodce. Prázdná = jen z konfigurace.
+    public static function configuredAppUrl(): string
+    {
+        if (defined('MISTENKA_APP_URL') && (string) MISTENKA_APP_URL !== '') return rtrim((string) MISTENKA_APP_URL, '/');
+        return rtrim((string) get_option(self::APP_URL_OPTION, ''), '/');
+    }
+
     public static function appUrl(): string
     {
+        $url = self::configuredAppUrl();
+        if ($url !== '') return $url; // bez čtení konfigurace (volá se při každém požadavku)
         try {
             return App::appUrlFrom(Config::readSource()['raw']);
         } catch (\Throwable $e) {
-            return defined('MISTENKA_APP_URL') ? rtrim((string) MISTENKA_APP_URL, '/') : home_url();
+            return home_url();
         }
+    }
+
+    // Odkud je adresa: constant (wp-config) | option (průvodce) | config (organization.appUrl) | site (adresa webu).
+    public static function appUrlSource(): string
+    {
+        if (defined('MISTENKA_APP_URL') && (string) MISTENKA_APP_URL !== '') return 'constant';
+        if ((string) get_option(self::APP_URL_OPTION, '') !== '') return 'option';
+        try {
+            if ((string) (Config::readSource()['raw']['organization']['appUrl'] ?? '') !== '') return 'config';
+        } catch (\Throwable $e) {
+        }
+        return 'site';
+    }
+
+    // Adresu je potřeba nastavit v průvodci: chybí, nebo je vzorová z obecného balíčku (*.example.cz).
+    public static function appUrlNeedsSetup(): bool
+    {
+        $source = self::appUrlSource();
+        if ($source === 'constant' || $source === 'option') return false;
+        if ($source === 'site') return true;
+        return str_ends_with(strtolower((string) wp_parse_url(self::appUrl(), PHP_URL_HOST)), 'example.cz');
+    }
+
+    // Zadanou adresu převede na tvar https://host[:port]; při chybě vrátí text chyby v $error.
+    public static function normalizeAppUrl(string $input, ?string &$error = null): ?string
+    {
+        $input = trim($input);
+        if ($input === '') { $error = 'Zadejte adresu aplikace.'; return null; }
+        if (!preg_match('#^[a-z][a-z0-9+.-]*://#i', $input)) $input = 'https://' . $input;
+        $parts = wp_parse_url($input);
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        $host = strtolower((string) ($parts['host'] ?? ''));
+        if (!in_array($scheme, ['http', 'https'], true) || $host === '' || !preg_match('/^[a-z0-9.-]+$/', $host)) { $error = 'Neplatná adresa – zadejte například https://mistenka.example.cz.'; return null; }
+        if (isset($parts['user']) || isset($parts['query']) || isset($parts['fragment']) || !in_array($parts['path'] ?? '', ['', '/'], true)) {
+            $error = 'Aplikace běží na vlastní (sub)doméně – adresa nesmí obsahovat cestu ani parametry (jen https://mistenka.example.cz).';
+            return null;
+        }
+        return $scheme . '://' . $host . (isset($parts['port']) ? ':' . (int) $parts['port'] : '');
+    }
+
+    // Návrh adresy pro průvodce: dosavadní adresa, pokud nejde o vzorovou ani o adresu samotného webu, jinak mistenka.<doména webu>.
+    public static function suggestAppUrl(): string
+    {
+        $current = self::appUrl();
+        $host = strtolower((string) wp_parse_url($current, PHP_URL_HOST));
+        if ($host !== '' && !str_ends_with($host, 'example.cz') && !self::sameHostAsSite($current)) return $current;
+        $site = preg_replace('/^www\./', '', strtolower((string) wp_parse_url(home_url(), PHP_URL_HOST)));
+        return 'https://mistenka.' . $site;
+    }
+
+    // Aplikace na stejném hostu jako web převezme jeho úvodní stránku (vhodné jen pro WordPress vyhrazený Místence).
+    public static function sameHostAsSite(string $url): bool
+    {
+        $a = strtolower((string) wp_parse_url($url, PHP_URL_HOST));
+        return $a !== '' && $a === strtolower((string) wp_parse_url(home_url(), PHP_URL_HOST));
+    }
+
+    // Ověří, že adresa míří na tento WordPress s Místenkou: stáhne z ní js/env.js (generuje ho jen plugin).
+    public static function verifyAppUrl(string $url): array
+    {
+        $response = wp_remote_get($url . '/js/env.js', ['timeout' => 10, 'redirection' => 0, 'headers' => ['Cache-Control' => 'no-cache']]);
+        if (is_wp_error($response)) {
+            $message = $response->get_error_message();
+            $hint = stripos($message, 'ssl') !== false || stripos($message, 'certificate') !== false
+                ? 'Chyba HTTPS certifikátu – zapněte pro subdoménu SSL (Let\'s Encrypt) v administraci hostingu.'
+                : 'Adresa není dostupná – zkontrolujte, že subdoména existuje a míří do složky tohoto WordPressu (změna DNS se může projevit až za několik hodin).';
+            $result = ['ok' => false, 'message' => $hint . ' (' . $message . ')'];
+        } else {
+            $code = (int) wp_remote_retrieve_response_code($response);
+            $body = (string) wp_remote_retrieve_body($response);
+            if ($code === 200 && str_contains($body, 'MISTENKA_ENV')) $result = ['ok' => true, 'message' => 'Adresa funguje – odpovídá tento WordPress s Místenkou.'];
+            elseif ($code >= 300 && $code < 400) $result = ['ok' => false, 'message' => 'Adresa přesměrovává jinam (HTTP ' . $code . ': ' . wp_remote_retrieve_header($response, 'location') . ') – zkontrolujte přesměrování na hostingu, případně zadejte cílovou adresu.'];
+            else $result = ['ok' => false, 'message' => 'Na adrese odpovídá jiný web (HTTP ' . $code . ') – subdoména musí mířit do složky tohoto WordPressu.'];
+        }
+        $result += ['url' => $url, 'at' => time()];
+        update_option(self::APP_URL_CHECK_OPTION, $result, false);
+        return $result;
+    }
+
+    // Uloží adresu z průvodce, přepíše pravidla .htaccess pro nový host a adresu ověří.
+    public static function saveAppUrl(string $url): array
+    {
+        update_option(self::APP_URL_OPTION, $url, true);
+        if (self::htaccessStatus() !== 'not_needed') self::writeHtaccess();
+        return self::verifyAppUrl($url);
+    }
+
+    public static function lastAppUrlCheck(): ?array
+    {
+        $check = get_option(self::APP_URL_CHECK_OPTION, null);
+        return is_array($check) && ($check['url'] ?? '') === self::appUrl() ? $check : null;
     }
 
     // host[:port] adresy aplikace.
