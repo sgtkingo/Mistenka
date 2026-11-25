@@ -419,7 +419,15 @@ Správa pro `manager`/`admin` (🛠, jinak `401`/`403 forbidden_role`). `revirId
 
 ## Nastavení (B5)
 
-Konfigurace = soubor (`config/organization.json` + pravidla druhů, ve WordPressu výchozí hodnoty pluginu) **+ poslední uložená verze každé části z manažerského portálu**. Každé uložení vytvoří novou verzi celé části s autorem a poznámkou (`settings_versions`); změna platí okamžitě (i pro `GET /config`), před uložením se zkontroluje celá konfigurace. Obnovení starší verze nebo výchozích hodnot ze souboru = uložení kopie jako nové verze, historie se nepřepisuje. Zdroj plateb (`fake` / `fio`) a Fio token zůstávají jen v konfiguraci serveru.
+Konfigurace = soubor (`config/organization.json` + pravidla druhů, ve WordPressu výchozí hodnoty pluginu) **+ poslední uložená verze každé části z manažerského portálu**. Každé uložení vytvoří novou verzi celé části s autorem a poznámkou (`settings_versions`); změna platí okamžitě (i pro `GET /config`), před uložením se zkontroluje celá konfigurace. Obnovení starší verze nebo výchozích hodnot ze souboru = uložení kopie jako nové verze, historie se nepřepisuje. Zdroj plateb (`fake` / `fio`) zůstává jen v konfiguraci serveru.
+
+**Token Fio** (automatické párování plateb) zadá admin v Bankovním spojení, nebo je v konfiguraci serveru (Node `FIO_TOKEN`, WordPress `MISTENKA_FIO_TOKEN` – má přednost a v portálu nejde změnit). Token z portálu je v provozní databázi jen zašifrovaný (AES-256-GCM, klíč `MISTENKA_SECRET_KEY`, jinak `secret.key` v datové složce), server ho nikdy nevrací a testovací databáze ho nedostane. Platí ihned (čte se při každém stažení plateb); bez tokenu se platby nestahují.
+
+| Endpoint | Tělo | Odpověď |
+| --- | --- | --- |
+| `GET /manage/settings/fio-token` | – | `{ configured, source: "env" \| "portal" \| null, updatedAt, updatedBy, unreadable?, provider }` (jen admin) |
+| `PUT /manage/settings/fio-token` | `{ token, otp }` (prázdný `token` = smazat) | stav jako `GET`; kód 2FA (`401 otp_required` / `invalid_otp`), `400 invalid_fio_token` (20–128 písmen a číslic), `409 fio_token_env`; audit `fio_token_changed` / `fio_token_removed`, e-mail adminům `payment_settings_changed` |
+| `POST /manage/settings/fio-token/verify` | – | `{ ok, account?, matchesAccount?, message }` – dotaz na pohyby za dnešek (endpoint `periods`, neposouvá zarážku `last`); upozorní, když token patří jinému účtu než v Bankovním spojení |
 
 | Část (`scope`) | Obsah | Kdo |
 | --- | --- | --- |

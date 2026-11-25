@@ -365,7 +365,7 @@ final class Emails
 
     public static function paymentSettingsChanged(array $config, array $x): array
     {
-        $labels = ['accountNumber' => 'Číslo účtu', 'bankCode' => 'Kód banky', 'iban' => 'IBAN', 'recipientName' => 'Příjemce', 'reservationMinutes' => 'Rezervace (min)', 'messagePrefix' => 'Zpráva pro příjemce'];
+        $labels = ['accountNumber' => 'Číslo účtu', 'bankCode' => 'Kód banky', 'iban' => 'IBAN', 'recipientName' => 'Příjemce', 'reservationMinutes' => 'Rezervace (min)', 'messagePrefix' => 'Zpráva pro příjemce', 'fioToken' => 'Token Fio (párování plateb)'];
         $rows = [];
         foreach ($labels as $key => $label) {
             $before = $x['before'][$key] ?? null;

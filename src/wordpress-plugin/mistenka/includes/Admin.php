@@ -92,6 +92,10 @@ final class Admin
                 $notice = self::notice('error', esc_html($e->getMessage()));
             }
         }
+        if (isset($_POST['mistenka_test_off']) && check_admin_referer('mistenka_admin')) {
+            TestMode::set(null, ['enabled' => false]); // nouzové vypnutí (např. když se admin v testu nepřihlásí)
+            $notice = self::notice('success', 'Testovací režim vypnut – web běží nad provozní databází.');
+        }
         if (isset($_POST['mistenka_htaccess']) && check_admin_referer('mistenka_admin')) {
             $notice = Plugin::writeHtaccess()
                 ? self::notice('success', 'Pravidla .htaccess zapsána.')
@@ -252,7 +256,8 @@ final class Admin
         echo self::row('Datová složka (zálohy)', esc_html($dataDir), is_dir($dataDir) && is_writable($dataDir));
         $fio = $app && $app->config['payment']['provider'] === 'fio';
         // Falešná banka mimo vývojový režim = kdokoli může „zaplatit“ místenku přes /dev/payments.
-        echo self::row('Platby', $app ? esc_html($fio ? 'Fio API' . (Env::fioToken() ? '' : ' – chybí MISTENKA_FIO_TOKEN') : 'falešná banka – jen pro vývoj, platby jde simulovat!') : '—', $app ? ($fio ? Env::fioToken() !== '' : Env::dev()) : null);
+        $fioSource = ['env' => 'token ve wp-config.php', 'portal' => 'token zadaný v portálu'][FioToken::status()['source'] ?? ''] ?? '';
+        echo self::row('Platby', $app ? esc_html($fio ? 'Fio API' . (FioToken::token() !== '' ? " ({$fioSource})" : ' – chybí token: zadejte ho v portálu (Bankovní spojení → Automatické párování), nebo MISTENKA_FIO_TOKEN ve wp-config.php') : 'falešná banka – jen pro vývoj, platby jde simulovat!') : '—', $app ? ($fio ? FioToken::token() !== '' : Env::dev()) : null);
         echo self::row('Podklad mapy revíru', Env::mapyApiKey() !== '' ? 'Mapy.com (MISTENKA_MAPY_API_KEY)' : 'OpenStreetMap – pro Mapy.com doplňte konstantu <code>MISTENKA_MAPY_API_KEY</code> ve wp-config.php', Env::mapyApiKey() !== '' ? true : null);
         echo self::row('Klíč pro cron', Env::cronKey() !== '' ? 'nastaven' : 'není (stačí PHP cron; pro volání přes URL doplňte <code>MISTENKA_CRON_KEY</code> ve wp-config.php)', Env::cronKey() !== '' ? true : null);
         $cronAt = (int) get_option(Plugin::CRON_OPTION, 0);
@@ -264,6 +269,7 @@ final class Admin
         $tmText = TestMode::locked() ? 'zakázaný na tomto webu (MISTENKA_TEST_MODE ve wp-config.php)'
             : ($tm['enabled'] ? '<b>zapnutý</b> – web běží nad testovací databází, platby v testu: ' . ($tm['payments'] === 'fio' ? 'ostré přes Fio' : 'simulované') : 'vypnutý')
             . (TestMode::locked() ? '' : ' <span class="description">(přepíná admin v portálu: Admin → Testování)</span>');
+        if ($tm['enabled']) $tmText .= '<form method="post" style="margin-top:6px">' . wp_nonce_field('mistenka_admin', '_wpnonce', true, false) . '<button class="button" name="mistenka_test_off" value="1" onclick="return confirm(\'Vypnout testovací režim? Web se vrátí na provozní databázi.\')">Vypnout testovací režim</button></form>';
         echo self::row('Testovací režim', $tmText, $tm['enabled'] ? false : null);
         echo self::row('Vývojový režim', Env::dev() ? '<b>zapnutý</b> (MISTENKA_DEV) – jen pro testovací web!' : 'vypnutý', !Env::dev());
         $labels = ['not_needed' => 'nepoužívají se (frontend mimo složku webu)', 'ok' => 'v pořádku', 'outdated' => 'zastaralá – zapište znovu v průvodci', 'absent' => 'chybí – zapište v průvodci', 'missing' => 'soubor .htaccess neexistuje'];

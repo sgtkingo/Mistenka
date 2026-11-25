@@ -23,7 +23,7 @@ final class TestMode
     public const VS_RANGES = ['production' => [1000000000, 8999999999], 'test' => [9000000000, 9999999999]];
     private const CLEARED_TABLES = ['tickets', 'ticket_tokens', 'ticket_checks', 'catches', 'bank_transactions', 'email_outbox', 'bug_reports',
         'limit_violations', 'member_blocks', 'season_reports', 'backups', 'auth_tokens', 'audit_events', 'warden_requests', 'vouchers', 'rate_limits'];
-    private const CLEARED_META = ['setup_token', 'last_daily_backup', 'last_retention'];
+    private const CLEARED_META = ['setup_token', 'last_daily_backup', 'last_retention', 'fio_token']; // token Fio jen v provozu
     private const STAFF = "(CONCAT(',', roles, ',') LIKE '%,admin,%' OR CONCAT(',', roles, ',') LIKE '%,manager,%' OR CONCAT(',', roles, ',') LIKE '%,warden,%')";
 
     public static function locked(): bool
@@ -111,18 +111,27 @@ final class TestMode
         self::save(['seededAt' => Time::nowIso()]);
     }
 
-    // Relace správců z provozu do testu, aby admin po přepnutí zůstal přihlášený (i ve starší testovací databázi).
-    private static function copySessions(): void
+    // Při zapnutí: správci z provozu do testu (i do starší testovací databáze) – podle e-mailu se doplní nebo aktualizují
+    // (role, heslo, 2FA) a dostanou své relace, aby admin po přepnutí zůstal přihlášený a mohl režim zase vypnout.
+    private static function syncStaff(): void
     {
         global $wpdb;
         $prod = Db::prefixFor(false);
         $test = Db::prefixFor(true);
-        $wpdb->query("INSERT IGNORE INTO `{$test}sessions` SELECT * FROM `{$prod}sessions` WHERE user_id IN (SELECT id FROM `{$test}users`)");
+        foreach ((array) $wpdb->get_results("SELECT * FROM `{$prod}users` WHERE " . self::STAFF, ARRAY_A) as $user) {
+            $prodId = (int) $user['id'];
+            unset($user['id']);
+            $testId = (int) $wpdb->get_var($wpdb->prepare("SELECT id FROM `{$test}users` WHERE LOWER(email) = LOWER(%s)", $user['email']));
+            if ($testId) $wpdb->update("{$test}users", $user, ['id' => $testId]);
+            else { $wpdb->insert("{$test}users", $user); $testId = (int) $wpdb->insert_id; }
+            if (!$testId) continue;
+            $wpdb->query($wpdb->prepare("INSERT IGNORE INTO `{$test}sessions` (token_hash, user_id, csrf, created_at, expires_at) SELECT token_hash, %d, csrf, created_at, expires_at FROM `{$prod}sessions` WHERE user_id = %d", $testId, $prodId));
+        }
     }
 
     private static function fioAvailable(): bool
     {
-        return Env::fioToken() !== '' || Env::dev(); // ve vývoji zastoupí banku provozu falešná banka (/dev/payments)
+        return FioToken::token() !== '' || Env::dev(); // ve vývoji zastoupí banku provozu falešná banka (/dev/payments)
     }
 
     private static function actorName(array $user): string
@@ -151,7 +160,7 @@ final class TestMode
         if ($enabled && !$before['enabled']) $changes += ['since' => Time::nowIso(), 'by' => $name];
         if ($enabled && !self::testDatabaseExists()) self::seed();
         self::save($changes);
-        if ($enabled && !$before['enabled']) self::copySessions();
+        if ($enabled && !$before['enabled']) self::syncStaff();
         $action = $enabled !== $before['enabled'] ? ($enabled ? 'test_mode_enabled' : 'test_mode_disabled') : ($payments !== $before['payments'] ? 'test_mode_payments' : null);
         if ($action) self::notify($actor, $action, ['payments' => $payments, 'by' => $name]);
         return self::view();

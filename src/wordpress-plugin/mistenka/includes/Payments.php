@@ -50,15 +50,15 @@ final class FakeProvider implements PaymentProvider
     }
 }
 
-// Fio API Bankovnictví – endpoint "last" vrací pohyby od posledního stažení. Token jen pro čtení
-// (MISTENKA_FIO_TOKEN ve wp-config.php); nikdy ho nelogovat (je součástí URL). Banka povoluje 1 dotaz za 30 s.
+// Fio API Bankovnictví – endpoint "last" vrací pohyby od posledního stažení. Token jen pro čtení (MISTENKA_FIO_TOKEN
+// ve wp-config.php, nebo zadaný v portálu – FioToken); nikdy ho nelogovat (je součástí URL). Bez tokenu se nic
+// nestahuje. Banka povoluje 1 dotaz za 30 s.
 final class FioProvider implements PaymentProvider
 {
     private string $token;
 
     public function __construct(string $token)
     {
-        if ($token === '') throw new \RuntimeException('Pro platby přes Fio nastavte ve wp-config.php konstantu MISTENKA_FIO_TOKEN.');
         $this->token = $token;
     }
 
@@ -67,6 +67,7 @@ final class FioProvider implements PaymentProvider
 
     public function fetchTransactions(): array
     {
+        if ($this->token === '') return [];
         $response = wp_remote_get('https://fioapi.fio.cz/v1/rest/last/' . rawurlencode($this->token) . '/transactions.json', ['timeout' => 25]);
         if (is_wp_error($response)) throw new \RuntimeException('Fio API je nedostupné.'); // bez detailu – obsahuje URL s tokenem
         $status = (int) wp_remote_retrieve_response_code($response);
@@ -107,7 +108,7 @@ final class Payments
     {
         $name = $config['payment']['provider'];
         if ($name === 'fio' && !empty($config['payment']['testMode'])) return new ForwardedProvider();
-        if ($name === 'fio') return new FioProvider(Env::fioToken());
+        if ($name === 'fio') return new FioProvider(FioToken::token());
         if ($name === 'fake') return new FakeProvider();
         throw new \RuntimeException("Neznámý poskytovatel plateb: {$name}");
     }

@@ -360,6 +360,10 @@ final class App
             if ($method === 'DELETE' && $id !== '') return self::json(200, $kind === 'announcements' ? $o->deleteAnnouncement($actor, $id) : ($kind === 'seasons' ? $o->deleteSeason($actor, $id) : $o->deleteClosure($actor, $id)));
         }
         // Nastavení (B5). Platební údaje jen admin (kontrola v Settings::save).
+        // Token Fio (jen admin; vždy provozní databáze, i v testovacím režimu): stav, uložení/smazání s kódem 2FA, ověření.
+        if ($path === '/manage/settings/fio-token' && $method === 'GET') { $acc->requireAdmin($ctx); return self::json(200, FioToken::status() + ['provider' => TestMode::withMode(false, fn() => self::get()->config['payment']['provider'])]); }
+        if ($path === '/manage/settings/fio-token' && $method === 'PUT') { $body = self::body($request); return self::json(200, FioToken::set($acc->confirmOtp($ctx, $body['otp'] ?? null), $body) + ['provider' => TestMode::withMode(false, fn() => self::get()->config['payment']['provider'])]); }
+        if ($path === '/manage/settings/fio-token/verify' && $method === 'POST') { $acc->requireAdmin($ctx); return self::json(200, FioToken::verify(TestMode::withMode(false, fn() => self::get()->config))); }
         if (str_starts_with($path, '/manage/settings')) {
             $actor = $acc->requireManager($ctx);
             $sub = substr($path, strlen('/manage/settings'));

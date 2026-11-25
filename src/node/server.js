@@ -22,7 +22,7 @@ const path = require("node:path");
 const { loadConfig, publicConfig, getRevir } = require("./lib/config");
 const { openDatabase, serviceLaunched, seasonOpen } = require("./lib/db");
 const { createProvider, createFakeProvider } = require("./lib/payments");
-const { PAYMENTS, VS_RANGES, isTestVs, createTestModeState, seedTestDatabase, copySessions, createForwardedProvider, testDir } = require("./lib/test-mode");
+const { PAYMENTS, VS_RANGES, isTestVs, createTestModeState, seedTestDatabase, syncStaff, createForwardedProvider, testDir } = require("./lib/test-mode");
 const { createFileMailer } = require("./lib/emails");
 const { createService, ApiError } = require("./lib/service");
 const { createAccounts } = require("./lib/accounts");
@@ -34,6 +34,7 @@ const { createRetention } = require("./lib/retention");
 const { createMailAccounts } = require("./lib/mail-accounts");
 const { createSmtpMailer } = require("./lib/smtp");
 const { createBugs } = require("./lib/bugs");
+const { createFioToken } = require("./lib/fio-token");
 const time = require("./lib/time");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -52,7 +53,9 @@ function buildContext({ dataDir, test = false, payments = "fake" }) {
   const config = loadConfig();
   if (test) for (const target of [config.source.raw.payment, config.payment]) Object.assign(target, { provider: payments, testMode: true });
   const db = openDatabase(dataDir);
-  const provider = test ? (payments === "fio" ? createForwardedProvider() : createFakeProvider()) : createProvider(config);
+  // Token Fio: FIO_TOKEN, nebo zadaný v portálu (zašifrovaný v provozní databázi); test banku nestahuje.
+  const fioToken = test ? null : createFioToken({ db, config, dataDir });
+  const provider = test ? (payments === "fio" ? createForwardedProvider() : createFakeProvider()) : createProvider(config, { getToken: () => fioToken.token() });
   const mailer = MAIL_TRANSPORT === "file" ? createFileMailer(path.join(dataDir, "outbox")) : createSmtpMailer();
   const settings = createSettings({ db, config }); // nastavení z portálu (B5) přepíše hodnoty ze souboru
   const operations = createOperations({ db, config, appUrl: APP_URL });
@@ -71,7 +74,7 @@ function buildContext({ dataDir, test = false, payments = "fake" }) {
   const retention = createRetention({ db, config, backups });
   service.addJob("retention", () => retention.run()); // GDPR: anonymizace a mazání po uplynutí lhůt
   service.addJob("accounts", () => accounts.cleanup());
-  return { test, payments, config, db, provider, settings, operations, mailAccounts, service, accounts, reports, bugs, backups };
+  return { test, payments, config, db, provider, fioToken, settings, operations, mailAccounts, service, accounts, reports, bugs, backups };
 }
 
 const testMode = createTestModeState(DATA_DIR);
@@ -105,7 +108,7 @@ async function runAllJobs(options = {}) {
 
 const actorName = (user) => `${user.first_name || ""} ${user.last_name || ""}`.trim() || user.email; // uživatel relace (řádek tabulky users)
 // Ostré platby v testu potřebují Fio v provozu; ve vývoji je zastoupí falešná banka provozu (/dev/payments).
-const fioAvailable = () => prod.provider.name === "fio" || DEV;
+const fioAvailable = () => (prod.provider.name === "fio" && Boolean(prod.fioToken.token())) || DEV;
 function testModeView() {
   const state = testMode.get();
   return { enabled: state.enabled, payments: state.payments, locked: testMode.locked, since: state.enabled ? state.since : null, by: state.enabled ? state.by : null,
@@ -120,7 +123,7 @@ function setTestMode(actor, body = {}) {
   if (enabled && testMode.locked) throw new ApiError(403, "test_mode_locked", "Testovací režim je na tomto serveru zakázaný (MISTENKA_TEST_MODE=0).");
   const now = new Date().toISOString();
   testMode.save({ enabled, payments, ...(enabled && !before.enabled ? { since: now, by: actorName(actor) } : {}) });
-  if (enabled && !before.enabled) copySessions(path.join(DATA_DIR, "mistenka.sqlite"), testContext().db);
+  if (enabled && !before.enabled) syncStaff(prod.db, testContext().db);
   if (enabled !== before.enabled) prod.accounts.notifyTestMode(actor, enabled ? "test_mode_enabled" : "test_mode_disabled", { payments, by: actorName(actor) });
   else if (payments !== before.payments) prod.accounts.notifyTestMode(actor, "test_mode_payments", { payments, by: actorName(actor) });
   return testModeView();
@@ -341,6 +344,10 @@ async function handleApi(req, res, url, ip) {
     if (method === "DELETE" && id) return send(res, 200, { announcements: operations.deleteAnnouncement, seasons: operations.deleteSeason, closures: operations.deleteClosure }[kind](actor, id));
   }
   // Nastavení (B5). Platební údaje jen admin (kontrola v settings.save).
+  // Token Fio (jen admin; vždy provozní databáze, i v testovacím režimu): stav, uložení/smazání s kódem 2FA, ověření.
+  if (pathname === "/api/manage/settings/fio-token" && method === "GET") { accounts.requireAdmin(ctx); return send(res, 200, { ...prod.fioToken.status(), provider: prod.provider.name }); }
+  if (pathname === "/api/manage/settings/fio-token" && method === "PUT") { const body = await readBody(req); return send(res, 200, { ...prod.fioToken.set(accounts.confirmOtp(ctx, body.otp), body), provider: prod.provider.name }); }
+  if (pathname === "/api/manage/settings/fio-token/verify" && method === "POST") { accounts.requireAdmin(ctx); return send(res, 200, await prod.fioToken.verify()); }
   if (pathname.startsWith("/api/manage/settings")) {
     const actor = accounts.requireManager(ctx);
     const sub = pathname.slice("/api/manage/settings".length);

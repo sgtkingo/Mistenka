@@ -44,7 +44,7 @@
   }
 
   // Formuláře se vykreslují do jednoho panelu, který se přesune do aktivní sekce (Revíry / Nastavení / Bankovní spojení).
-  const BANK_TABS = ["payment", "gateway"];
+  const BANK_TABS = ["payment", "fio", "gateway"];
   async function load(initialTab, nextMode = "settings") {
     mode = nextMode;
     const host = qs(`.settings-host[data-host="${mode}"]`);
@@ -65,7 +65,7 @@
   function renderTabs() {
     const tabs = mode === "reviry"
       ? [...view.reviry.map((r) => [`revir:${r.id}`, r.data.name]), ["new-revir", "+ Nový revír"]]
-      : mode === "bank" ? [["payment", "Bankovní převody a QR platby"], ["gateway", "Platební brána"]]
+      : mode === "bank" ? [["payment", "Bankovní převody a QR platby"], ["fio", "Automatické párování (Fio)"], ["gateway", "Platební brána"]]
         : mode === "species" ? [["species", "Míry, váhy a hájení"]] : [["organization", "Organizace"]];
     if (!tabs.some(([key]) => key === tab)) tab = tabs[0][0];
     qs("#settingsTabs").innerHTML = tabs.map(([key, label]) => `<button type="button" class="tab${key === tab ? " active" : ""}" data-tab="${esc(key)}">${esc(label)}</button>`).join("");
@@ -77,6 +77,7 @@
     if (tab === "organization") panel.innerHTML = organizationForm();
     else if (tab === "payment") panel.innerHTML = paymentForm();
     else if (tab === "gateway") panel.innerHTML = gatewayForm();
+    else if (tab === "fio") { panel.innerHTML = '<div class="settings-form" id="fioPanel"><p class="muted">Načítám…</p></div>'; loadFio(); }
     else if (tab === "species") panel.innerHTML = speciesForm();
     else if (tab === "new-revir") panel.innerHTML = newRevirForm();
     else panel.innerHTML = revirForm(view.reviry.find((r) => `revir:${r.id}` === tab));
@@ -133,6 +134,54 @@
       <div class="form-two-col">${field("pRecipient", "Příjemce (do QR platby, bez diakritiky)", p.recipientName, ro)}${field("pMessage", "Zpráva pro příjemce – předpona", p.messagePrefix, ro)}</div>
       <div class="form-two-col">${field("pReservation", "Rezervace místa před platbou (minuty)", p.reservationMinutes, `${ro} type="number" min="10" max="1440"`)}<div></div></div>
       ${footer("payment", view.payment, { canEdit: view.canEditPayment })}</form>`;
+  }
+  // Token Fio API pro automatické párování plateb (jen admin). Server token nikdy nevrací – jen zda je nastaven.
+  async function loadFio() {
+    const box = qs("#fioPanel");
+    if (!box) return;
+    try {
+      const s = await api("/manage/settings/fio-token");
+      const state = s.source === "env" ? "nastaven v konfiguraci serveru (wp-config.php / FIO_TOKEN) – v portálu ho nejde změnit"
+        : s.configured ? `nastaven${s.updatedAt ? ` ${czDateTime(s.updatedAt)}` : ""}${s.updatedBy ? ` (${s.updatedBy})` : ""}`
+          : s.unreadable ? "uložený token nejde přečíst (změnil se šifrovací klíč serveru) – zadejte ho znovu" : "nenastaven – platby se nepárují automaticky";
+      const editable = s.source !== "env";
+      box.innerHTML = `<h3>Automatické párování plateb (Fio API)${infoTip("Server každou půlminutu stáhne z Fio nové příchozí platby a podle variabilního symbolu a částky vystaví místenky. Bez tokenu se platby musí řešit ručně v sekci Platby.")}</h3>
+        <div class="info-box ${s.configured ? "info-success" : "info-warning"}">Token: <b>${esc(state)}</b>${s.provider !== "fio" ? `<br>Server teď nepoužívá platby přes Fio (zdroj plateb: ${esc(s.provider)}) – token se uplatní až s nimi.` : ""}</div>
+        <p class="field-help">Token vygenerujte v internetovém bankovnictví Fio (Nastavení → API) <b>jen pro čtení</b>. Uloží se zašifrovaný, server ho už nikdy nezobrazí. Uložení i smazání potvrdíte kódem 2FA a dozví se o něm e-mailem všichni admini. Testovací režim token nepoužívá – banku stahuje vždy jen provoz.</p>
+        ${editable ? `<div class="form-two-col"><div><label class="field-label" for="fioToken">${s.configured ? "Nový token" : "Token"}</label><input id="fioToken" type="password" autocomplete="off" spellcheck="false"></div><div></div></div>` : ""}
+        <div class="test-actions">
+          ${editable ? '<button class="primary-button" type="button" id="fioSave">Uložit token</button>' : ""}
+          ${s.configured ? '<button class="secondary-button" type="button" id="fioVerify">Ověřit token</button>' : ""}
+          ${s.source === "portal" ? '<button class="text-button" type="button" id="fioRemove">Smazat token</button>' : ""}
+        </div>
+        <p class="field-help" id="fioResult"></p>`;
+      const withOtp = async (button, token, message) => {
+        const otp = window.prompt("Kód z ověřovací aplikace (2FA):");
+        if (otp === null) return;
+        button.disabled = true;
+        try { await api("/manage/settings/fio-token", { method: "PUT", body: { token, otp: otp.trim() } }); showToast(message, "success"); loadFio(); }
+        catch (error) { showToast(error.message, "error"); button.disabled = false; }
+      };
+      qs("#fioSave", box)?.addEventListener("click", (event) => {
+        const token = val("fioToken");
+        if (!token) { showToast("Vložte token z internetového bankovnictví Fio.", "error"); return; }
+        withOtp(event.currentTarget, token, "Token Fio uložen.");
+      });
+      qs("#fioRemove", box)?.addEventListener("click", (event) => {
+        if (!window.confirm("Smazat token Fio? Platby se pak nebudou párovat automaticky.")) return;
+        withOtp(event.currentTarget, "", "Token Fio smazán.");
+      });
+      qs("#fioVerify", box)?.addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        const result = qs("#fioResult", box);
+        button.disabled = true;
+        result.textContent = "Ověřuji u Fio…";
+        try {
+          const r = await api("/manage/settings/fio-token/verify", { method: "POST" });
+          result.innerHTML = `<b class="${r.ok && r.matchesAccount !== false ? "fio-ok" : "fio-bad"}">${esc(r.message)}</b>`;
+        } catch (error) { result.innerHTML = `<b class="fio-bad">${esc(error.message)}</b>`; } finally { button.disabled = false; }
+      });
+    } catch (error) { box.innerHTML = `<p class="status-error">${esc(error.message)}</p>`; }
   }
   // Platební brána (karty, Apple/Google Pay) – připraveno pro budoucí rozšíření.
   function gatewayForm() {

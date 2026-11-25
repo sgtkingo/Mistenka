@@ -201,7 +201,7 @@ function testModeChanged(config, { enabled, actorName, payments, at, appUrl }) {
 
 // ---------- nastavení (B5) ----------
 function paymentSettingsChanged(config, { actorName, before, after, at }) {
-  const labels = { accountNumber: "Číslo účtu", bankCode: "Kód banky", iban: "IBAN", recipientName: "Příjemce", reservationMinutes: "Rezervace (min)", messagePrefix: "Zpráva pro příjemce" };
+  const labels = { accountNumber: "Číslo účtu", bankCode: "Kód banky", iban: "IBAN", recipientName: "Příjemce", reservationMinutes: "Rezervace (min)", messagePrefix: "Zpráva pro příjemce", fioToken: "Token Fio (párování plateb)" };
   const rows = Object.keys(labels).filter((key) => String(before?.[key] ?? "") !== String(after?.[key] ?? "")).map((key) => [labels[key], `${before?.[key] ?? "—"} → ${after?.[key] ?? "—"}`]);
   return {
     subject: "Místenka – změněny platební údaje",

@@ -54,7 +54,8 @@ function loadKey(dataDir) {
   return Buffer.from(fs.readFileSync(file, "utf8").trim(), "base64");
 }
 
-function createMailAccounts({ db, config, dataDir, mailer }) {
+// Šifrování tajných hodnot v databázi (hesla SMTP účtů, token Fio): AES-256-GCM, klíč z MISTENKA_SECRET_KEY / secret.key.
+function secretBox(dataDir) {
   const key = loadKey(dataDir);
   function encrypt(text) {
     const iv = crypto.randomBytes(12);
@@ -69,6 +70,11 @@ function createMailAccounts({ db, config, dataDir, mailer }) {
     decipher.setAuthTag(raw.subarray(12, 28));
     return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8");
   }
+  return { encrypt, decrypt };
+}
+
+function createMailAccounts({ db, config, dataDir, mailer }) {
+  const { encrypt, decrypt } = secretBox(dataDir);
 
   const audit = (actor, action, targetId, detail = null) => db.prepare("INSERT INTO audit_events (at, actor_user_id, action, target_type, target_id, detail) VALUES (?, ?, ?, 'email_account', ?, ?)")
     .run(iso(time.now()), actor?.id ?? null, action, String(targetId), detail ? JSON.stringify(detail) : null);
@@ -235,4 +241,4 @@ function createMailAccounts({ db, config, dataDir, mailer }) {
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
 
-module.exports = { createMailAccounts, GROUPS, groupOf, noticeRecipients, mailMissing };
+module.exports = { createMailAccounts, secretBox, GROUPS, groupOf, noticeRecipients, mailMissing };

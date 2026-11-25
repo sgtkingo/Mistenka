@@ -24,7 +24,7 @@ const isTestVs = (vs) => /^9\d{9}$/.test(String(vs || "").replace(/^0+/, ""));
 // Tabulky, které se do testovací databáze nekopírují (provozní a osobní data).
 const CLEARED_TABLES = ["tickets", "ticket_tokens", "ticket_checks", "catches", "bank_transactions", "email_outbox", "bug_reports",
   "limit_violations", "member_blocks", "season_reports", "backups", "auth_tokens", "audit_events", "warden_requests", "vouchers"];
-const CLEARED_META = ["setup_token", "last_daily_backup", "last_retention"];
+const CLEARED_META = ["setup_token", "last_daily_backup", "last_retention", "fio_token"]; // token Fio jen v provozu
 const STAFF = "(',' || roles || ',' LIKE '%,admin,%' OR ',' || roles || ',' LIKE '%,manager,%' OR ',' || roles || ',' LIKE '%,warden,%')";
 
 const testDir = (dataDir) => path.join(dataDir, "test");
@@ -69,13 +69,27 @@ function seedTestDatabase(prodDb, dataDir) {
   }
 }
 
-// Relace správců z provozu do testu (i do starší testovací databáze), aby admin po přepnutí zůstal přihlášený.
-function copySessions(prodFile, testDb) {
-  testDb.exec(`ATTACH DATABASE '${prodFile.replace(/'/g, "''")}' AS prod`);
+// Při zapnutí: správci z provozu do testu (i do starší testovací databáze) – podle e-mailu se doplní nebo aktualizují
+// (role, heslo, 2FA) a dostanou své relace, aby admin po přepnutí zůstal přihlášený a mohl režim zase vypnout.
+function syncStaff(prodDb, testDb) {
+  const staff = prodDb.prepare(`SELECT * FROM users WHERE ${STAFF}`).all();
+  testDb.exec("BEGIN");
   try {
-    testDb.exec("INSERT OR IGNORE INTO sessions SELECT * FROM prod.sessions WHERE user_id IN (SELECT id FROM users)");
-  } finally {
-    testDb.exec("DETACH DATABASE prod");
+    for (const user of staff) {
+      const { id, ...fields } = user;
+      const columns = Object.keys(fields);
+      const existing = testDb.prepare("SELECT id FROM users WHERE lower(email) = lower(?)").get(user.email);
+      let testId = existing?.id;
+      if (testId) testDb.prepare(`UPDATE users SET ${columns.map((c) => `${c} = ?`).join(", ")} WHERE id = ?`).run(...columns.map((c) => fields[c]), testId);
+      else testId = Number(testDb.prepare(`INSERT INTO users (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`).run(...columns.map((c) => fields[c])).lastInsertRowid);
+      for (const s of prodDb.prepare("SELECT * FROM sessions WHERE user_id = ?").all(id)) {
+        testDb.prepare("INSERT OR IGNORE INTO sessions (token_hash, user_id, csrf, created_at, expires_at) VALUES (?, ?, ?, ?, ?)").run(s.token_hash, testId, s.csrf, s.created_at, s.expires_at);
+      }
+    }
+    testDb.exec("COMMIT");
+  } catch (error) {
+    testDb.exec("ROLLBACK");
+    throw error;
   }
 }
 
@@ -84,4 +98,4 @@ function createForwardedProvider() {
   return { name: "fio", minIntervalMs: 0, forwarded: true, async fetchTransactions() { return []; } };
 }
 
-module.exports = { PAYMENTS, VS_RANGES, isTestVs, createTestModeState, seedTestDatabase, copySessions, createForwardedProvider, testDir, testDbFile };
+module.exports = { PAYMENTS, VS_RANGES, isTestVs, createTestModeState, seedTestDatabase, syncStaff, createForwardedProvider, testDir, testDbFile };

@@ -2021,3 +2021,43 @@ test("testovací režim: oddělená databáze (provozní místenky v testu nejso
   await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: [] } });
   await setClock("2026-06-10T08:00:00Z");
 });
+
+test("token Fio v portálu: jen admin s 2FA, server ho nevrací, audit a e-mail adminům, smazání; v testovacím režimu platí provozní", async () => {
+  const t0 = Date.parse("2026-06-10T11:00:00Z");
+  await setClock(new Date(t0).toISOString());
+  const admin = await verifiedAccount();
+  await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: ["admin"] } });
+  const secret = await enableTwoFactor(admin.session, t0 + 30_000);
+  const session = admin.session;
+  let step = 1;
+  const otp = async () => { step += 1; const at = t0 + step * 30_000; await setClock(new Date(at).toISOString()); return totp(secret, at); };
+  const put = (body) => call("PUT", "/manage/settings/fio-token", { body, session });
+  const TOKEN = "Fio0Token0Jen0Pro0Cteni0" + "x".repeat(20);
+
+  assert.equal((await call("GET", "/manage/settings/fio-token")).status, 401);
+  const initial = (await call("GET", "/manage/settings/fio-token", { session })).data;
+  assert.equal(initial.configured, false);
+  assert.equal((await put({ token: TOKEN })).data.code, "otp_required");
+  assert.equal((await put({ token: "kratky", otp: await otp() })).data.code, "invalid_fio_token");
+  const saved = await put({ token: TOKEN, otp: await otp() });
+  assert.equal(saved.status, 200, JSON.stringify(saved.data));
+  assert.equal(saved.data.configured, true);
+  assert.equal(saved.data.source, "portal");
+  assert.ok(saved.data.updatedBy);
+  const status = await call("GET", "/manage/settings/fio-token", { session });
+  assert.ok(!JSON.stringify(status.data).includes(TOKEN) && !JSON.stringify(saved.data).includes(TOKEN), "token se nevrací");
+  assert.ok((await call("GET", "/manage/audit?action=fio_token_changed", { session })).data.events.length >= 1);
+  const mail = await lastEmail(admin.email, "payment_settings_changed");
+  assert.ok(mail && /Token Fio/.test(mail.text) && !mail.text.includes(TOKEN), "e-mail adminům bez tokenu");
+
+  // V testovacím režimu: token je nastavení instalace (provoz), testovací databáze ho nemá.
+  assert.equal((await call("PUT", "/manage/test-mode", { body: { enabled: true, payments: "fake", otp: await otp() }, session })).status, 200);
+  assert.equal((await call("GET", "/manage/settings/fio-token", { session })).data.configured, true);
+  assert.equal((await call("PUT", "/manage/test-mode", { body: { enabled: false, otp: await otp() }, session })).data.enabled, false);
+
+  const removed = await put({ token: "", otp: await otp() });
+  assert.equal(removed.data.configured, false);
+  assert.ok((await call("GET", "/manage/audit?action=fio_token_removed", { session })).data.events.length >= 1);
+  await call("POST", "/dev/users/roles", { body: { email: admin.email, roles: [] } });
+  await setClock("2026-06-10T08:00:00Z");
+});

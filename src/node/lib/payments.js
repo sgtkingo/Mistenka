@@ -21,14 +21,16 @@ function createFakeProvider() {
 }
 
 // Fio API Bankovnictví – endpoint "last" vrací pohyby od posledního úspěšného stažení.
-// Token jen pro čtení, z proměnné prostředí FIO_TOKEN; nikdy ho nelogovat (je součástí URL).
+// Token jen pro čtení (FIO_TOKEN, nebo zadaný v portálu – fio-token.js); nikdy ho nelogovat (je součástí URL).
+// Čte se při každém stažení, takže změna v portálu platí hned. Bez tokenu se nic nestahuje.
 // Banka povoluje 1 dotaz za 30 s na token. NEOVĚŘENO proti skutečnému účtu – ověřit před spuštěním.
-function createFioProvider({ token, fetchImpl = fetch }) {
-  if (!token) throw new Error("Pro platby přes Fio nastavte proměnnou FIO_TOKEN.");
+function createFioProvider({ getToken, fetchImpl = fetch }) {
   return {
     name: "fio",
     minIntervalMs: 31000,
     async fetchTransactions() {
+      const token = getToken();
+      if (!token) return [];
       const response = await fetchImpl(`https://fioapi.fio.cz/v1/rest/last/${encodeURIComponent(token)}/transactions.json`);
       if (response.status === 409) return []; // příliš častý dotaz – zkusíme příště
       if (!response.ok) throw new Error(`Fio API odpovědělo stavem ${response.status}.`);
@@ -52,8 +54,8 @@ function createFioProvider({ token, fetchImpl = fetch }) {
   };
 }
 
-function createProvider(config, env = process.env) {
-  if (config.payment.provider === "fio") return createFioProvider({ token: env.FIO_TOKEN });
+function createProvider(config, { getToken = () => process.env.FIO_TOKEN || "" } = {}) {
+  if (config.payment.provider === "fio") return createFioProvider({ getToken });
   if (config.payment.provider === "fake") return createFakeProvider();
   throw new Error(`Neznámý poskytovatel plateb: ${config.payment.provider}`);
 }

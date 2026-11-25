@@ -553,3 +553,4 @@ th .info-tip::after{bottom:auto;top:calc(100% + 8px);left:auto;right:-6px;transf
 .test-choice input{margin-top:3px;flex:none}
 .test-choice.disabled{opacity:.55;cursor:not-allowed}
 .test-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:16px}
+.fio-ok{color:#17803f}.fio-bad{color:#b52f27}

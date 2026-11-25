@@ -7,7 +7,7 @@ defined('ABSPATH') || exit;
 
 // Konfigurace serveru z wp-config.php (nikdy z databáze ani z repozitáře):
 //   MISTENKA_CRON_KEY      tajný klíč pro POST /jobs/run (cron hostingu)
-//   MISTENKA_FIO_TOKEN     token Fio API jen pro čtení (payment.provider = "fio")
+//   MISTENKA_FIO_TOKEN     token Fio API jen pro čtení (payment.provider = "fio"); volitelné – jinak token zadaný v portálu
 //   MISTENKA_SECRET_KEY    klíč pro šifrování hesel SMTP účtů (jinak se vygeneruje do datové složky)
 //   MISTENKA_APP_URL       adresa aplikace – volitelné; jinak průvodce ve wp-admin, pak organization.appUrl
 //   MISTENKA_CONFIG        cesta ke konfiguraci MO (jinak config/organization.json pluginu)
